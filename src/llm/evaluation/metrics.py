@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Hashable, Sequence
 
 import torch
 from torch import Tensor
@@ -26,7 +27,7 @@ def exact_match(prediction: str, reference: str) -> bool:
     return normalize_answer(prediction) == normalize_answer(reference)
 
 
-def repeated_ngram_ratio(token_ids: list[int], size: int = NGRAM_SIZE) -> float:
+def repeated_ngram_ratio(token_ids: Sequence[Hashable], size: int = NGRAM_SIZE) -> float:
     grams = [tuple(token_ids[i : i + size]) for i in range(len(token_ids) - size + 1)]
     return 0.0 if not grams else 1.0 - len(set(grams)) / len(grams)
 

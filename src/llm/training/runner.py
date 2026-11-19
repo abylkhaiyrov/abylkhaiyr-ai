@@ -11,7 +11,7 @@ from llm.core.profiles import (
     suggest_compact_profile,
     suggest_micro_batch,
 )
-from llm.data.binary import ConversationLoader, PackedTokenLoader, token_dtype
+from llm.data.binary import ConversationLoader, MixtureLoader, PackedTokenLoader, token_dtype
 from llm.data.preference import PreferenceLoader
 from llm.model.transformer import CausalLM
 from llm.optimization.memory import configure_threads
@@ -43,16 +43,59 @@ def _check_memory(config: ExperimentConfig, hardware_memory_gb: float) -> None:
         )
 
 
+CURRICULUM_GROUPS = ("math",)
+
+
+def _conversation_mixture(
+    root: Path,
+    split: str,
+    weights: dict[str, float],
+    length: int,
+    batch: int,
+    tokenizer: BPETokenizer,
+    seed: int,
+) -> MixtureLoader:
+    dtype = token_dtype(tokenizer.vocab_size)
+    loaders = {}
+    for name in weights:
+        prefix = root / "sft_groups" / f"{split}.{name}"
+        if prefix.parent.joinpath(f"{prefix.name}.ids.bin").is_file():
+            shuffle = split == "train" and name not in CURRICULUM_GROUPS
+            loaders[name] = ConversationLoader(
+                prefix, dtype, length + 1, batch, tokenizer.pad_id, seed, shuffle
+            )
+    return MixtureLoader(loaders, {name: weights[name] for name in loaders}, seed)
+
+
 def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
     train, root = config.train, Path(config.train.data_dir)
     dtype = token_dtype(tokenizer.vocab_size)
     batch, length, seed = train.micro_batch_size, train.sequence_length, train.seed
     if train.stage == "pretrain":
+        if train.mixture:
+            groups = {
+                name: PackedTokenLoader(
+                    root / "tokens" / f"train.{name}.bin", dtype, length, batch, seed
+                )
+                for name in train.mixture
+            }
+            training_source: MixtureLoader | PackedTokenLoader = MixtureLoader(
+                groups, train.mixture, seed
+            )
+        else:
+            training_source = PackedTokenLoader(
+                root / "tokens" / "train.bin", dtype, length, batch, seed
+            )
         return (
-            PackedTokenLoader(root / "tokens" / "train.bin", dtype, length, batch, seed),
+            training_source,
             PackedTokenLoader(
                 root / "tokens" / "validation.bin", dtype, length, batch, seed, False
             ),
+        )
+    if train.stage == "sft" and train.mixture:
+        return tuple(
+            _conversation_mixture(root, split, train.mixture, length, batch, tokenizer, seed)
+            for split in ("train", "validation")
         )
     if train.stage == "sft":
         make = lambda split, shuffle: ConversationLoader(
@@ -81,7 +124,9 @@ def build_trainer(config: ExperimentConfig, resume: bool) -> Trainer:
         )
     seed_everything(train.seed)
     model = CausalLM(config.model)
-    checkpoints = CheckpointManager(train.checkpoint_dir, train.keep_checkpoints)
+    checkpoints = CheckpointManager(
+        train.checkpoint_dir, train.keep_checkpoints, train.protected_steps, train.checkpoint_alias
+    )
     if train.init_from:
         _load_init_weights(model, train.init_from)
     objective: Objective | None = None
@@ -103,6 +148,13 @@ def build_trainer(config: ExperimentConfig, resume: bool) -> Trainer:
         tokenizer.version,
         objective,
     )
+    if train.init_from and train.restore_optimizer and not resume:
+        source = CheckpointManager(train.init_from, keep=1).latest_valid() or Path(train.init_from)
+        CheckpointManager.load_optimizer_state(source, trainer.optimizer)
+        for group, decay in zip(
+            trainer.optimizer.param_groups, (train.optimizer.weight_decay, 0.0), strict=True
+        ):
+            group["weight_decay"] = decay
     if resume:
         trainer.resume()
     return trainer

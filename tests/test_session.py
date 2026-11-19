@@ -12,10 +12,8 @@ from tests.test_training import build_trainer
 
 def test_lock_prevents_second_session(tmp_path):
     lock = tmp_path / "lock"
-    with exclusive_session(lock):
-        with pytest.raises(ResourceError):
-            with exclusive_session(lock):
-                pass
+    with exclusive_session(lock), pytest.raises(ResourceError), exclusive_session(lock):
+        pass
     with exclusive_session(lock):
         pass
 

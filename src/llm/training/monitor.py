@@ -8,7 +8,11 @@ from pathlib import Path
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from llm.optimization.memory import device_memory_used_gb, ram_used_gb
+from llm.optimization.memory import (
+    device_memory_used_gb,
+    ram_used_gb,
+    swap_used_gb,
+)
 
 METRICS_FILE = "metrics.jsonl"
 PERPLEXITY_CAP = 20.0
@@ -37,6 +41,7 @@ class TrainingMonitor:
         elapsed = time.monotonic() - self.started
         return {
             "ram_gb": ram_used_gb(),
+            "swap_gb": swap_used_gb(),
             "device_memory_gb": device_memory_used_gb(self.device),
             "elapsed_seconds": elapsed,
         }

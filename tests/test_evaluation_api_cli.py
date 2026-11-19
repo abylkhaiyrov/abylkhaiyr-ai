@@ -136,6 +136,7 @@ def test_cli_exposes_all_required_commands():
         "generate",
         "chat",
         "serve",
+        "studio",
         "benchmark",
     ]:
         assert (
@@ -144,7 +145,7 @@ def test_cli_exposes_all_required_commands():
                     command,
                     *(
                         ["--checkpoint", "c"]
-                        if command in {"evaluate", "chat", "serve", "benchmark"}
+                        if command in {"evaluate", "chat", "serve", "studio", "benchmark"}
                         else []
                     ),
                     *(["p"] if command == "generate" else []),

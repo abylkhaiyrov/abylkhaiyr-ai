@@ -126,7 +126,7 @@ def test_real_sft_labels_cover_only_assistant_text():
 
     rows = [json.loads(line) for line in (PROCESSED / "sft" / "validation.jsonl").open()]
     for row in rows[:20]:
-        inputs, targets = loader.next_batch()
+        _, targets = loader.next_batch()
         trained = targets[0][targets[0] != -100].tolist()
         decoded = tokenizer.decode(trained, skip_special_tokens=True)
         assistant = row["messages"][-1]["content"]

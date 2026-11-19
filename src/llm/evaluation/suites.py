@@ -89,37 +89,109 @@ def check_constraint(case: ConstraintCase, response: str) -> bool:
     return False
 
 
+@dataclass(frozen=True)
+class MultiTurnCase:
+    turns: tuple[tuple[str, str], ...]
+    final_prompt: str
+    expected_substring: str
+    language: str
+
+
+@dataclass(frozen=True)
+class LogicCase:
+    prompt: str
+    expected: str
+    language: str
+
+
+MULTITURN_CASES = [
+    MultiTurnCase(
+        (("My name is Arman and I live in Almaty.", "Nice to meet you, Arman."),),
+        "What is my name?",
+        "arman",
+        "en",
+    ),
+    MultiTurnCase(
+        (("Меня зовут Айгуль, мой любимый цвет — синий.", "Приятно познакомиться, Айгуль."),),
+        "Какой мой любимый цвет?",
+        "син",
+        "ru",
+    ),
+    MultiTurnCase(
+        (("Менің атым Данияр, мен Астанада тұрамын.", "Танысқаныма қуаныштымын, Данияр."),),
+        "Мен қай қалада тұрамын?",
+        "астана",
+        "kk",
+    ),
+    MultiTurnCase(
+        (("Remember the code 7429 for later.", "Got it, I will remember 7429."),),
+        "What was the code I asked you to remember?",
+        "7429",
+        "en",
+    ),
+]
+
+CONTEXT_CASES = [
+    PromptCase(
+        "Context: The library opens at 9 AM and closes at 6 PM on weekdays. Question: When does the library close?",
+        "6",
+    ),
+    PromptCase(
+        "Контекст: Завод в Караганде производит 450 деталей в день. Вопрос: Сколько деталей производит завод в день?",
+        "450",
+    ),
+    PromptCase(
+        "Мәтін: Абай университеті 1928 жылы Алматыда ашылды. Сұрақ: Университет қай жылы ашылды?",
+        "1928",
+    ),
+    PromptCase(
+        "Context: Project Aurora uses Python and PostgreSQL for its backend. Question: Which database does Project Aurora use?",
+        "postgresql",
+    ),
+]
+
+LOGIC_CASES = [
+    LogicCase(
+        "Anna is taller than Bota. Bota is taller than Dana. Who is the shortest?", "Dana", "en"
+    ),
+    LogicCase(
+        "All birds have feathers. A sparrow is a bird. Does a sparrow have feathers?", "yes", "en"
+    ),
+    LogicCase("Асет старше Марата. Марат старше Тимура. Кто самый младший?", "Тимур", "ru"),
+    LogicCase("Айдана Сауледен биік. Сауле Мадинадан биік. Ең аласа кім?", "Мадина", "kk"),
+]
+
 CODE_CASES = [
     CodeCase(
-        "Write a Python function add(a, b) that returns the sum of a and b.",
-        "assert add(2, 3) == 5\nassert add(-1, 1) == 0",
+        "Write a Python function second_largest(xs) that returns the second largest distinct number of a list.",
+        "assert second_largest([1, 5, 3, 5]) == 3\nassert second_largest([9, 2]) == 2",
     ),
     CodeCase(
-        "Write a Python function is_even(n) that returns True if n is even.",
-        "assert is_even(4) and not is_even(3)",
+        "Write a Python function digit_sum(n) that returns the sum of the decimal digits of a non-negative integer.",
+        "assert digit_sum(123) == 6\nassert digit_sum(0) == 0",
     ),
     CodeCase(
-        "Write a Python function reverse(s) that returns the reversed string.",
-        "assert reverse('abc') == 'cba'\nassert reverse('') == ''",
+        "Write a Python function remove_duplicates(xs) that removes duplicates from a list keeping the first occurrences in order.",
+        "assert remove_duplicates([3, 1, 3, 2, 1]) == [3, 1, 2]",
     ),
     CodeCase(
-        "Write a Python function factorial(n) returning n factorial.",
-        "assert factorial(5) == 120\nassert factorial(0) == 1",
+        "Write a Python function is_sorted(xs) that returns True if the list is in non-decreasing order.",
+        "assert is_sorted([1, 2, 2, 5]) and not is_sorted([2, 1])",
     ),
     CodeCase(
-        "Write a Python function max_of(items) returning the largest item of a list.",
-        "assert max_of([1, 9, 3]) == 9",
+        "Write a Python function celsius_to_fahrenheit(c) that converts degrees Celsius to Fahrenheit.",
+        "assert celsius_to_fahrenheit(0) == 32\nassert celsius_to_fahrenheit(100) == 212",
     ),
     CodeCase(
-        "Write a Python function count_vowels(s) returning the number of vowels in s.",
-        "assert count_vowels('hello') == 2",
+        "Write a Python function merge_sorted(a, b) that merges two sorted lists into one sorted list.",
+        "assert merge_sorted([1, 4], [2, 3, 9]) == [1, 2, 3, 4, 9]",
     ),
     CodeCase(
-        "Write a Python function fib(n) returning the n-th Fibonacci number with fib(0)=0.",
-        "assert [fib(i) for i in range(7)] == [0, 1, 1, 2, 3, 5, 8]",
+        "Write a Python function capitalize_words(s) that capitalizes the first letter of every word of a string.",
+        "assert capitalize_words('hello big world') == 'Hello Big World'",
     ),
     CodeCase(
-        "Write a Python function is_palindrome(s) returning True for palindromes.",
-        "assert is_palindrome('level') and not is_palindrome('abc')",
+        "Write a Python function count_char(s, ch) that returns how many times the character ch occurs in s.",
+        "assert count_char('banana', 'a') == 3\nassert count_char('', 'x') == 0",
     ),
 ]

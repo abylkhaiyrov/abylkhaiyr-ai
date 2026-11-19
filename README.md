@@ -26,6 +26,34 @@ uv pip install -e ".[dev]"
 tensorboard --logdir experiments
 ```
 
+## Abylkhaiyr AI Studio
+
+Локальная панель управления использует тот же FastAPI backend, реестр экспериментов, checkpoint и Training Engine.
+Она доступна только на `127.0.0.1` и не передаёт данные во внешние AI API.
+
+```bash
+.venv/bin/llm studio
+```
+
+Studio автоматически использует самый свежий checkpoint. Для явного выбора:
+
+```bash
+.venv/bin/llm studio --checkpoint checkpoints/tiny_session
+```
+
+Первый запуск устанавливает frontend-зависимости, собирает production UI и создаёт локальную SQLite-базу
+`studio/studio.db`. Откройте [http://127.0.0.1:8000](http://127.0.0.1:8000). Начальные учётные данные
+только для локального режима: `admin` / `admin`; смените пароль после первого входа.
+
+Для разработки UI:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Vite откроет интерфейс на `http://127.0.0.1:5173` и направит `/api` на backend `127.0.0.1:8000`.
+
 ## Конфигурации
 | Файл | Параметры | Назначение |
 |---|---:|---|

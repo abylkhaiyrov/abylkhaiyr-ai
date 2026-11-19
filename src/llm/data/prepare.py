@@ -6,7 +6,12 @@ from pathlib import Path
 
 from llm.core.config import TokenizerConfig
 from llm.core.errors import DataError
-from llm.data.binary import read_jsonl, tokenize_corpus_split, tokenize_sft_split
+from llm.data.binary import (
+    read_jsonl,
+    tokenize_corpus_groups,
+    tokenize_corpus_split,
+    tokenize_sft_split,
+)
 from llm.data.pipeline import MANIFEST_FILE, SPLITS
 from llm.tokenizer.bpe import BPETokenizer
 
@@ -34,10 +39,10 @@ def train_tokenizer(data_dir: str | Path, config: TokenizerConfig) -> BPETokeniz
     return tokenizer
 
 
-def tokenize_dataset(data_dir: str | Path, tokenizer: BPETokenizer) -> dict[str, dict[str, int]]:
+def tokenize_dataset(data_dir: str | Path, tokenizer: BPETokenizer) -> dict[str, dict]:
     root = Path(data_dir)
     (root / TOKENS_DIR).mkdir(exist_ok=True)
-    summary: dict[str, dict[str, int]] = {}
+    summary: dict[str, dict] = {}
     for split in SPLITS:
         corpus_file = root / "corpus" / f"{split}.jsonl"
         sft_file = root / "sft" / f"{split}.jsonl"
@@ -45,6 +50,7 @@ def tokenize_dataset(data_dir: str | Path, tokenizer: BPETokenizer) -> dict[str,
             "tokens": tokenize_corpus_split(
                 corpus_file, root / TOKENS_DIR / f"{split}.bin", tokenizer
             ),
+            "groups": tokenize_corpus_groups(corpus_file, root / TOKENS_DIR, split, tokenizer),
             "conversations": tokenize_sft_split(sft_file, root / "sft" / split, tokenizer),
         }
     manifest_path = root / MANIFEST_FILE

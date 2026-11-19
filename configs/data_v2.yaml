@@ -1,0 +1,26 @@
+version: v2
+output_dir: data/v2
+raw_dir: data/raw
+decontaminate: true
+decontamination_ngram: 8
+validation_fraction: 0.005
+test_fraction: 0.005
+min_chars: 200
+sources:
+  - {name: wiki_ru, group: ru, dataset: wikimedia/wikipedia, config: 20231101.ru, text_field: text, language: ru, license: CC-BY-SA-3.0, max_documents: 16000}
+  - {name: web_ru, group: ru, dataset: HuggingFaceFW/fineweb-2, config: rus_Cyrl, text_field: text, language: ru, license: ODC-By-1.0, max_documents: 20000}
+  - {name: wiki_kk, group: kk, dataset: wikimedia/wikipedia, config: 20231101.kk, text_field: text, language: kk, license: CC-BY-SA-3.0, max_documents: 40000}
+  - {name: web_kk, group: kk, dataset: HuggingFaceFW/fineweb-2, config: kaz_Cyrl, text_field: text, language: kk, license: ODC-By-1.0, max_documents: 40000}
+  - {name: wiki_en, group: en, dataset: wikimedia/wikipedia, config: 20231101.en, text_field: text, language: en, license: CC-BY-SA-3.0, max_documents: 10000}
+  - {name: wiki_simple, group: en, dataset: wikimedia/wikipedia, config: 20231101.simple, text_field: text, language: en, license: CC-BY-SA-3.0, max_documents: 20000}
+  - {name: web_edu_en, group: en, dataset: HuggingFaceFW/fineweb-edu, config: sample-10BT, text_field: text, language: en, license: ODC-By-1.0, max_documents: 40000}
+  - {name: math_web, group: math, dataset: open-web-math/open-web-math, text_field: text, kind: math, language: en, check_language: false, license: ODC-By-1.0, max_documents: 12000}
+  - {name: gsm8k_train, group: math, dataset: openai/gsm8k, config: main, kind: math, template: "Question: {question}\nAnswer: {answer}", language: en, license: MIT}
+  - {name: code_python, group: code, dataset: codeparrot/codeparrot-clean, text_field: content, kind: code, license_field: license, license: per-file-permissive-only, min_chars: 200, max_documents: 12000}
+  - {name: code_javascript, group: code, dataset: angie-chen55/javascript-github-code, text_field: code, kind: code, license_field: license, license: per-file-permissive-only, min_chars: 200, max_documents: 8000}
+  - {name: code_java, group: code, dataset: google/code_x_glue_ct_code_to_text, config: java, text_field: original_string, kind: code, license: C-UDA-1.0-MIT, min_chars: 100, max_documents: 20000}
+  - {name: code_sql, group: code, dataset: b-mc2/sql-create-context, kind: code, template: "-- Schema:\n{context}\n-- Question: {question}\n{answer}", license: CC-BY-4.0, min_chars: 50, max_documents: 40000}
+  - {name: dolly_sft, group: sft, dataset: databricks/databricks-dolly-15k, kind: instruction, template: "{instruction}\n\n{context}", response_field: response, language: en, license: CC-BY-SA-3.0}
+  - {name: gsm8k_sft, group: sft, dataset: openai/gsm8k, config: main, kind: instruction, template: "{question}", response_field: answer, language: en, license: MIT}
+  - {name: sql_sft, group: sft, dataset: b-mc2/sql-create-context, kind: instruction, template: "Write an SQL query. Question: {question}\nSchema: {context}", response_field: answer, check_language: false, license: CC-BY-4.0, max_documents: 20000}
+  - {name: aya_sft, group: sft, dataset: CohereForAI/aya_dataset, kind: instruction, template: "{inputs}", response_field: targets, check_language: true, license: Apache-2.0}

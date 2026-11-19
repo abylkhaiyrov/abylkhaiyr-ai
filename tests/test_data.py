@@ -113,7 +113,7 @@ def test_no_near_duplicates_leak_across_splits(tmp_path, monkeypatch):
         docs.append(body)
         docs.append(body + " дополнение")
     records = [Record("s", "text", "ru", text) for text in docs]
-    monkeypatch.setattr(pipeline, "stream_source", lambda source, raw: iter(records))
+    monkeypatch.setattr(pipeline, "stream_source", lambda source, raw, licenses=None: iter(records))
     config = make_config(
         output_dir=str(tmp_path),
         validation_fraction=0.3,
@@ -192,3 +192,75 @@ def test_dotted_prefixes_do_not_collide(tmp_path, tokenizer):
         tmp_path / "train.rejected", dtype, 64, 1, tokenizer.pad_id, 0, False
     )
     assert chosen.next_batch()[1].tolist() != rejected.next_batch()[1].tolist()
+
+
+def test_math_generator_is_verified_balanced_and_deterministic():
+    from llm.data.mathgen import GENERATORS, build_dataset, verify_problem
+
+    first = build_dataset(300, seed=5)
+    assert [p.key for p in first] == [p.key for p in build_dataset(300, seed=5)]
+    assert all(verify_problem(p) for p in first)
+    assert len({p.category for p in first}) >= len(GENERATORS) - 1
+    assert len({p.key for p in first}) == len(first)
+
+
+def test_math_verifier_rejects_wrong_solution():
+    from dataclasses import replace
+
+    from llm.data.mathgen import build_dataset, verify_problem
+
+    problem = build_dataset(1, seed=3)[0]
+    wrong = replace(problem, solution=problem.solution.rsplit("####", 1)[0] + "#### 99999")
+    assert verify_problem(problem) and not verify_problem(wrong)
+
+
+def test_benchmark_and_training_math_never_overlap():
+    from llm.data.mathgen import build_dataset
+
+    benchmark = build_dataset(100, seed=777)
+    train = build_dataset(3000, seed=1, exclude={p.key for p in benchmark})
+    assert not {p.key for p in benchmark} & {p.key for p in train}
+
+
+def test_curriculum_orders_easy_before_hard():
+    import numpy as np
+
+    from llm.data.mathgen import build_dataset, curriculum_order
+
+    ordered = curriculum_order(build_dataset(1500, seed=2), seed=2)
+    third = len(ordered) // 3
+    early = np.mean([p.level for p in ordered[:third]])
+    late = np.mean([p.level for p in ordered[-third:]])
+    assert late > early + 1.0
+
+
+def test_decontamination_blocks_benchmark_ngrams():
+    from llm.data.decontamination import Decontaminator
+
+    guard = Decontaminator(
+        ["Natalia sold clips to 48 of her friends in April and then half as many in May"], 8
+    )
+    assert guard.is_contaminated(
+        "text before Natalia sold clips to 48 of her friends in April and after"
+    )
+    assert not guard.is_contaminated(
+        "A completely different sentence about the weather in Almaty today"
+    )
+
+
+def test_mixture_loader_weights_resume_and_groups(tmp_path):
+    from llm.data.binary import MixtureLoader
+
+    loaders = {}
+    for name, offset in (("a", 0), ("b", 1000)):
+        (np.arange(900, dtype=np.uint16) + offset).tofile(tmp_path / f"{name}.bin")
+        loaders[name] = PackedTokenLoader(
+            tmp_path / f"{name}.bin", np.dtype(np.uint16), 16, 2, seed=0
+        )
+    mixture = MixtureLoader(loaders, {"a": 3.0, "b": 1.0}, seed=0)
+    picks = [int(mixture.next_batch()[0][0, 0]) >= 1000 for _ in range(400)]
+    assert 0.15 < sum(picks) / 400 < 0.35
+    state = mixture.state_dict()
+    expected = [mixture.next_batch()[0].tolist() for _ in range(5)]
+    mixture.load_state_dict(state)
+    assert [mixture.next_batch()[0].tolist() for _ in range(5)] == expected

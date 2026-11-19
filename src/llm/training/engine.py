@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import math
 import logging
+import math
 import random
 import threading
 import time
@@ -214,7 +214,7 @@ class Trainer:
         self.model.train(was_training)
         return total / max(count, 1)
 
-    def save_checkpoint(self) -> None:
+    def save_checkpoint(self, label: str | None = None) -> None:
         self.checkpoints.save(
             self.model,
             self.model_config,
@@ -224,6 +224,7 @@ class Trainer:
             self.train_source.state_dict(),
             self.tokenizer_version,
             self.device,
+            label,
         )
 
     def train(self, stop_step: int | None = None) -> TrainingResult:
@@ -274,8 +275,13 @@ class Trainer:
                 )
                 self.logger.info(
                     "step %d/%d loss %.4f lr %.2e gnorm %.2f %.0f tok/s eta %.1f min",
-                    self.state.step, config.max_steps, mean_loss, learning_rate, grad_norm,
-                    window_tokens / elapsed, self.monitor.eta_seconds(self.state.step) / 60,
+                    self.state.step,
+                    config.max_steps,
+                    mean_loss,
+                    learning_rate,
+                    grad_norm,
+                    window_tokens / elapsed,
+                    self.monitor.eta_seconds(self.state.step) / 60,
                 )
                 window_loss, window_tokens, window_steps = 0.0, 0, 0
                 window_start = time.monotonic()
@@ -288,11 +294,18 @@ class Trainer:
                         "validation/perplexity": perplexity(last_validation),
                     },
                 )
-                if self._should_stop(last_validation):
+                improved = last_validation < self.state.best_validation_loss
+                stop = self._should_stop(last_validation)
+                if improved:
+                    self.save_checkpoint(self.checkpoints.best_label())
+                if stop:
                     stopped_early = True
                     self.save_checkpoint()
                     break
-            if self.state.step % config.checkpoint_interval == 0:
+            if (
+                self.state.step % config.checkpoint_interval == 0
+                or self.state.step in self.checkpoints.protected_steps
+            ):
                 self.save_checkpoint()
         if not stopped_early:
             self.save_checkpoint()

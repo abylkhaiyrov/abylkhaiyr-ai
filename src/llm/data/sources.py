@@ -19,6 +19,7 @@ class Record:
     response: str | None = None
     min_chars: int | None = None
     check_language: bool = True
+    group: str = "general"
 
 
 class _SafeDict(dict[str, Any]):
@@ -30,7 +31,9 @@ def _render(template: str, row: dict[str, Any]) -> str:
     return template.format_map(_SafeDict({k: v for k, v in row.items() if v is not None}))
 
 
-def stream_source(source: DataSourceConfig, raw_dir: str) -> Iterator[Record]:
+def stream_source(
+    source: DataSourceConfig, raw_dir: str, allowed_licenses: list[str] | None = None
+) -> Iterator[Record]:
     try:
         dataset = load_dataset(
             source.dataset, source.config, split=source.split, streaming=True, cache_dir=raw_dir
@@ -41,10 +44,22 @@ def stream_source(source: DataSourceConfig, raw_dir: str) -> Iterator[Record]:
     for row in dataset:
         if source.max_documents is not None and produced >= source.max_documents:
             return
+        if not _row_allowed(source, row, allowed_licenses):
+            continue
         record = _to_record(source, row)
         if record is not None:
             produced += 1
             yield record
+
+
+def _row_allowed(
+    source: DataSourceConfig, row: dict[str, Any], allowed_licenses: list[str] | None
+) -> bool:
+    if source.row_filter and any(str(row.get(k)) != v for k, v in source.row_filter.items()):
+        return False
+    if source.license_field is None or allowed_licenses is None:
+        return True
+    return str(row.get(source.license_field, "")).lower() in allowed_licenses
 
 
 def _to_record(source: DataSourceConfig, row: dict[str, Any]) -> Record | None:
@@ -63,6 +78,7 @@ def _to_record(source: DataSourceConfig, row: dict[str, Any]) -> Record | None:
             response,
             source.min_chars,
             source.check_language,
+            source.group,
         )
     if source.template is not None:
         text = _render(source.template, row)
@@ -78,4 +94,5 @@ def _to_record(source: DataSourceConfig, row: dict[str, Any]) -> Record | None:
         None,
         source.min_chars,
         source.check_language,
+        source.group,
     )

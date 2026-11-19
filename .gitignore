@@ -1,4 +1,9 @@
 .venv/
+frontend/node_modules/
+frontend/dist/
+studio/*.db
+studio/*.db-shm
+studio/*.db-wal
 __pycache__/
 *.pyc
 .pytest_cache/
@@ -10,3 +15,10 @@ data/tokenizer/
 data/*.log
 checkpoints/
 experiments/
+data/v2/corpus/
+data/v2/sft/
+data/v2/sft_groups/
+data/v2/tokens/
+data/v2/preference/
+releases/
+*.log

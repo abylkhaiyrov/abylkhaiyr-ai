@@ -1,0 +1,14 @@
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { ErrorState, LoadingState } from "@/components/data-state";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatBytes, formatNumber } from "@/lib/utils";
+
+export function MonitoringPage() {
+  const query = useQuery({ queryKey: ["system"], queryFn: api.system, refetchInterval: 5000 });
+  if (query.isPending) return <LoadingState />;
+  if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
+  const system = query.data;
+  const cards = [["CPU", `${formatNumber(system.cpu.percent)}%`, `${system.cpu.logical_cores ?? "—"} logical cores`], ["Memory", formatBytes(system.memory.used_bytes), `${formatBytes(system.memory.available_bytes)} available`], ["Swap", formatBytes(system.memory.swap_used_bytes), `${formatBytes(system.memory.swap_total_bytes)} total`], ["Device", system.gpu.device, system.gpu.supported_dtypes.join(", ")], ["Device memory", formatBytes(system.gpu.allocated_bytes), `Driver: ${formatBytes(system.gpu.driver_allocated_bytes)}`], ["Disk", formatBytes(system.disk.used_bytes), `${formatBytes(system.disk.free_bytes)} free`]];
+  return <div className="grid gap-5"><div><h1 className="text-xl font-semibold">Live Monitoring</h1><p className="text-sm text-muted-foreground">Unavailable platform metrics remain unavailable instead of being reported as zero.</p></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{cards.map(([title, value, caption]) => <Card key={title}><CardHeader><CardTitle>{title}</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{value}</p><p className="mt-1 text-xs text-muted-foreground">{caption}</p></CardContent></Card>)}</div><Card><CardHeader><CardTitle>CPU by core</CardTitle></CardHeader><CardContent><div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">{system.cpu.per_core_percent.map((percent, index) => <div key={index}><div className="flex justify-between text-xs"><span>Core {index + 1}</span><span>{formatNumber(percent)}%</span></div><div className="mt-1 h-2 overflow-hidden rounded bg-muted"><div className="h-full bg-primary" style={{ width: `${Math.min(percent, 100)}%` }} /></div></div>)}</div></CardContent></Card><Card><CardHeader><CardTitle>Storage allocation</CardTitle></CardHeader><CardContent className="grid gap-2 text-sm sm:grid-cols-2"><p>Datasets <strong className="float-right">{formatBytes(system.disk.datasets_bytes)}</strong></p><p>Checkpoints <strong className="float-right">{formatBytes(system.disk.checkpoints_bytes)}</strong></p><p>Studio database <strong className="float-right">{formatBytes(system.disk.database_bytes)}</strong></p><p>Experiments and logs <strong className="float-right">{formatBytes(system.disk.logs_bytes)}</strong></p></CardContent></Card></div>;
+}

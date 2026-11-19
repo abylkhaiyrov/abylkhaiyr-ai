@@ -70,10 +70,28 @@ class DataSourceConfig(StrictModel):
     max_chars: int = Field(default=20000, gt=0)
     min_chars: int | None = Field(default=None, ge=1)
     check_language: bool = True
+    group: str = "general"
+    license_field: str | None = None
+    row_filter: dict[str, str] | None = None
+
+
+PERMISSIVE_LICENSES = (
+    "mit",
+    "apache-2.0",
+    "bsd-2-clause",
+    "bsd-3-clause",
+    "isc",
+    "unlicense",
+    "cc0-1.0",
+)
 
 
 class DataConfig(StrictModel):
+    version: str = "v1"
     sources: list[DataSourceConfig]
+    allowed_licenses: list[str] = Field(default_factory=lambda: list(PERMISSIVE_LICENSES))
+    decontaminate: bool = False
+    decontamination_ngram: int = Field(default=8, ge=3)
     output_dir: str = "data/processed"
     raw_dir: str = "data/raw"
     validation_fraction: float = Field(default=0.01, gt=0, lt=0.5)
@@ -108,6 +126,7 @@ class TrainConfig(StrictModel):
     output_dir: str = "experiments/run"
     checkpoint_dir: str = "checkpoints/run"
     init_from: str | None = None
+    restore_optimizer: bool = False
     max_steps: int = Field(default=1000, gt=0)
     micro_batch_size: int = Field(default=8, gt=0)
     gradient_accumulation_steps: int = Field(default=4, gt=0)
@@ -117,6 +136,8 @@ class TrainConfig(StrictModel):
     log_interval: int = Field(default=10, gt=0)
     checkpoint_interval: int = Field(default=200, gt=0)
     keep_checkpoints: int = Field(default=3, gt=0)
+    protected_steps: list[int] = Field(default_factory=list)
+    checkpoint_alias: str | None = None
     early_stopping_patience: int | None = Field(default=None, gt=0)
     precision: PrecisionName = "auto"
     device: DeviceName = "auto"
@@ -128,6 +149,8 @@ class TrainConfig(StrictModel):
     max_ram_fraction: float = Field(default=0.85, gt=0, le=1)
     min_free_disk_gb: float = Field(default=2.0, ge=0)
     dpo_beta: float = Field(default=0.1, gt=0)
+    mixture: dict[str, float] = Field(default_factory=dict)
+    dataset_version: str | None = None
     optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
 
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -128,7 +130,19 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     )
     results = evaluator.run(include_dataset_suites=not args.offline)
     evaluator.save(results, args.output)
+    if args.name:
+        from llm.evaluation.registry import record_experiment
+
+        record_experiment(args.name, {"checkpoint": args.checkpoint, "note": args.note}, results)
     print(json.dumps(results, indent=2))
+    return 0
+
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    from llm.evaluation.registry import comparison_table, load_registry
+
+    entries = [e for e in load_registry() if not args.names or e["name"] in args.names]
+    print(comparison_table(entries))
     return 0
 
 
@@ -187,6 +201,43 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_studio(args: argparse.Namespace) -> int:
+    root = Path.cwd()
+    frontend = root / "frontend"
+    if args.checkpoint is None:
+        checkpoint = _latest_checkpoint_root(root)
+        if checkpoint is None:
+            print("error: no checkpoint found; pass --checkpoint", file=sys.stderr)
+            return 2
+        args.checkpoint = str(checkpoint)
+    frontend_process: subprocess.Popen[bytes] | None = None
+    if shutil.which("npm") is None:
+        print("error: npm is required for Abylkhaiyr AI Studio", file=sys.stderr)
+        return 2
+    if not (frontend / "node_modules").is_dir():
+        install = subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=frontend, check=False)
+        if install.returncode != 0:
+            return install.returncode
+    if args.dev:
+        frontend_process = subprocess.Popen(
+            ["npm", "run", "dev", "--", "--host", "127.0.0.1"],
+            cwd=frontend,
+        )
+    elif not (frontend / "dist" / "index.html").is_file():
+        build = subprocess.run(["npm", "run", "build"], cwd=frontend, check=False)
+        if build.returncode != 0:
+            return build.returncode
+    try:
+        return cmd_serve(args)
+    finally:
+        if frontend_process is not None and frontend_process.poll() is None:
+            frontend_process.terminate()
+            try:
+                frontend_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                frontend_process.kill()
+
+
 def cmd_benchmark(args: argparse.Namespace) -> int:
     from llm.evaluation.engine import EvaluationConfig, Evaluator
 
@@ -194,6 +245,13 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     results = Evaluator(engine, EvaluationConfig(data_dir=args.data_dir)).speed_and_memory()
     print(json.dumps(results, indent=2))
     return 0
+
+
+def _latest_checkpoint_root(root: Path) -> Path | None:
+    metadata = list((root / "checkpoints").glob("*/step-*/meta.json"))
+    if not metadata:
+        return None
+    return max(metadata, key=lambda item: item.stat().st_mtime).parent.parent
 
 
 def add_sampling_arguments(parser: argparse.ArgumentParser) -> None:
@@ -263,6 +321,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--output", default="experiments/evaluation.json")
     evaluate.add_argument("--gsm8k-cases", type=int, default=50)
     evaluate.add_argument("--offline", action="store_true")
+    evaluate.add_argument("--name")
+    evaluate.add_argument("--note", default="")
+
+    compare = add("compare", cmd_compare)
+    compare.add_argument("names", nargs="*")
 
     generate = add("generate", cmd_generate)
     add_model_arguments(generate)
@@ -280,6 +343,15 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--model-name", default="llm-local")
+
+    studio = add("studio", cmd_studio)
+    studio.add_argument("--checkpoint")
+    studio.add_argument("--tokenizer", default="data/tokenizer")
+    studio.add_argument("--device", default="auto")
+    studio.add_argument("--host", default="127.0.0.1")
+    studio.add_argument("--port", type=int, default=8000)
+    studio.add_argument("--model-name", default="llm-local")
+    studio.add_argument("--dev", action="store_true")
 
     benchmark = add("benchmark", cmd_benchmark)
     add_model_arguments(benchmark)

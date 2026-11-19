@@ -171,3 +171,44 @@ def test_no_memory_leak_across_steps(tmp_path, model_config):
         trainer._train_step()
     gc.collect()
     assert sum(1 for o in gc.get_objects() if isinstance(o, torch.Tensor)) <= baseline + 2
+
+
+def test_init_from_restores_weights_and_optimizer_moments(tmp_path, model_config):
+    from llm.core.config import ExperimentConfig, TokenizerConfig
+    from llm.training.runner import build_trainer
+
+    first = build_trainer_for_runner(tmp_path, model_config)
+    first.train()
+    config = ExperimentConfig(
+        name="continue",
+        model=model_config,
+        tokenizer=TokenizerConfig(vocab_size=model_config.vocab_size, path=str(tmp_path / "tok")),
+        train=first.config.model_copy(
+            update={
+                "init_from": str(tmp_path / "ckpt_runner"),
+                "restore_optimizer": True,
+                "checkpoint_dir": str(tmp_path / "ckpt_next"),
+                "output_dir": str(tmp_path / "exp_next"),
+                "max_steps": 20,
+            }
+        ),
+    )
+    second = build_trainer(config, resume=False)
+    assert second.state.step == 0
+    for a, b in zip(first.model.parameters(), second.model.parameters(), strict=True):
+        assert torch.allclose(a.cpu(), b.cpu())
+    moments = [s["exp_avg"].abs().sum().item() for s in second.optimizer.state.values()]
+    assert moments and all(m > 0 for m in moments)
+
+
+def build_trainer_for_runner(tmp_path, model_config):
+    from llm.core.config import TokenizerConfig
+    from llm.tokenizer.bpe import BPETokenizer
+    from tests.conftest import SAMPLE_TEXTS
+
+    tokenizer = BPETokenizer.train(
+        SAMPLE_TEXTS, TokenizerConfig(vocab_size=model_config.vocab_size, min_frequency=1)
+    )
+    tokenizer.save(tmp_path / "tok")
+    trainer = build_trainer(tmp_path, model_config, steps=6, name="runner")
+    return trainer

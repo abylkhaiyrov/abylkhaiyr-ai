@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 29% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 29% 12%;
+    --muted: 210 18% 94%;
+    --muted-foreground: 215 12% 43%;
+    --border: 214 20% 88%;
+    --primary: 173 65% 27%;
+    --primary-foreground: 0 0% 100%;
+    --destructive: 0 68% 48%;
+  }
+
+  .dark {
+    --background: 220 18% 7%;
+    --foreground: 210 20% 94%;
+    --card: 220 17% 10%;
+    --card-foreground: 210 20% 94%;
+    --muted: 220 14% 15%;
+    --muted-foreground: 214 12% 62%;
+    --border: 220 14% 20%;
+    --primary: 172 62% 43%;
+    --primary-foreground: 220 18% 7%;
+    --destructive: 0 72% 62%;
+  }
+
+  * { @apply border-border; }
+
+  html { @apply bg-background; }
+
+  body { @apply min-h-screen bg-background font-sans text-foreground antialiased; }
+
+  button, input, select, textarea { font: inherit; }
+
+  :focus-visible { @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background; }
+}
+
+@layer components {
+  .page-header { @apply flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between; }
+  .page-title { @apply text-2xl font-semibold tracking-tight; }
+  .page-subtitle { @apply text-sm text-muted-foreground; }
+  .metric-value { @apply mt-2 text-2xl font-semibold tracking-tight tabular-nums; }
+  .data-table { @apply w-full text-left text-sm; }
+  .data-table th { @apply whitespace-nowrap bg-muted/60 px-4 py-3 text-xs font-medium text-muted-foreground; }
+  .data-table td { @apply border-t px-4 py-3 align-middle; }
+}

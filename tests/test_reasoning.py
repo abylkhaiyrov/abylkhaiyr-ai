@@ -1,3 +1,5 @@
+import pytest
+
 from llm.core.errors import SandboxError
 from llm.reasoning.engine import Budget, MathVerifier, Problem, ReasoningEngine
 from llm.reasoning.sandbox import SandboxLimits, run_python
@@ -26,9 +28,10 @@ def test_sandbox_blocks_network_and_shell():
     assert not run_python("import subprocess; subprocess.Popen(['ls'])").passed
 
 
-def test_sandbox_runs_in_isolated_directory_without_environment():
+def test_sandbox_runs_in_isolated_directory_without_environment(monkeypatch):
+    monkeypatch.setenv("SECRET_TOKEN", "hunter2")
     result = run_python("import os; print(sorted(os.environ)); print(os.getcwd())")
-    assert "HOME" not in result.stdout and "llm-sandbox-" in result.stdout
+    assert "SECRET_TOKEN" not in result.stdout and "llm-sandbox-" in result.stdout
 
 
 def test_sandbox_limits_file_size():
@@ -116,3 +119,62 @@ def test_math_verifier_without_annotations_is_unverified():
 
 def test_sandbox_error_type_exists():
     assert issubclass(SandboxError, Exception)
+
+
+@pytest.mark.parametrize("language", ["python", "javascript", "typescript", "java"])
+def test_all_languages_run_and_block_writes_outside_workdir(language, tmp_path):
+    from llm.reasoning.sandbox import run_program
+
+    programs = {
+        "python": ("print(6 * 7)", f"open({str(tmp_path / 'x')!r}, 'w').write('x')"),
+        "javascript": (
+            "console.log(6 * 7)",
+            f"require('fs').writeFileSync({str(tmp_path / 'x')!r}, 'x')",
+        ),
+        "typescript": (
+            "const n: number = 6 * 7; console.log(n)",
+            f"require('fs').writeFileSync({str(tmp_path / 'x')!r}, 'x')",
+        ),
+        "java": (
+            "public class Main { public static void main(String[] a) { System.out.println(6 * 7); } }",
+            "public class Main { public static void main(String[] a) throws Exception { java.nio.file.Files.writeString(java.nio.file.Path.of("
+            + '"'
+            + str(tmp_path / "x")
+            + '"'
+            + '), "x"); } }',
+        ),
+    }
+    good, bad = programs[language]
+    assert run_program(language, good).stdout.strip() == "42"
+    assert not run_program(language, bad).passed
+    assert not (tmp_path / "x").exists()
+
+
+def test_task_classification():
+    from llm.reasoning.engine import classify_task
+
+    assert classify_task("Compute 12 + 7 - 3.") == "math"
+    assert classify_task("Write a Python function that reverses a string") == "code"
+    assert classify_task("Anna is taller than Bota. Who is the shortest?") == "logic"
+    assert classify_task("Tell me about the weather") == "general"
+
+
+def test_repair_arithmetic_fixes_calculator_errors():
+    from llm.reasoning.tools import repair_arithmetic
+
+    fixed = repair_arithmetic("48/2 is <<48/2=25>>25. #### 25")
+    assert "<<48/2=24>>24" in fixed and fixed.endswith("#### 24")
+
+
+def test_logic_verifier_requires_answer_from_the_question():
+    from llm.reasoning.engine import LogicVerifier
+
+    problem = Problem("Anna is taller than Bota. Who is the shortest?", "logic")
+    assert LogicVerifier().verify(problem, "so\n#### Bota").verified
+    assert not LogicVerifier().verify(problem, "so\n#### Zhanar").verified
+
+
+def test_solve_auto_picks_strategy():
+    engine = ReasoningEngine(ScriptedEngine(["<<2+2=5>> #### 5"]))
+    solution = engine.solve_auto("Compute 2 + 2.")
+    assert solution.answer == "4" and solution.verified

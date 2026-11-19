@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from fractions import Fraction
 
@@ -19,7 +20,8 @@ FUNCTION_NAMES = ("sqrt", "sin", "cos", "tan", "exp", "log", "pi", "E", "factori
 CONSTRUCTOR_NAMES = ("Integer", "Float", "Rational", "Symbol", "Function", "Mul", "Add", "Pow")
 SAFE_NAMESPACE = {name: getattr(sympy, name) for name in (*FUNCTION_NAMES, *CONSTRUCTOR_NAMES)}
 ANNOTATION_PATTERN = re.compile(r"<<([^<>=]+)=([^<>]+)>>")
-FINAL_ANSWER_PATTERN = re.compile(r"####\s*(-?[\d,]*\.?\d+)")
+FINAL_ANSWER_PATTERN = re.compile(r"####\s*(-?[\d,]*\.?\d+(?:/\d+)?)")
+TEXT_ANSWER_PATTERN = re.compile(r"####\s*(.+?)\s*$", re.MULTILINE)
 NUMBER_PATTERN = re.compile(r"-?[\d,]*\.?\d+")
 SAFE_EXPRESSION = re.compile(r"^[\d\s+\-*/().,^%a-zA-Z_]*$")
 MAX_EXPRESSION_CHARS = 200
@@ -78,6 +80,11 @@ def extract_final_answer(text: str) -> str | None:
     return numbers[-1].replace(",", "") if numbers else None
 
 
+def extract_text_answer(text: str) -> str | None:
+    match = TEXT_ANSWER_PATTERN.search(text)
+    return match.group(1) if match else None
+
+
 def answers_match(candidate: str | None, reference: str | None) -> bool:
     if candidate is None or reference is None:
         return False
@@ -87,3 +94,41 @@ def answers_match(candidate: str | None, reference: str | None) -> bool:
 
 def run_code_tests(code: str, tests: str, limits: SandboxLimits | None = None) -> SandboxResult:
     return run_python(f"{code}\n\n{tests}\n", limits)
+
+
+FENCE_PATTERN = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.DOTALL)
+
+
+def extract_code(text: str) -> str:
+    blocks = FENCE_PATTERN.findall(text)
+    return blocks[0] if blocks else text
+
+
+def is_valid_python(code: str) -> bool:
+    try:
+        ast.parse(code)
+    except SyntaxError:
+        return False
+    return bool(code.strip())
+
+
+ECHOED_ANNOTATION = re.compile(r"<<([^<>=]+)=([^<>]+)>>(\2)?")
+
+
+def repair_arithmetic(text: str) -> str:
+    last: list[str] = []
+
+    def correct(match: re.Match[str]) -> str:
+        expression, claimed, echoed = match.group(1), match.group(2), match.group(3)
+        value = evaluate_expression(expression)
+        if value is None or not value.is_number:
+            return match.group(0)
+        shown = str(sympy.nsimplify(value)) if value.is_Rational else str(value)
+        last[:] = [claimed.strip(), shown]
+        return f"<<{expression}={shown}>>" + (shown if echoed else "")
+
+    repaired = ECHOED_ANNOTATION.sub(correct, text)
+    answer = extract_final_answer(text)
+    if last and answer is not None and to_number(answer) == to_number(last[0]):
+        repaired = FINAL_ANSWER_PATTERN.sub(f"#### {last[1]}", repaired)
+    return repaired

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
+from typing import BinaryIO, Protocol
 
 import numpy as np
 import torch
@@ -14,6 +15,7 @@ from llm.tokenizer.bpe import BPETokenizer, Message
 UINT16_LIMIT = 1 << 16
 FLUSH_TOKENS = 1 << 20
 IGNORE_INDEX = -100
+TOKENIZE_BATCH = 1000
 
 
 def with_extension(prefix: Path, extension: str) -> Path:
@@ -52,6 +54,36 @@ def tokenize_corpus_split(corpus_file: Path, output_file: Path, tokenizer: BPETo
         [tokenizer.bos_id, *ids, tokenizer.eos_id] for ids in tokenizer.encode_stream(texts)
     )
     return write_token_stream(output_file, documents, token_dtype(tokenizer.vocab_size))
+
+
+def tokenize_corpus_groups(
+    corpus_file: Path, directory: Path, split: str, tokenizer: BPETokenizer
+) -> dict[str, int]:
+    dtype = token_dtype(tokenizer.vocab_size)
+    counts: dict[str, int] = {}
+    handles: dict[str, BinaryIO] = {}
+    try:
+        batch: list[dict] = []
+        for row in [*read_jsonl(corpus_file), None]:
+            if row is not None:
+                batch.append(row)
+            if len(batch) < TOKENIZE_BATCH and row is not None:
+                continue
+            encoded = tokenizer.encode_batch([item["text"] for item in batch])
+            for item, ids in zip(batch, encoded, strict=True):
+                group = item.get("group", "general")
+                if group not in handles:
+                    handles[group] = with_extension(directory / f"{split}.{group}", ".bin").open(
+                        "wb"
+                    )
+                document = [tokenizer.bos_id, *ids, tokenizer.eos_id]
+                np.asarray(document, dtype=dtype).tofile(handles[group])
+                counts[group] = counts.get(group, 0) + len(document)
+            batch = []
+    finally:
+        for handle in handles.values():
+            handle.close()
+    return counts
 
 
 def tokenize_sft_split(sft_file: Path, prefix: Path, tokenizer: BPETokenizer) -> int:
@@ -191,3 +223,45 @@ class ConversationLoader:
     def load_state_dict(self, state: dict[str, int]) -> None:
         self.epoch, self.cursor = state["epoch"], state["cursor"]
         self.order = self._make_order()
+
+
+class Loader(Protocol):
+    def next_batch(self) -> tuple[Tensor, ...]: ...
+    def set_batch_size(self, batch_size: int) -> None: ...
+    def state_dict(self) -> dict[str, int]: ...
+    def load_state_dict(self, state: dict[str, int]) -> None: ...
+
+
+class MixtureLoader:
+    def __init__(self, loaders: Mapping[str, Loader], weights: Mapping[str, float], seed: int):
+        if set(weights) != set(loaders):
+            raise DataError("mixture weights must match the available groups")
+        total = sum(weights.values())
+        self.names = sorted(loaders)
+        self.probabilities = np.asarray([weights[name] / total for name in self.names])
+        self.loaders = loaders
+        self.seed = seed
+        self.counter = 0
+
+    def set_batch_size(self, batch_size: int) -> None:
+        for loader in self.loaders.values():
+            loader.set_batch_size(batch_size)
+
+    def next_batch(self) -> tuple[Tensor, ...]:
+        rng = np.random.default_rng((self.seed, self.counter))
+        self.counter += 1
+        name = self.names[int(rng.choice(len(self.names), p=self.probabilities))]
+        return self.loaders[name].next_batch()
+
+    def state_dict(self) -> dict[str, int]:
+        state = {"counter": self.counter}
+        for name, loader in self.loaders.items():
+            state.update({f"{name}.{key}": value for key, value in loader.state_dict().items()})
+        return state
+
+    def load_state_dict(self, state: dict[str, int]) -> None:
+        self.counter = state.get("counter", 0)
+        for name, loader in self.loaders.items():
+            loader.load_state_dict(
+                {key: state.get(f"{name}.{key}", 0) for key in ("epoch", "cursor")}
+            )

@@ -11,6 +11,7 @@ from llm.core.config import DataConfig
 from llm.core.errors import ResourceError
 from llm.core.hardware import free_disk_gb
 from llm.data.cleaning import clean_for_kind, detect_language, repeated_line_ratio, symbol_ratio
+from llm.data.decontamination import Decontaminator, benchmark_texts
 from llm.data.dedup import ExactDeduplicator, MinHashDeduplicator, stable_hash
 from llm.data.sources import Record, stream_source
 
@@ -70,6 +71,11 @@ class CorpusBuilder:
     def __init__(self, config: DataConfig) -> None:
         self.config = config
         self.quality = QualityFilter(config)
+        self.decontaminator = (
+            Decontaminator(benchmark_texts(), config.decontamination_ngram)
+            if config.decontaminate
+            else None
+        )
         self.exact = {group: ExactDeduplicator() for group in GROUPS}
         self.near = {
             group: MinHashDeduplicator(
@@ -101,7 +107,9 @@ class CorpusBuilder:
                 source_stats = stats[source.name] = SourceStats(
                     source.license, source.dataset, source.config
                 )
-                for record in stream_source(source, self.config.raw_dir):
+                for record in stream_source(
+                    source, self.config.raw_dir, self.config.allowed_licenses
+                ):
                     source_stats.seen += 1
                     self._process(record, handles, source_stats, split_counts)
         manifest = {
@@ -116,6 +124,7 @@ class CorpusBuilder:
                 }
                 for name, s in stats.items()
             },
+            "version": self.config.version,
             "splits": dict(split_counts),
             "seed": self.config.seed,
             "near_duplicate_threshold": self.config.near_duplicate_threshold,
@@ -139,6 +148,12 @@ class CorpusBuilder:
         if reason is None and response is not None and not response:
             reason = "empty_response"
         group = "sft" if response is not None else "corpus"
+        if (
+            reason is None
+            and self.decontaminator
+            and self.decontaminator.is_contaminated(full_text)
+        ):
+            reason = "benchmark_overlap"
         if reason is None and self.exact[group].is_duplicate(full_text):
             reason = "exact_duplicate"
         if reason is None and self.near[group].is_duplicate(full_text):
@@ -153,6 +168,7 @@ class CorpusBuilder:
             payload: dict[str, object] = {
                 "source": record.source,
                 "language": record.language,
+                "group": record.group,
                 "text": text,
             }
             handles[("corpus", split)].write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -161,5 +177,5 @@ class CorpusBuilder:
                 {"role": "user", "content": text},
                 {"role": "assistant", "content": response},
             ]
-            payload = {"source": record.source, "messages": messages}
+            payload = {"source": record.source, "group": record.group, "messages": messages}
             handles[("sft", split)].write(json.dumps(payload, ensure_ascii=False) + "\n")

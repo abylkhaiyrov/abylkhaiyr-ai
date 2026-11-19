@@ -5,6 +5,7 @@ import json
 import os
 import random
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -94,9 +95,17 @@ def load_model_weights(model: nn.Module, path: Path) -> None:
 
 
 class CheckpointManager:
-    def __init__(self, directory: str | Path, keep: int) -> None:
+    def __init__(
+        self,
+        directory: str | Path,
+        keep: int,
+        protected_steps: Iterable[int] = (),
+        alias_prefix: str | None = None,
+    ) -> None:
         self.directory = Path(directory)
         self.keep = keep
+        self.protected_steps = frozenset(protected_steps)
+        self.alias_prefix = alias_prefix
         self.directory.mkdir(parents=True, exist_ok=True)
 
     def step_dir(self, step: int) -> Path:
@@ -119,8 +128,9 @@ class CheckpointManager:
         loader_state: dict[str, int],
         tokenizer_version: str,
         device: torch.device,
+        label: str | None = None,
     ) -> Path:
-        target = self.step_dir(state.step)
+        target = self.directory / label if label else self.step_dir(state.step)
         temporary = target.with_name(target.name + TEMP_SUFFIX)
         if temporary.exists():
             shutil.rmtree(temporary)
@@ -145,12 +155,35 @@ class CheckpointManager:
         if target.exists():
             shutil.rmtree(target)
         os.replace(temporary, target)
-        self._prune()
+        if not label:
+            self._publish_aliases(target, state.step)
+            self._prune()
         return target
+
+    def best_label(self) -> str:
+        return f"{self.alias_prefix}_best" if self.alias_prefix else "best"
+
+    def alias_path(self, suffix: str) -> Path:
+        return self.directory / f"{self.alias_prefix}_{suffix}"
+
+    def _link(self, alias: Path, target: Path) -> None:
+        alias.unlink(missing_ok=True)
+        alias.symlink_to(target.name)
+
+    def _publish_aliases(self, target: Path, step: int) -> None:
+        if not self.alias_prefix:
+            return
+        self._link(self.alias_path("latest"), target)
+        if step in self.protected_steps:
+            self._link(self.alias_path(f"step_{step}"), target)
+
+    def _is_protected(self, path: Path) -> bool:
+        return int(path.name.removeprefix(STEP_PREFIX)) in self.protected_steps
 
     def _prune(self) -> None:
         for stale in self.list_steps()[: -self.keep]:
-            shutil.rmtree(stale)
+            if not self._is_protected(stale):
+                shutil.rmtree(stale)
 
     @staticmethod
     def verify(path: Path) -> dict[str, Any]:
@@ -172,6 +205,12 @@ class CheckpointManager:
                 continue
             return path
         return None
+
+    @staticmethod
+    def load_optimizer_state(path: Path, optimizer: torch.optim.Optimizer) -> None:
+        CheckpointManager.verify(path)
+        payload = torch.load(path / STATE_FILE, map_location="cpu", weights_only=False)
+        optimizer.load_state_dict(payload["optimizer"])
 
     def restore(
         self,

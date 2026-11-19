@@ -5,14 +5,18 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
+from llm.studio.api import create_studio_router
+from llm.studio.service import StudioService
 from llm.tokenizer.bpe import Message
 
 DEFAULT_HOST = "127.0.0.1"
@@ -58,9 +62,17 @@ def sse(payload: dict | str) -> str:
     return f"data: {payload if isinstance(payload, str) else json.dumps(payload)}\n\n"
 
 
-def create_app(engine: InferenceEngine, model_name: str) -> FastAPI:
+def create_app(
+    engine: InferenceEngine,
+    model_name: str,
+    studio_root: Path | None = None,
+) -> FastAPI:
     app = FastAPI(title="llm", docs_url=None, redoc_url=None)
     lock = threading.Lock()
+    root = (studio_root or Path.cwd()).resolve()
+    studio = StudioService(root, model_name)
+    app.state.studio = studio
+    app.include_router(create_studio_router(studio, engine, lock))
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -107,6 +119,19 @@ def create_app(engine: InferenceEngine, model_name: str) -> FastAPI:
                 "total_tokens": prompt_tokens + len(reply.token_ids),
             },
         }
+
+    frontend_dist = root / "frontend" / "dist"
+    if frontend_dist.is_dir():
+        assets = frontend_dist / "assets"
+        if assets.is_dir():
+            app.mount("/assets", StaticFiles(directory=assets), name="studio-assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        def studio_frontend(path: str) -> FileResponse:
+            requested = (frontend_dist / path).resolve()
+            if path and frontend_dist in requested.parents and requested.is_file():
+                return FileResponse(requested)
+            return FileResponse(frontend_dist / "index.html")
 
     return app
 

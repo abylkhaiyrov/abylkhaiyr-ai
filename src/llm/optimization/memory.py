@@ -18,6 +18,10 @@ def ram_used_gb() -> float:
     return psutil.Process().memory_info().rss / BYTES_PER_GB
 
 
+def swap_used_gb() -> float:
+    return psutil.swap_memory().used / BYTES_PER_GB
+
+
 def ram_fraction_used() -> float:
     return psutil.virtual_memory().percent / 100.0
 
