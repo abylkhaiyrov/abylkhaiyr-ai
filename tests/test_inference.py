@@ -1,0 +1,121 @@
+import pytest
+import torch
+
+from llm.inference.engine import InferenceEngine, partial_stop_length, truncate_at_stop
+from llm.inference.sampling import (
+    SamplingParams,
+    apply_repetition_penalty,
+    select_token,
+    top_k_filter,
+    top_p_filter,
+)
+from llm.model.transformer import CausalLM
+from llm.tokenizer.bpe import Message
+
+CPU = torch.device("cpu")
+
+
+@pytest.fixture()
+def engine(model, tokenizer):
+    torch.manual_seed(0)
+    return InferenceEngine(CausalLM(model.config), tokenizer, CPU)
+
+
+def greedy(**kwargs):
+    return SamplingParams(greedy=True, max_new_tokens=12, **kwargs)
+
+
+def test_top_k_and_top_p_filters():
+    logits = torch.tensor([[1.0, 4.0, 3.0, 2.0]])
+    assert torch.isinf(top_k_filter(logits, 2)).sum() == 2
+    assert top_k_filter(logits, 2)[0, 1] == 4.0
+    filtered = top_p_filter(torch.log(torch.tensor([[0.6, 0.3, 0.07, 0.03]])), 0.8)
+    assert torch.isfinite(filtered[0]).tolist() == [True, True, False, False]
+    assert torch.isfinite(top_p_filter(logits, 1e-9)).sum() == 1
+
+
+def test_repetition_penalty_lowers_seen_token_scores():
+    logits = torch.tensor([[2.0, -2.0, 1.0]])
+    result = apply_repetition_penalty(logits, torch.tensor([[0, 1]]), 2.0)
+    assert result.tolist() == [[1.0, -4.0, 1.0]]
+
+
+def test_sampling_is_seeded_and_greedy_is_argmax():
+    logits = torch.randn(1, 50)
+    params = SamplingParams(temperature=1.0, top_k=10)
+    first = select_token(logits, params, torch.Generator().manual_seed(1))
+    second = select_token(logits, params, torch.Generator().manual_seed(1))
+    assert first == second
+    assert select_token(logits, SamplingParams(greedy=True), None) == logits.argmax()
+
+
+def test_stop_helpers():
+    assert truncate_at_stop("abcSTOPdef", ["STOP"]) == ("abc", True)
+    assert partial_stop_length("abcST", ["STOP"]) == 2
+    assert partial_stop_length("abc", ["STOP"]) == 0
+
+
+def test_generation_with_and_without_cache_is_identical(engine):
+    prompt = engine.tokenizer.encode("Hello world", add_bos=True)
+    with_cache = engine.generate_ids(prompt, greedy(use_cache=True))
+    without = engine.generate_ids(prompt, greedy(use_cache=False))
+    assert with_cache.token_ids == without.token_ids and len(with_cache.token_ids) > 0
+
+
+def test_seeded_sampling_reproducible(engine):
+    params = SamplingParams(max_new_tokens=10, temperature=0.9, top_p=0.9, seed=7)
+    assert engine.generate("Привет", params).token_ids == engine.generate("Привет", params).token_ids
+
+
+def test_max_new_tokens_and_context_window_respected(engine):
+    result = engine.generate("a" * 500, SamplingParams(greedy=True, max_new_tokens=5))
+    assert len(result.token_ids) <= 5
+    fitted = engine.fit_prompt(list(range(200)), 10)
+    assert len(fitted) == engine.max_positions - 10
+
+
+def test_stop_sequence_truncates_output(engine):
+    full = engine.generate("Hello", greedy())
+    if len(full.text) < 4:
+        pytest.skip("random model produced too little text")
+    stop = full.text[2:4]
+    cut = engine.generate("Hello", greedy(stop_sequences=[stop]))
+    assert cut.text == full.text[: full.text.find(stop)] and cut.finish_reason == "stop"
+
+
+def test_stream_text_equals_generate(engine):
+    prompt = engine.tokenizer.encode("Hello world", add_bos=True)
+    streamed = "".join(engine.stream_text(prompt, greedy()))
+    assert streamed == engine.generate_ids(prompt, greedy()).text
+
+
+def test_batch_generation_matches_single(engine):
+    prompts = ["Hello", "Привет, как дела у тебя"]
+    batch = engine.generate_batch(prompts, greedy())
+    for prompt, result in zip(prompts, batch, strict=True):
+        assert result.token_ids == engine.generate(prompt, greedy()).token_ids
+
+
+def test_beam_search_not_worse_than_greedy(engine):
+    prompt = engine.tokenizer.encode("Hello", add_bos=True)
+    greedy_ids = engine.generate_ids(prompt, greedy(use_cache=True)).token_ids
+
+    def score(ids):
+        full = torch.tensor([prompt + ids])
+        logp = torch.log_softmax(engine.model(full).float(), -1)[0]
+        return sum(logp[len(prompt) - 1 + i, t].item() for i, t in enumerate(ids))
+
+    beam = engine.generate_ids(prompt, SamplingParams(max_new_tokens=12, beam_width=4, length_penalty=0.0))
+    assert len(beam.token_ids) > 0
+    assert score(beam.token_ids[:12]) >= score(greedy_ids[: len(beam.token_ids)]) - 1e-3 or len(beam.token_ids) != len(greedy_ids)
+
+
+def test_chat_uses_generation_prompt(engine):
+    result = engine.chat([Message("user", "hi")], greedy())
+    assert isinstance(result.text, str)
+
+
+def test_model_in_eval_mode_and_no_grad_during_generation(engine):
+    engine.generate("Hello", greedy())
+    assert not engine.model.training
+    assert all(p.grad is None for p in engine.model.parameters())

@@ -1,0 +1,15 @@
+sources:
+  - {name: wiki_kk, dataset: wikimedia/wikipedia, config: 20231101.kk, text_field: text, language: kk, license: CC-BY-SA-3.0, max_documents: 8000}
+  - {name: wiki_ru, dataset: wikimedia/wikipedia, config: 20231101.ru, text_field: text, language: ru, license: CC-BY-SA-3.0, max_documents: 6000}
+  - {name: wiki_en_simple, dataset: wikimedia/wikipedia, config: 20231101.simple, text_field: text, language: en, license: CC-BY-SA-3.0, max_documents: 15000}
+  - {name: tinystories, dataset: roneneldan/TinyStories, text_field: text, language: en, license: CDLA-Sharing-1.0, max_documents: 30000}
+  - {name: gsm8k_pretrain, dataset: openai/gsm8k, config: main, kind: math, template: "Question: {question}\nAnswer: {answer}", language: en, license: MIT}
+  - {name: codealpaca_pretrain, dataset: sahil2801/CodeAlpaca-20k, kind: code, min_chars: 40, template: "# {instruction}\n{input}\n{output}", license: CC-BY-4.0}
+  - {name: dolly_sft, dataset: databricks/databricks-dolly-15k, kind: instruction, template: "{instruction}\n\n{context}", response_field: response, language: en, license: CC-BY-SA-3.0}
+  - {name: gsm8k_sft, dataset: openai/gsm8k, config: main, kind: instruction, template: "{question}", response_field: answer, language: en, license: MIT}
+  - {name: codealpaca_sft, dataset: sahil2801/CodeAlpaca-20k, kind: instruction, template: "{instruction}\n{input}", response_field: output, check_language: false, license: CC-BY-4.0}
+output_dir: data/processed
+raw_dir: data/raw
+validation_fraction: 0.01
+test_fraction: 0.01
+min_chars: 200
