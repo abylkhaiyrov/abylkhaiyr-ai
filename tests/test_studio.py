@@ -416,3 +416,64 @@ def test_reasoning_mode_and_chat_edit_regenerate_continue(
             pass
     after_regen = client.get(f"/api/chats/{chat['id']}").json()["messages"]
     assert [m["content"] for m in after_regen] == ["Updated question", "regen!"]
+
+
+def test_scheduler_cancels_queued_request(model_config, tokenizer, tmp_path, monkeypatch):
+    import threading
+    import time
+
+    client = studio_client(model_config, tokenizer, tmp_path)
+    client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    csrf = client.cookies.get("abylkhaiyr_csrf")
+    chat = client.post("/api/chats", headers={"X-CSRF-Token": csrf}, json={}).json()
+    gate = threading.Event()
+
+    def slow_generate(*args, **kwargs):
+        yield "part1"
+        gate.wait(timeout=2.0)
+        yield "part2"
+
+    monkeypatch.setattr(InferenceEngine, "stream_chat", slow_generate)
+    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+        ws.send_json({"type": "subscribe", "channels": ["chat"]})
+        ws.send_json(
+            {
+                "type": "generation.start",
+                "request_id": "first-running",
+                "chat_id": chat["id"],
+                "content": "First",
+            }
+        )
+        while ws.receive_json()["type"] != "generation.delta":
+            pass
+        ws.send_json(
+            {
+                "type": "generation.start",
+                "request_id": "second-queued",
+                "chat_id": chat["id"],
+                "content": "Second",
+            }
+        )
+        queued_event = ws.receive_json()
+        while queued_event["type"] != "generation.queued":
+            queued_event = ws.receive_json()
+        assert queued_event["request_id"] == "second-queued"
+        assert queued_event["queue_reason"] == "another_generation_running"
+        ws.send_json({"type": "generation.cancel", "request_id": "second-queued"})
+        cancelled_event = ws.receive_json()
+        while (
+            cancelled_event["type"] != "generation.cancelled"
+            or cancelled_event["request_id"] != "second-queued"
+        ):
+            cancelled_event = ws.receive_json()
+        assert cancelled_event["reason"] == "cancelled_in_queue"
+        gate.set()
+        done_event = ws.receive_json()
+        while (
+            done_event["type"] != "generation.completed"
+            or done_event["request_id"] != "first-running"
+        ):
+            done_event = ws.receive_json()
+        time.sleep(0.05)
+    messages = client.get(f"/api/chats/{chat['id']}").json()["messages"]
+    assert [m["content"] for m in messages] == ["First", "part1part2"]
