@@ -5,8 +5,12 @@ from torch.nn import functional
 IGNORE_INDEX = -100
 
 
+def compute_dtype(tensor: Tensor) -> torch.dtype:
+    return torch.promote_types(tensor.dtype, torch.float32)
+
+
 def causal_lm_loss_sum(logits: Tensor, targets: Tensor) -> tuple[Tensor, int]:
-    flat_logits = logits.reshape(-1, logits.shape[-1]).float()
+    flat_logits = logits.reshape(-1, logits.shape[-1]).to(compute_dtype(logits))
     flat_targets = targets.reshape(-1)
     total = functional.cross_entropy(
         flat_logits, flat_targets, ignore_index=IGNORE_INDEX, reduction="sum"
@@ -15,7 +19,7 @@ def causal_lm_loss_sum(logits: Tensor, targets: Tensor) -> tuple[Tensor, int]:
 
 
 def sequence_log_probs(logits: Tensor, targets: Tensor) -> Tensor:
-    log_probs = torch.log_softmax(logits.float(), dim=-1)
+    log_probs = torch.log_softmax(logits.to(compute_dtype(logits)), dim=-1)
     mask = targets != IGNORE_INDEX
     gathered = log_probs.gather(-1, targets.clamp(min=0).unsqueeze(-1)).squeeze(-1)
     return (gathered * mask).sum(dim=-1)

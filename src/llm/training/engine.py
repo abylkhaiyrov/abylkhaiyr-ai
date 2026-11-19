@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import math
+import logging
 import random
+import threading
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -67,6 +69,7 @@ class TrainingResult:
     last_validation_loss: float
     best_validation_loss: float
     stopped_early: bool
+    interrupted: bool = False
 
 
 class Trainer:
@@ -95,6 +98,8 @@ class Trainer:
         self.checkpoints = checkpoints
         self.monitor = monitor
         self.tokenizer_version = tokenizer_version
+        self.stop_event = threading.Event()
+        self.logger = logging.getLogger("llm.training")
         self.optimizer = build_optimizer(self.model, config)
         self.scaler = make_grad_scaler(device, dtype)
         self.state = TrainingState(
@@ -228,8 +233,11 @@ class Trainer:
         self.monitor.begin(self.state.step)
         window_loss, window_tokens, window_steps = 0.0, 0, 0
         window_start = time.monotonic()
-        skips, last_validation, stopped_early = 0, float("nan"), False
+        skips, last_validation, stopped_early, interrupted = 0, float("nan"), False, False
         while self.state.step < limit:
+            if self.stop_event.is_set():
+                interrupted = True
+                break
             if free_disk_gb(config.checkpoint_dir) < config.min_free_disk_gb:
                 raise ResourceError("not enough free disk space to continue training")
             ensure_ram_budget(config.max_ram_fraction)
@@ -264,6 +272,11 @@ class Trainer:
                         **{f"system/{k}": v for k, v in self.monitor.system_metrics().items()},
                     },
                 )
+                self.logger.info(
+                    "step %d/%d loss %.4f lr %.2e gnorm %.2f %.0f tok/s eta %.1f min",
+                    self.state.step, config.max_steps, mean_loss, learning_rate, grad_norm,
+                    window_tokens / elapsed, self.monitor.eta_seconds(self.state.step) / 60,
+                )
                 window_loss, window_tokens, window_steps = 0.0, 0, 0
                 window_start = time.monotonic()
             if self.state.step % config.eval_interval == 0 or self.state.step == limit:
@@ -283,6 +296,8 @@ class Trainer:
                 self.save_checkpoint()
         if not stopped_early:
             self.save_checkpoint()
+        if interrupted:
+            self.logger.warning("interrupted at step %d; checkpoint saved", self.state.step)
         self.monitor.close()
         return TrainingResult(
             self.state.step,
@@ -290,6 +305,7 @@ class Trainer:
             last_validation,
             self.state.best_validation_loss,
             stopped_early,
+            interrupted,
         )
 
     def _should_stop(self, validation_loss: float) -> bool:

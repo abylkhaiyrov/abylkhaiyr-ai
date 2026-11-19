@@ -91,7 +91,7 @@ def cmd_train_tokenizer(args: argparse.Namespace) -> int:
 
 def _train(args: argparse.Namespace, resume: bool, finetuning: bool = False) -> int:
     from llm.core.config import load_experiment_config
-    from llm.training.runner import build_trainer
+    from llm.training.session import run_training
 
     config = load_experiment_config(args.config)
     if args.stage:
@@ -102,8 +102,7 @@ def _train(args: argparse.Namespace, resume: bool, finetuning: bool = False) -> 
         config.train.max_steps = args.max_steps
     if args.init_from:
         config.train.init_from = args.init_from
-    trainer = build_trainer(config, resume)
-    result = trainer.train(stop_step=args.stop_step)
+    result = run_training(config, resume, args.stop_step, args.max_restarts)
     print(json.dumps(result.__dict__))
     return 0
 
@@ -221,6 +220,7 @@ def add_training_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--stop-step", type=int)
     parser.add_argument("--init-from")
+    parser.add_argument("--max-restarts", type=int, default=0)
 
 
 def build_parser() -> argparse.ArgumentParser:
