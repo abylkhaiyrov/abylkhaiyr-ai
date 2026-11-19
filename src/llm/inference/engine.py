@@ -88,17 +88,21 @@ class InferenceEngine:
                 return
             pending = torch.tensor([[token]], device=self.device)
 
-    def stream_text(self, prompt_ids: list[int], params: SamplingParams) -> Iterator[str]:
+    def stream_text(
+        self, prompt_ids: list[int], params: SamplingParams, stop_token_ids: set[int] | None = None
+    ) -> Iterator[str]:
         generated: list[int] = []
         emitted = 0
+        stops = stop_token_ids or set()
         for token in self.stream_ids(prompt_ids, params):
-            if token == self.tokenizer.eos_id:
+            if token == self.tokenizer.eos_id or token in stops:
                 break
             generated.append(token)
-            text = self.tokenizer.decode(generated)
+            text = self.tokenizer.decode(generated, skip_special_tokens=True)
             text, stopped = truncate_at_stop(text, params.stop_sequences)
             if stopped:
-                yield text[emitted:]
+                if len(text) > emitted:
+                    yield text[emitted:]
                 return
             if text.endswith(REPLACEMENT_CHAR):
                 continue
@@ -106,37 +110,60 @@ class InferenceEngine:
             if safe > emitted:
                 yield text[emitted:safe]
                 emitted = safe
-        text, _ = truncate_at_stop(self.tokenizer.decode(generated), params.stop_sequences)
+        text, _ = truncate_at_stop(
+            self.tokenizer.decode(generated, skip_special_tokens=True), params.stop_sequences
+        )
         if len(text) > emitted:
             yield text[emitted:]
 
-    def generate_ids(self, prompt_ids: list[int], params: SamplingParams) -> Generation:
+    def generate_ids(
+        self, prompt_ids: list[int], params: SamplingParams, stop_token_ids: set[int] | None = None
+    ) -> Generation:
         if params.beam_width > 1:
             return self.beam_search(prompt_ids, params)
         tokens: list[int] = []
         reason = "length"
+        stops = stop_token_ids or set()
         for token in self.stream_ids(prompt_ids, params):
-            if token == self.tokenizer.eos_id:
+            if token == self.tokenizer.eos_id or token in stops:
                 reason = "stop"
                 break
             tokens.append(token)
-            text = self.tokenizer.decode(tokens)
+            text = self.tokenizer.decode(tokens, skip_special_tokens=True)
             if params.stop_sequences and truncate_at_stop(text, params.stop_sequences)[1]:
                 reason = "stop"
                 break
-        text, _ = truncate_at_stop(self.tokenizer.decode(tokens), params.stop_sequences)
+        text, _ = truncate_at_stop(
+            self.tokenizer.decode(tokens, skip_special_tokens=True), params.stop_sequences
+        )
         return Generation(text, tokens, reason)
+
+    def _chat_stop_tokens(self) -> set[int]:
+        return {
+            self.tokenizer.bos_id,
+            self.tokenizer.pad_id,
+            self.tokenizer.role_ids["user"],
+            self.tokenizer.role_ids["system"],
+        }
 
     def generate(self, prompt: str, params: SamplingParams) -> Generation:
         return self.generate_ids(self.tokenizer.encode(prompt, add_bos=True), params)
 
     def chat(self, messages: list[Message], params: SamplingParams) -> Generation:
         ids = self.tokenizer.encode_conversation(messages, add_generation_prompt=True)
-        return self.generate_ids(ids, params)
+        return self.generate_ids(ids, params, stop_token_ids=self._chat_stop_tokens())
 
     def stream_chat(self, messages: list[Message], params: SamplingParams) -> Iterator[str]:
         ids = self.tokenizer.encode_conversation(messages, add_generation_prompt=True)
-        return self.stream_text(ids, params)
+        return self.stream_text(ids, params, stop_token_ids=self._chat_stop_tokens())
+
+    def stream_chat_continuation(
+        self, messages: list[Message], prefix: str, params: SamplingParams
+    ) -> Iterator[str]:
+        ids = self.tokenizer.encode_conversation(messages, add_generation_prompt=True)
+        if prefix:
+            ids.extend(self.tokenizer.encode(prefix))
+        return self.stream_text(ids, params, stop_token_ids=self._chat_stop_tokens())
 
     @torch.inference_mode()
     def generate_batch(self, prompts: list[str], params: SamplingParams) -> list[Generation]:

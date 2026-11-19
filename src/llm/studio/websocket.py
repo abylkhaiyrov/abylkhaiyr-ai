@@ -11,12 +11,16 @@ from urllib.parse import urlsplit
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from llm.inference.engine import InferenceEngine
-from llm.inference.sampling import SamplingParams
+from llm.studio.model_manager import ModelManager
+from llm.studio.scheduler import GenerationRequest, GenerationScheduler, GenerationState
 from llm.studio.service import StudioService
-from llm.tokenizer.bpe import Message
 
 logger = logging.getLogger(__name__)
+
+MAX_CONNECTIONS = 64
+MAX_PAYLOAD_BYTES = 32768
+MAX_EVENTS_PER_WINDOW = 50
+RATE_WINDOW_SECONDS = 10
 
 
 class ClientEvent(BaseModel):
@@ -25,7 +29,16 @@ class ClientEvent(BaseModel):
     channels: list[Literal["studio", "chat"]] = Field(default_factory=list, max_length=2)
     request_id: str | None = Field(default=None, min_length=1, max_length=64)
     chat_id: str | None = Field(default=None, min_length=1, max_length=64)
-    content: str | None = Field(default=None, min_length=1, max_length=10000)
+    content: str | None = Field(default=None, max_length=10000)
+    action: Literal["send", "edit", "regenerate", "continue"] = "send"
+    target_message_id: str | None = Field(default=None, min_length=1, max_length=64)
+    mode: Literal["standard", "reasoning", "precise", "creative"] = "standard"
+    checkpoint_id: str | None = Field(default=None, min_length=1, max_length=1024)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0)
+    top_k: int | None = Field(default=None, ge=0, le=1000)
+    max_tokens: int | None = Field(default=None, gt=0, le=8192)
+    repetition_penalty: float | None = Field(default=None, gt=0.0, le=2.0)
 
 
 @dataclass(eq=False)
@@ -36,26 +49,19 @@ class Connection:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-@dataclass
-class GenerationState:
-    user_id: int
-    chat_id: str
-    request_id: str
-    cancel: threading.Event = field(default_factory=threading.Event)
-    status: str = "queued"
-    message_id: str | None = None
-    text: str = ""
-    sequence: int = 0
-
-
 class WebSocketManager:
-    def __init__(self, studio: StudioService, engine: InferenceEngine | None, lock: threading.Lock):
+    def __init__(
+        self,
+        studio: StudioService,
+        model_manager: ModelManager,
+        lock: threading.Lock,
+        scheduler: GenerationScheduler | None = None,
+    ) -> None:
         self.studio = studio
-        self.engine = engine
+        self.model_manager = model_manager
         self.inference_lock = lock
+        self.scheduler = scheduler or GenerationScheduler(studio, model_manager, lock)
         self.connections: set[Connection] = set()
-        self.generations: dict[tuple[int, str], GenerationState] = {}
-        self.worker: asyncio.Task[None] | None = None
         self.command_lock = asyncio.Lock()
 
     async def send(self, connection: Connection, payload: dict[str, Any]) -> None:
@@ -65,7 +71,9 @@ class WebSocketManager:
         except (RuntimeError, WebSocketDisconnect, TimeoutError):
             self.connections.discard(connection)
 
-    async def publish(self, state: GenerationState, event_type: str, **data: Any) -> None:
+    async def publish(
+        self, state: GenerationState, event_type: str, data: dict[str, Any]
+    ) -> None:
         state.sequence += 1
         payload = {
             "type": event_type,
@@ -83,6 +91,31 @@ class WebSocketManager:
             )
         )
 
+    async def broadcast_studio_snapshot(self, connection: Connection | None = None) -> None:
+        dashboard, processes, metrics = await asyncio.gather(
+            asyncio.to_thread(self.studio.dashboard),
+            asyncio.to_thread(self.studio.list_processes),
+            asyncio.to_thread(self.studio.metrics, None, 1000),
+        )
+        payload = {
+            "type": "studio.snapshot",
+            "data": {
+                "dashboard": dashboard,
+                "processes": processes,
+                "metrics": metrics,
+            },
+        }
+        if connection is not None:
+            await self.send(connection, payload)
+            return
+        await asyncio.gather(
+            *(
+                self.send(item, payload)
+                for item in tuple(self.connections)
+                if "studio" in item.channels
+            )
+        )
+
     async def handle(self, socket: WebSocket) -> None:
         origin = socket.headers.get("origin")
         host = socket.headers.get("host")
@@ -92,6 +125,9 @@ class WebSocketManager:
             or urlsplit(origin).scheme not in {"http", "https"}
         ):
             await socket.close(code=1008)
+            return
+        if len(self.connections) >= MAX_CONNECTIONS:
+            await socket.close(code=1013)
             return
         token = socket.cookies.get("abylkhaiyr_session")
         identity = await asyncio.to_thread(self.studio.auth.get_user, token)
@@ -107,8 +143,11 @@ class WebSocketManager:
             while True:
                 raw = await socket.receive_text()
                 now = time.monotonic()
-                recent = [stamp for stamp in recent if now - stamp < 10]
-                if len(raw.encode("utf-8")) > 16384 or len(recent) >= 50:
+                recent = [stamp for stamp in recent if now - stamp < RATE_WINDOW_SECONDS]
+                if (
+                    len(raw.encode("utf-8")) > MAX_PAYLOAD_BYTES
+                    or len(recent) >= MAX_EVENTS_PER_WINDOW
+                ):
                     await socket.close(code=1008)
                     break
                 recent.append(now)
@@ -130,28 +169,13 @@ class WebSocketManager:
     async def telemetry(self, connection: Connection, token: str | None) -> None:
         try:
             while True:
+                await asyncio.sleep(5)
                 if await asyncio.to_thread(self.studio.auth.get_user, token) is None:
                     await connection.socket.close(code=1008)
                     return
                 if "studio" in connection.channels:
-                    dashboard, processes, metrics = await asyncio.gather(
-                        asyncio.to_thread(self.studio.dashboard),
-                        asyncio.to_thread(self.studio.list_processes),
-                        asyncio.to_thread(self.studio.metrics, None, 1000),
-                    )
-                    await self.send(
-                        connection,
-                        {
-                            "type": "studio.snapshot",
-                            "data": {
-                                "dashboard": dashboard,
-                                "processes": processes,
-                                "metrics": metrics,
-                            },
-                        },
-                    )
-                await asyncio.sleep(5)
-        except (WebSocketDisconnect, RuntimeError):
+                    await self.broadcast_studio_snapshot(connection)
+        except (WebSocketDisconnect, RuntimeError, asyncio.CancelledError):
             return
 
     async def dispatch(self, connection: Connection, event: ClientEvent) -> None:
@@ -159,74 +183,40 @@ class WebSocketManager:
             await self.send(connection, {"type": "pong"})
         elif event.type == "subscribe":
             connection.channels = set(event.channels)
-            for state in self.generations.values():
-                if (
-                    state.user_id == connection.user_id
-                    and state.status in {"queued", "running"}
-                    and "chat" in connection.channels
-                ):
-                    await self.send(
-                        connection,
-                        {
-                            "type": "generation.snapshot",
-                            "request_id": state.request_id,
-                            "chat_id": state.chat_id,
-                            "message_id": state.message_id,
-                            "sequence_id": state.sequence,
-                            "status": state.status,
-                            "text": state.text,
-                        },
-                    )
+            if "chat" in connection.channels:
+                for state in self.scheduler.active_states_for_user(connection.user_id):
+                    await self.send(connection, self.scheduler._state_snapshot(state))
+            if "studio" in connection.channels:
+                await self.broadcast_studio_snapshot(connection)
         elif event.type == "generation.cancel":
-            cancelling = self.generations.get((connection.user_id, event.request_id or ""))
-            if cancelling is not None:
-                cancelling.cancel.set()
+            if event.request_id:
+                await self.scheduler.cancel(connection.user_id, event.request_id, self.publish)
         elif event.type == "generation.start":
-            if (
-                not event.request_id
-                or not event.chat_id
-                or not event.content
-                or not event.content.strip()
-            ):
+            if not event.request_id or not event.chat_id:
                 raise ValueError("Missing generation fields")
-            key = (connection.user_id, event.request_id)
-            if key in self.generations:
-                state = self.generations[key]
-                await self.send(
-                    connection,
-                    {
-                        "type": "generation.snapshot",
-                        "request_id": state.request_id,
-                        "chat_id": state.chat_id,
-                        "message_id": state.message_id,
-                        "sequence_id": state.sequence,
-                        "status": state.status,
-                        "text": state.text,
-                    },
-                )
-                return
-            if len(self.generations) >= 1000:
-                completed = next(
-                    (
-                        key
-                        for key, item in self.generations.items()
-                        if item.status not in {"queued", "running"}
-                    ),
-                    None,
-                )
-                if completed is not None:
-                    del self.generations[completed]
-            training_uses_device = (
-                self.engine is not None
-                and self.engine.device.type == "mps"
-                and await asyncio.to_thread(self.studio.runtime.pipeline) is not None
-            )
-            if (
-                self.engine is None
-                or training_uses_device
-                or len(self.generations) >= 1000
-                or (self.worker is not None and not self.worker.done())
+            if event.action in {"send", "edit"} and (
+                not event.content or not event.content.strip()
             ):
+                raise ValueError("Missing content")
+            request = GenerationRequest(
+                request_id=event.request_id,
+                user_id=connection.user_id,
+                chat_id=event.chat_id,
+                content=event.content,
+                action=event.action,
+                target_message_id=event.target_message_id,
+                mode=event.mode,
+                checkpoint_id=event.checkpoint_id,
+                temperature=event.temperature,
+                top_p=event.top_p,
+                top_k=event.top_k,
+                max_tokens=event.max_tokens,
+                repetition_penalty=event.repetition_penalty,
+            )
+            outcome, payload = await self.scheduler.submit(request, self.publish)
+            if outcome == "existing" and isinstance(payload, dict):
+                await self.send(connection, payload)
+            elif outcome == "rejected" and isinstance(payload, dict):
                 await self.send(
                     connection,
                     {
@@ -234,81 +224,7 @@ class WebSocketManager:
                         "request_id": event.request_id,
                         "chat_id": event.chat_id,
                         "sequence_id": 1,
-                        "code": "busy",
+                        "code": payload.get("code", "busy"),
+                        "detail": payload.get("detail", ""),
                     },
                 )
-                return
-            chat = await asyncio.to_thread(self.studio.chat, connection.user_id, event.chat_id)
-            if chat is None:
-                await self.send(
-                    connection,
-                    {
-                        "type": "generation.failed",
-                        "request_id": event.request_id,
-                        "code": "chat_not_found",
-                        "chat_id": event.chat_id,
-                        "sequence_id": 1,
-                    },
-                )
-                return
-            state = GenerationState(connection.user_id, event.chat_id, event.request_id)
-            self.generations[key] = state
-            self.worker = asyncio.create_task(self.generate(state, chat, event.content))
-
-    async def generate(self, state: GenerationState, chat: dict[str, Any], content: str) -> None:
-        engine = self.engine
-        assert engine is not None
-        try:
-            saved = await asyncio.to_thread(
-                self.studio.start_chat_generation, state.user_id, state.chat_id, content
-            )
-            if saved is None:
-                raise ValueError("Chat not found")
-            user, assistant = saved
-            state.message_id = assistant["id"]
-            state.status = "running"
-            await self.publish(state, "generation.started", user=user)
-            messages = [Message("system", chat["system_prompt"])] if chat["system_prompt"] else []
-            messages.extend(Message(item["role"], item["content"]) for item in chat["messages"])
-            messages.append(Message("user", content))
-            await self.publish(state, "generation.prefill")
-            loop = asyncio.get_running_loop()
-            started = time.monotonic()
-
-            def run() -> None:
-                with self.inference_lock:
-                    for piece in engine.stream_chat(
-                        messages,
-                        SamplingParams(max_new_tokens=min(256, max(1, engine.max_positions // 2))),
-                    ):
-                        if state.cancel.is_set():
-                            break
-                        future = asyncio.run_coroutine_threadsafe(self.delta(state, piece), loop)
-                        future.result()
-
-            await asyncio.to_thread(run)
-            state.status = "cancelled" if state.cancel.is_set() else "completed"
-            await self.publish(
-                state,
-                f"generation.{state.status}",
-                elapsed_ms=int((time.monotonic() - started) * 1000),
-                text=state.text,
-            )
-        except Exception:
-            logger.exception("Generation failed")
-            state.status = "failed"
-            await self.publish(
-                state, "generation.failed", code="generation_failed", text=state.text
-            )
-
-    async def delta(self, state: GenerationState, piece: str) -> None:
-        updated_text = state.text + piece
-        await asyncio.to_thread(
-            self.studio.update_message_content,
-            state.user_id,
-            state.chat_id,
-            state.message_id,
-            updated_text,
-        )
-        state.text = updated_text
-        await self.publish(state, "generation.delta", text=piece)

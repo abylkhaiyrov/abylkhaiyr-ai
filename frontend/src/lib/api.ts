@@ -8,6 +8,30 @@ export type SystemSnapshot = {
   disk: { total_bytes: number; used_bytes: number; free_bytes: number; datasets_bytes: number; checkpoints_bytes: number; database_bytes: number; logs_bytes: number };
 };
 
+export type Model = {
+  id: string;
+  model_id: string;
+  checkpoint_id: string;
+  name: string;
+  path?: string;
+  step?: number | null;
+  tokens_seen?: number | null;
+  stage: string;
+  compatible: boolean;
+  compatibility_issues: string[];
+  available: boolean;
+  availability_reason: string | null;
+  loaded: boolean;
+  device: string | null;
+  created_at?: string;
+  weights_bytes?: number | null;
+  parameters: number | null;
+  vocab_size: number | null;
+  context_length: number | null;
+  architecture: Record<string, unknown>;
+  metrics?: Metric;
+};
+
 export type Dashboard = {
   system_status: string;
   active_model: Model | null;
@@ -53,27 +77,52 @@ export type Process = {
   managed?: boolean;
 };
 
-export type Model = {
-  id: string;
-  name: string;
-  path: string;
-  step: number | null;
-  tokens_seen: number | null;
-  created_at: string;
-  weights_bytes: number | null;
-  parameters: number | null;
-  vocab_size: number | null;
-  context_length: number | null;
-  architecture: Record<string, unknown>;
-  metrics: Metric;
+export type ReasoningStageEvent = {
+  stage: string;
+  status: string;
+  data: Record<string, unknown>;
+  timestamp?: number;
+};
+
+export type GenerationSettings = {
+  mode?: "standard" | "reasoning" | "precise" | "creative";
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  max_tokens?: number;
+  repetition_penalty?: number;
 };
 
 export type Event = { process_id: string; level: string; message: string; created_at: string };
 export type Dataset = { name: string; path: string; size_bytes: number; manifest: Record<string, unknown> };
 export type Experiment = { name: string; results: Metric; [key: string]: unknown };
 export type Evaluation = { path: string; results: Metric };
-export type ChatSummary = { id: string; title: string; model_name: string | null; checkpoint: string | null; system_prompt: string; generation_settings: Record<string, unknown>; created_at: string; updated_at: string };
-export type ChatMessage = { id: string; role: "system" | "user" | "assistant" | "tool"; content: string; input_tokens: number | null; output_tokens: number | null; generation_ms: number | null; tokens_per_second: number | null; created_at: string };
+export type ChatSummary = {
+  id: string;
+  title: string;
+  model_name: string | null;
+  checkpoint: string | null;
+  system_prompt: string;
+  generation_settings: GenerationSettings;
+  created_at: string;
+  updated_at: string;
+};
+export type ChatMessage = {
+  id: string;
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  generation_ms: number | null;
+  tokens_per_second: number | null;
+  model_id: string | null;
+  checkpoint_id: string | null;
+  generation_params: Record<string, unknown> | null;
+  model_config: Record<string, unknown> | null;
+  reasoning_trace: ReasoningStageEvent[];
+  status: string;
+  created_at: string;
+};
 export type Chat = ChatSummary & { messages: ChatMessage[] };
 
 export class ApiError extends Error {
@@ -113,13 +162,18 @@ export const api = {
   stopTraining: (id: string) => request<Process>(`/training/${id}/stop`, { method: "POST" }),
   metrics: () => request<Metric[]>("/training/metrics"),
   models: () => request<Model[]>("/models"),
+  activeModel: () => request<Model | null>("/models/active"),
+  loadModel: (checkpointId: string, device?: string) => request<Model>("/models/load", { method: "POST", body: JSON.stringify({ checkpoint_id: checkpointId, device }) }),
+  switchModel: (checkpointId: string, device?: string) => request<Model>("/models/switch", { method: "POST", body: JSON.stringify({ checkpoint_id: checkpointId, device }) }),
+  unloadModel: () => request<{ loaded: boolean; active_model: null }>("/models/unload", { method: "POST" }),
   datasets: () => request<Dataset[]>("/datasets"),
   experiments: () => request<Experiment[]>("/experiments"),
   evaluations: () => request<Evaluation[]>("/evaluation"),
   logs: () => request<{ items: { category: string; source: string; message: string }[]; total: number }>("/logs"),
   chats: (query?: string) => request<ChatSummary[]>(`/chats${query ? `?query=${encodeURIComponent(query)}` : ""}`),
   chat: (id: string) => request<Chat>(`/chats/${id}`),
-  createChat: () => request<ChatSummary>("/chats", { method: "POST", body: JSON.stringify({}) }),
+  createChat: (payload?: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings }) => request<ChatSummary>("/chats", { method: "POST", body: JSON.stringify(payload ?? {}) }),
+  updateChat: (id: string, payload: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings }) => request<ChatSummary>(`/chats/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   renameChat: (id: string, title: string) => request<ChatSummary>(`/chats/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
   deleteChat: (id: string) => request<void>(`/chats/${id}`, { method: "DELETE" }),
   sendMessage: (id: string, content: string) => request<{ user: ChatMessage; assistant: ChatMessage }>(`/chats/${id}/messages`, { method: "POST", body: JSON.stringify({ content }) }),

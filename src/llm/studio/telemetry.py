@@ -68,7 +68,10 @@ def system_snapshot(root: Path, storage: dict[str, int] | None = None) -> dict[s
         gpu.update(_mps_metrics())
         gpu["supported_dtypes"] = ["float32"]
     process = psutil.Process(os.getpid())
-    cpu_frequency = psutil.cpu_freq()
+    try:
+        cpu_frequency = psutil.cpu_freq()
+    except (OSError, RuntimeError, SystemError):
+        cpu_frequency = None
     return {
         "recorded_at": datetime.now(UTC).isoformat(),
         "cpu": {

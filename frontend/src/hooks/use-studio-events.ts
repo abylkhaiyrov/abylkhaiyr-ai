@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode, createElement } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Dashboard, Metric, Process } from "@/lib/api";
+import type { Dashboard, Metric, Process, ReasoningStageEvent } from "@/lib/api";
 import { useUiStore } from "@/store/ui-store";
 
 export type StudioEvent = {
@@ -12,7 +12,25 @@ export type StudioEvent = {
   text?: string;
   status?: string;
   code?: string;
+  detail?: string;
+  reason?: string;
+  action?: string;
+  model_id?: string | null;
+  checkpoint_id?: string | null;
+  device?: string | null;
+  stage?: string;
+  stage_status?: string;
+  stage_data?: Record<string, unknown>;
+  reasoning_events?: ReasoningStageEvent[];
+  queue_position?: number;
+  queue_reason?: string | null;
+  input_tokens?: number;
+  output_tokens?: number;
+  context_limit?: number;
+  elapsed_ms?: number;
+  tokens_per_second?: number;
   user?: unknown;
+  assistant?: unknown;
   data?: { dashboard: Dashboard; processes: Process[]; metrics: Metric[] };
 };
 
@@ -28,7 +46,7 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
   const setConnection = useUiStore((state) => state.setConnection);
   const socket = useRef<WebSocket | null>(null);
   const listeners = useRef(new Set<(event: StudioEvent) => void>());
-  const latestGeneration = useRef<StudioEvent | null>(null);
+  const activeSnapshots = useRef(new Map<string, StudioEvent>());
   const send = useCallback((event: Record<string, unknown>) => {
     if (socket.current?.readyState !== WebSocket.OPEN) return false;
     socket.current.send(JSON.stringify(event));
@@ -36,8 +54,12 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
   }, []);
   const subscribe = useCallback((listener: (event: StudioEvent) => void) => {
     listeners.current.add(listener);
-    if (latestGeneration.current) listener(latestGeneration.current);
-    return () => { listeners.current.delete(listener); };
+    for (const snapshot of activeSnapshots.current.values()) {
+      listener(snapshot);
+    }
+    return () => {
+      listeners.current.delete(listener);
+    };
   }, []);
 
   useEffect(() => {
@@ -55,7 +77,12 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
         ws.send(JSON.stringify({ type: "subscribe", channels: ["studio", "chat"] }));
         void queryClient.invalidateQueries({ queryKey: ["chats"] });
         void queryClient.invalidateQueries({ queryKey: ["chat"] });
-        heartbeat = setInterval(() => ws.send(JSON.stringify({ type: "ping" })), 20_000);
+        void queryClient.invalidateQueries({ queryKey: ["models"] });
+        heartbeat = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 20_000);
       };
       ws.onmessage = (message) => {
         const event = JSON.parse(String(message.data)) as StudioEvent;
@@ -66,8 +93,19 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
           queryClient.setQueryData(["metrics"], event.data.metrics);
           setConnection(true, new Date().toISOString());
         }
-        if (event.type === "generation.snapshot") latestGeneration.current = event;
-        if (["generation.completed", "generation.cancelled", "generation.failed"].includes(event.type)) latestGeneration.current = null;
+        if (event.type === "generation.snapshot" && event.request_id) {
+          if (event.status === "queued" || event.status === "running") {
+            activeSnapshots.current.set(event.request_id, event);
+          } else {
+            activeSnapshots.current.delete(event.request_id);
+          }
+        }
+        if (
+          event.request_id &&
+          ["generation.completed", "generation.cancelled", "generation.failed"].includes(event.type)
+        ) {
+          activeSnapshots.current.delete(event.request_id);
+        }
         for (const listener of listeners.current) listener(event);
       };
       ws.onclose = () => {

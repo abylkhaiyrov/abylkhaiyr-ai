@@ -14,8 +14,9 @@ from llm.core.config import load_experiment_config
 from llm.core.errors import ConfigError
 from llm.evaluation.registry import load_registry
 from llm.studio.auth import AuthenticationService
-from llm.studio.database import Base, create_sqlite_engine, make_session_factory
-from llm.studio.models import Chat, MessageRecord, ProcessEvent, SystemMetric
+from llm.studio.database import create_sqlite_engine, ensure_studio_schema, make_session_factory
+from llm.studio.model_manager import ModelManager
+from llm.studio.models import Chat, GenerationJob, MessageRecord, ProcessEvent, SystemMetric
 from llm.studio.processes import ProcessManager
 from llm.studio.runtime import RuntimeState
 from llm.studio.telemetry import (
@@ -34,9 +35,10 @@ class StudioService:
     def __init__(self, root: Path, inference_model: str | None = None) -> None:
         self.root = root.resolve()
         self.inference_model = inference_model
+        self.model_manager: ModelManager | None = None
         database_path = self.root / "studio" / "studio.db"
         self.engine = create_sqlite_engine(database_path)
-        Base.metadata.create_all(self.engine)
+        ensure_studio_schema(self.engine)
         self.session_factory = make_session_factory(self.engine)
         self.auth = AuthenticationService(self.session_factory)
         self.auth.initialize()
@@ -44,6 +46,26 @@ class StudioService:
         self.runtime = RuntimeState(self.root)
         self.storage_metrics = storage_snapshot(self.root)
         self.storage_metrics_at = time.monotonic()
+        self._reconcile_interrupted_jobs()
+
+    def attach_model_manager(self, manager: ModelManager) -> None:
+        self.model_manager = manager
+
+    def _reconcile_interrupted_jobs(self) -> None:
+        with self.session_factory.begin() as database:
+            stale = database.scalars(
+                select(GenerationJob).where(GenerationJob.status.in_(["queued", "running"]))
+            ).all()
+            for job in stale:
+                job.status = "interrupted"
+                job.error_code = "server_restarted"
+                job.error_detail = "Backend restarted before generation completed"
+                if job.assistant_message_id:
+                    message = database.scalar(
+                        select(MessageRecord).where(MessageRecord.id == job.assistant_message_id)
+                    )
+                    if message is not None and message.status in {"queued", "running"}:
+                        message.status = "interrupted"
 
     def dashboard(self) -> dict[str, Any]:
         processes = self.processes.list()
@@ -82,10 +104,14 @@ class StudioService:
             "model_name": pipeline["model_name"] if pipeline else None,
             "checkpoint": pipeline["checkpoint"] if pipeline else None,
         }
+        active_model = self.model_manager.active_info() if self.model_manager is not None else None
+        resolved_inference_model = (
+            active_model["model_id"] if active_model is not None else self.inference_model
+        )
         return {
             "system_status": "busy" if active is not None else "ready",
-            "active_model": None,
-            "inference_model": self.inference_model,
+            "active_model": active_model,
+            "inference_model": resolved_inference_model,
             "training": training,
             "active_process": active,
             "pipeline": self._pipeline(processes, checkpoints, pipeline),
@@ -152,6 +178,8 @@ class StudioService:
         return run_metrics(self.root, run_name, min(max(limit, 1), 3000))
 
     def models(self) -> list[dict[str, Any]]:
+        if self.model_manager is not None:
+            return self.model_manager.list_models()
         metrics_by_run = {
             path.parent.name: latest_metrics(self.root, path.parent.name)
             for path in (self.root / "experiments").glob("*/metrics.jsonl")
@@ -296,13 +324,30 @@ class StudioService:
             data["messages"] = [self._serialize_message(item) for item in messages]
             return data
 
-    def update_chat(self, user_id: int, chat_id: str, title: str | None) -> dict[str, Any] | None:
+    def update_chat(
+        self,
+        user_id: int,
+        chat_id: str,
+        title: str | None = None,
+        model_name: str | None = None,
+        checkpoint: str | None = None,
+        system_prompt: str | None = None,
+        generation_settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         with self.session_factory.begin() as database:
             chat = database.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
             if chat is None:
                 return None
             if title is not None:
                 chat.title = title.strip()[:256] or chat.title
+            if model_name is not None:
+                chat.model_name = model_name
+            if checkpoint is not None:
+                chat.checkpoint = checkpoint
+            if system_prompt is not None:
+                chat.system_prompt = system_prompt
+            if generation_settings is not None:
+                chat.generation_settings = json.dumps(generation_settings)
             chat.updated_at = datetime.now(UTC).replace(tzinfo=None)
             database.flush()
             return self._serialize_chat(chat)
@@ -325,6 +370,12 @@ class StudioService:
         output_tokens: int | None = None,
         generation_ms: int | None = None,
         tokens_per_second: float | None = None,
+        model_id: str | None = None,
+        checkpoint_id: str | None = None,
+        generation_params: dict[str, Any] | None = None,
+        model_config: dict[str, Any] | None = None,
+        reasoning_trace: list[dict[str, Any]] | None = None,
+        status: str = "completed",
     ) -> dict[str, Any] | None:
         with self.session_factory.begin() as database:
             chat = database.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
@@ -339,6 +390,16 @@ class StudioService:
                 output_tokens=output_tokens,
                 generation_ms=generation_ms,
                 tokens_per_second=tokens_per_second,
+                model_id=model_id,
+                checkpoint_id=checkpoint_id,
+                generation_params=(
+                    json.dumps(generation_params) if generation_params is not None else None
+                ),
+                model_config_json=json.dumps(model_config) if model_config is not None else None,
+                reasoning_trace=(
+                    json.dumps(reasoning_trace) if reasoning_trace is not None else None
+                ),
+                status=status,
             )
             chat.updated_at = datetime.now(UTC).replace(tzinfo=None)
             database.add(message)
@@ -346,29 +407,160 @@ class StudioService:
             return self._serialize_message(message)
 
     def start_chat_generation(
-        self, user_id: int, chat_id: str, content: str
-    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        self,
+        user_id: int,
+        chat_id: str,
+        content: str | None = None,
+        action: str = "send",
+        target_message_id: str | None = None,
+        model_id: str | None = None,
+        checkpoint_id: str | None = None,
+        generation_params: dict[str, Any] | None = None,
+        model_config: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any], list[dict[str, Any]], str] | None:
         with self.session_factory.begin() as database:
             chat = database.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
             if chat is None:
                 return None
-            user = MessageRecord(
-                id=str(uuid.uuid4()), chat_id=chat_id, role="user", content=content
+            ordered = list(
+                database.scalars(
+                    select(MessageRecord)
+                    .where(MessageRecord.chat_id == chat_id)
+                    .order_by(MessageRecord.created_at)
+                ).all()
             )
-            assistant = MessageRecord(
-                id=str(uuid.uuid4()), chat_id=chat_id, role="assistant", content=""
-            )
-            if chat.title == "New chat":
-                chat.title = " ".join(content.split())[:80]
-            if chat.model_name is None:
-                chat.model_name = self.inference_model
+            resolved_model_id = model_id or chat.model_name or self.inference_model
+            resolved_checkpoint_id = checkpoint_id or chat.checkpoint
+            if resolved_model_id:
+                chat.model_name = resolved_model_id
+            if resolved_checkpoint_id:
+                chat.checkpoint = resolved_checkpoint_id
+            params_json = json.dumps(generation_params) if generation_params is not None else None
+            config_json = json.dumps(model_config) if model_config is not None else None
+            user_record: MessageRecord | None = None
+            continuation_prefix = ""
+            if action == "edit":
+                if not target_message_id or not content or not content.strip():
+                    raise ValueError("Edit requires target_message_id and content")
+                index = next(
+                    (i for i, item in enumerate(ordered) if item.id == target_message_id), None
+                )
+                if index is None or ordered[index].role != "user":
+                    raise ValueError("User message not found")
+                for trailing in ordered[index + 1 :]:
+                    database.delete(trailing)
+                target_user = ordered[index]
+                target_user.content = content
+                history_records = ordered[: index + 1]
+                assistant = MessageRecord(
+                    id=str(uuid.uuid4()),
+                    chat_id=chat_id,
+                    role="assistant",
+                    content="",
+                    model_id=resolved_model_id,
+                    checkpoint_id=resolved_checkpoint_id,
+                    generation_params=params_json,
+                    model_config_json=config_json,
+                    reasoning_trace="[]",
+                    status="running",
+                )
+                database.add(assistant)
+                user_record = target_user
+            elif action == "regenerate":
+                index = (
+                    next(
+                        (i for i, item in enumerate(ordered) if item.id == target_message_id), None
+                    )
+                    if target_message_id
+                    else next(
+                        (i for i in range(len(ordered) - 1, -1, -1) if ordered[i].role == "assistant"),
+                        None,
+                    )
+                )
+                if index is None or ordered[index].role != "assistant":
+                    raise ValueError("Assistant message not found")
+                for trailing in ordered[index:]:
+                    database.delete(trailing)
+                history_records = ordered[:index]
+                if not any(item.role == "user" for item in history_records):
+                    raise ValueError("No user prompt available to regenerate")
+                assistant = MessageRecord(
+                    id=str(uuid.uuid4()),
+                    chat_id=chat_id,
+                    role="assistant",
+                    content="",
+                    model_id=resolved_model_id,
+                    checkpoint_id=resolved_checkpoint_id,
+                    generation_params=params_json,
+                    model_config_json=config_json,
+                    reasoning_trace="[]",
+                    status="running",
+                )
+                database.add(assistant)
+            elif action == "continue":
+                index = (
+                    next(
+                        (i for i, item in enumerate(ordered) if item.id == target_message_id), None
+                    )
+                    if target_message_id
+                    else next(
+                        (i for i in range(len(ordered) - 1, -1, -1) if ordered[i].role == "assistant"),
+                        None,
+                    )
+                )
+                if index is None or ordered[index].role != "assistant":
+                    raise ValueError("Assistant message not found")
+                assistant = ordered[index]
+                continuation_prefix = assistant.content
+                history_records = ordered[:index]
+                assistant.model_id = resolved_model_id or assistant.model_id
+                assistant.checkpoint_id = resolved_checkpoint_id or assistant.checkpoint_id
+                assistant.generation_params = params_json or assistant.generation_params
+                assistant.model_config_json = config_json or assistant.model_config_json
+                assistant.status = "running"
+            else:
+                if not content or not content.strip():
+                    raise ValueError("Message content is required")
+                user = MessageRecord(
+                    id=str(uuid.uuid4()), chat_id=chat_id, role="user", content=content
+                )
+                assistant = MessageRecord(
+                    id=str(uuid.uuid4()),
+                    chat_id=chat_id,
+                    role="assistant",
+                    content="",
+                    model_id=resolved_model_id,
+                    checkpoint_id=resolved_checkpoint_id,
+                    generation_params=params_json,
+                    model_config_json=config_json,
+                    reasoning_trace="[]",
+                    status="running",
+                )
+                if chat.title == "New chat":
+                    chat.title = " ".join(content.split())[:80]
+                database.add_all([user, assistant])
+                history_records = [*ordered, user]
+                user_record = user
             chat.updated_at = datetime.now(UTC).replace(tzinfo=None)
-            database.add_all([user, assistant])
             database.flush()
-            return self._serialize_message(user), self._serialize_message(assistant)
+            user_serialized = (
+                self._serialize_message(user_record) if user_record is not None else None
+            )
+            return (
+                user_serialized,
+                self._serialize_message(assistant),
+                [self._serialize_message(item) for item in history_records],
+                continuation_prefix,
+            )
 
     def update_message_content(
-        self, user_id: int, chat_id: str, message_id: str | None, content: str
+        self,
+        user_id: int,
+        chat_id: str,
+        message_id: str | None,
+        content: str,
+        reasoning_trace: list[dict[str, Any]] | None = None,
+        status: str | None = None,
     ) -> None:
         with self.session_factory.begin() as database:
             message = database.scalar(
@@ -379,6 +571,182 @@ class StudioService:
             if message is None:
                 raise ValueError("Message not found")
             message.content = content
+            if reasoning_trace is not None:
+                message.reasoning_trace = json.dumps(reasoning_trace)
+            if status is not None:
+                message.status = status
+
+    def finalize_message(
+        self,
+        user_id: int,
+        chat_id: str,
+        message_id: str | None,
+        content: str,
+        status: str,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        generation_ms: int | None = None,
+        tokens_per_second: float | None = None,
+        model_id: str | None = None,
+        checkpoint_id: str | None = None,
+        generation_params: dict[str, Any] | None = None,
+        model_config: dict[str, Any] | None = None,
+        reasoning_trace: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
+        with self.session_factory.begin() as database:
+            message = database.scalar(
+                select(MessageRecord)
+                .join(Chat, MessageRecord.chat_id == Chat.id)
+                .where(Chat.id == chat_id, Chat.user_id == user_id, MessageRecord.id == message_id)
+            )
+            if message is None:
+                return None
+            message.content = content
+            message.status = status
+            if input_tokens is not None:
+                message.input_tokens = input_tokens
+            if output_tokens is not None:
+                message.output_tokens = output_tokens
+            if generation_ms is not None:
+                message.generation_ms = generation_ms
+            if tokens_per_second is not None:
+                message.tokens_per_second = tokens_per_second
+            if model_id is not None:
+                message.model_id = model_id
+            if checkpoint_id is not None:
+                message.checkpoint_id = checkpoint_id
+            if generation_params is not None:
+                message.generation_params = json.dumps(generation_params)
+            if model_config is not None:
+                message.model_config_json = json.dumps(model_config)
+            if reasoning_trace is not None:
+                message.reasoning_trace = json.dumps(reasoning_trace)
+            database.flush()
+            return self._serialize_message(message)
+
+    def get_generation_job(self, user_id: int, request_id: str) -> dict[str, Any] | None:
+        with self.session_factory() as database:
+            job = database.scalar(
+                select(GenerationJob).where(
+                    GenerationJob.request_id == request_id, GenerationJob.user_id == user_id
+                )
+            )
+            return None if job is None else self._serialize_job(job)
+
+    def create_generation_job(
+        self,
+        request_id: str,
+        user_id: int,
+        chat_id: str,
+        action: str = "send",
+        model_id: str | None = None,
+        checkpoint_id: str | None = None,
+        queue_reason: str | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        with self.session_factory.begin() as database:
+            existing = database.scalar(
+                select(GenerationJob).where(GenerationJob.request_id == request_id)
+            )
+            if existing is not None:
+                if existing.user_id != user_id:
+                    raise ValueError("Duplicate request_id")
+                return self._serialize_job(existing), False
+            job = GenerationJob(
+                request_id=request_id,
+                user_id=user_id,
+                chat_id=chat_id,
+                action=action,
+                status="queued",
+                sequence_id=0,
+                partial_text="",
+                reasoning_events="[]",
+                model_id=model_id,
+                checkpoint_id=checkpoint_id,
+                queue_reason=queue_reason,
+            )
+            database.add(job)
+            database.flush()
+            return self._serialize_job(job), True
+
+    def update_generation_job(
+        self,
+        request_id: str,
+        *,
+        status: str | None = None,
+        sequence_id: int | None = None,
+        partial_text: str | None = None,
+        user_message_id: str | None = None,
+        assistant_message_id: str | None = None,
+        reasoning_events: list[dict[str, Any]] | None = None,
+        model_id: str | None = None,
+        checkpoint_id: str | None = None,
+        queue_reason: str | None = None,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+    ) -> None:
+        with self.session_factory.begin() as database:
+            job = database.scalar(
+                select(GenerationJob).where(GenerationJob.request_id == request_id)
+            )
+            if job is None:
+                return
+            if status is not None:
+                job.status = status
+            if sequence_id is not None:
+                job.sequence_id = sequence_id
+            if partial_text is not None:
+                job.partial_text = partial_text
+            if user_message_id is not None:
+                job.user_message_id = user_message_id
+            if assistant_message_id is not None:
+                job.assistant_message_id = assistant_message_id
+            if reasoning_events is not None:
+                job.reasoning_events = json.dumps(reasoning_events)
+            if model_id is not None:
+                job.model_id = model_id
+            if checkpoint_id is not None:
+                job.checkpoint_id = checkpoint_id
+            if queue_reason is not None:
+                job.queue_reason = queue_reason
+            if error_code is not None:
+                job.error_code = error_code
+            if error_detail is not None:
+                job.error_detail = error_detail
+            job.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    def list_recoverable_jobs(self, user_id: int) -> list[dict[str, Any]]:
+        with self.session_factory() as database:
+            rows = database.scalars(
+                select(GenerationJob)
+                .where(
+                    GenerationJob.user_id == user_id,
+                    GenerationJob.status.in_(["queued", "running"]),
+                )
+                .order_by(GenerationJob.created_at)
+            ).all()
+            return [self._serialize_job(item) for item in rows]
+
+    @staticmethod
+    def _serialize_job(job: GenerationJob) -> dict[str, Any]:
+        return {
+            "request_id": job.request_id,
+            "user_id": job.user_id,
+            "chat_id": job.chat_id,
+            "user_message_id": job.user_message_id,
+            "assistant_message_id": job.assistant_message_id,
+            "action": job.action,
+            "status": job.status,
+            "sequence_id": job.sequence_id,
+            "partial_text": job.partial_text,
+            "reasoning_events": json.loads(job.reasoning_events or "[]"),
+            "model_id": job.model_id,
+            "checkpoint_id": job.checkpoint_id,
+            "queue_reason": job.queue_reason,
+            "error_code": job.error_code,
+            "error_detail": job.error_detail,
+            "created_at": job.created_at.isoformat(),
+            "updated_at": job.updated_at.isoformat(),
+        }
 
     @staticmethod
     def _parameter_count(config: dict[str, Any]) -> int | None:
@@ -417,6 +785,18 @@ class StudioService:
             "output_tokens": message.output_tokens,
             "generation_ms": message.generation_ms,
             "tokens_per_second": message.tokens_per_second,
+            "model_id": message.model_id,
+            "checkpoint_id": message.checkpoint_id,
+            "generation_params": (
+                json.loads(message.generation_params) if message.generation_params else None
+            ),
+            "model_config": (
+                json.loads(message.model_config_json) if message.model_config_json else None
+            ),
+            "reasoning_trace": (
+                json.loads(message.reasoning_trace) if message.reasoning_trace else []
+            ),
+            "status": message.status,
             "created_at": message.created_at.isoformat(),
         }
 

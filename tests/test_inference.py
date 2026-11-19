@@ -135,3 +135,17 @@ def test_model_in_eval_mode_and_no_grad_during_generation(engine):
     engine.generate("Hello", greedy())
     assert not engine.model.training
     assert all(p.grad is None for p in engine.model.parameters())
+
+
+def test_chat_stops_on_role_special_tokens_and_continuation_streams(engine, monkeypatch):
+    user_token = engine.tokenizer.role_ids["user"]
+    hello_ids = engine.tokenizer.encode("hi")
+    monkeypatch.setattr(
+        engine, "stream_ids", lambda prompt_ids, params: iter([*hello_ids, user_token, *hello_ids])
+    )
+    reply = engine.chat([Message("user", "hello")], greedy())
+    assert "<user>" not in reply.text
+    assert reply.text == "hi"
+    assert reply.finish_reason == "stop"
+    continued = "".join(engine.stream_chat_continuation([Message("user", "hello")], "part ", greedy()))
+    assert continued == "hi"

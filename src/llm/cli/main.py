@@ -193,10 +193,32 @@ def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     from llm.api.server import create_app
+    from llm.training.checkpoint import CheckpointManager
 
-    engine = _tokenizer_and_engine(args.checkpoint, args.tokenizer, args.device)
+    path = Path(args.checkpoint)
+    latest = CheckpointManager(path, keep=1).latest_valid() if path.is_dir() else None
+    resolved = (latest or path).resolve()
+    root = Path.cwd().resolve()
+    checkpoint_id = (
+        str(resolved.relative_to(root)) if root in resolved.parents else str(resolved)
+    )
+    model_name = (
+        resolved.parent.name
+        if args.model_name == "llm-local" and resolved.parent.name
+        else args.model_name
+    )
+    engine = _tokenizer_and_engine(str(resolved), args.tokenizer, args.device)
     uvicorn.run(
-        create_app(engine, args.model_name), host=args.host, port=args.port, log_level="info"
+        create_app(
+            engine,
+            model_name,
+            studio_root=root,
+            checkpoint_id=checkpoint_id,
+            tokenizer_path=Path(args.tokenizer),
+        ),
+        host=args.host,
+        port=args.port,
+        log_level="info",
     )
     return 0
 

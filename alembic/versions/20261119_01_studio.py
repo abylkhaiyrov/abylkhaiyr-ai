@@ -1,7 +1,5 @@
-"""create studio persistence tables"""
-
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20261119_01"
 down_revision = None

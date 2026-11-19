@@ -3,9 +3,10 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from llm.studio.database import Base
 from llm.studio import models
+from llm.studio.database import Base
 
+_ = models
 config = context.config
 target_metadata = Base.metadata
 

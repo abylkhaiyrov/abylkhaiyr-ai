@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.studio.api import create_studio_router
+from llm.studio.model_manager import ModelManager
 from llm.studio.service import StudioService
 from llm.tokenizer.bpe import Message
 
@@ -63,16 +64,29 @@ def sse(payload: dict | str) -> str:
 
 
 def create_app(
-    engine: InferenceEngine,
+    engine: InferenceEngine | None,
     model_name: str,
     studio_root: Path | None = None,
+    checkpoint_id: str | None = None,
+    tokenizer_path: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="llm", docs_url=None, redoc_url=None)
     lock = threading.Lock()
     root = (studio_root or Path.cwd()).resolve()
     studio = StudioService(root, model_name)
+    model_manager = ModelManager(
+        root=root,
+        runtime=studio.runtime,
+        inference_lock=lock,
+        initial_engine=engine,
+        initial_model_id=model_name,
+        initial_checkpoint_id=checkpoint_id,
+        tokenizer_path=tokenizer_path,
+    )
+    studio.attach_model_manager(model_manager)
     app.state.studio = studio
-    app.include_router(create_studio_router(studio, engine, lock))
+    app.state.model_manager = model_manager
+    app.include_router(create_studio_router(studio, model_manager, lock))
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -80,33 +94,42 @@ def create_app(
 
     @app.get("/v1/models")
     def models() -> dict:
+        active = model_manager.active
+        active_name = active.model_id if active is not None else model_name
         return {
             "object": "list",
-            "data": [{"id": model_name, "object": "model", "owned_by": "local"}],
+            "data": [{"id": active_name, "object": "model", "owned_by": "local"}],
         }
 
     @app.post("/v1/chat/completions")
     def chat(request: ChatRequest):
         if request.n != 1:
             raise HTTPException(status_code=400, detail="only n=1 is supported")
+        active = model_manager.active
+        if active is None:
+            raise HTTPException(status_code=409, detail="no inference model loaded")
+        active_engine = active.engine
+        active_name = active.model_id
         messages = [Message(m.role, m.content) for m in request.messages]
         params = to_params(request)
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
-        prompt_ids = engine.tokenizer.encode_conversation(messages, True)
-        prompt_tokens = len(engine.fit_prompt(prompt_ids, params.max_new_tokens))
+        prompt_ids = active_engine.tokenizer.encode_conversation(messages, True)
+        prompt_tokens = len(active_engine.fit_prompt(prompt_ids, params.max_new_tokens))
         if request.stream:
             return StreamingResponse(
-                stream_chunks(engine, lock, messages, params, completion_id, created, model_name),
+                stream_chunks(
+                    active_engine, lock, messages, params, completion_id, created, active_name
+                ),
                 media_type="text/event-stream",
             )
         with lock:
-            reply = engine.chat(messages, params)
+            reply = active_engine.chat(messages, params)
         return {
             "id": completion_id,
             "object": "chat.completion",
             "created": created,
-            "model": model_name,
+            "model": active_name,
             "choices": [
                 {
                     "index": 0,

@@ -6,9 +6,9 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, WebSocket, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.studio.auth import AuthenticationError
+from llm.studio.model_manager import ModelManager, ModelManagerError
 from llm.studio.processes import ProcessError
 from llm.studio.service import StudioService
 from llm.tokenizer.bpe import Message
@@ -45,6 +45,15 @@ class ChatCreateRequest(BaseModel):
 
 class ChatUpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=256)
+    model_name: str | None = Field(default=None, max_length=256)
+    checkpoint: str | None = Field(default=None, max_length=1024)
+    system_prompt: str | None = Field(default=None, max_length=20000)
+    generation_settings: dict[str, Any] | None = None
+
+
+class ModelLoadRequest(BaseModel):
+    checkpoint_id: str = Field(min_length=1, max_length=1024)
+    device: Literal["auto", "cpu", "mps", "cuda"] | None = None
 
 
 class ChatMessageRequest(BaseModel):
@@ -82,14 +91,14 @@ class LoginRateLimiter:
 
 def create_studio_router(
     studio: StudioService,
-    engine: InferenceEngine | None,
+    model_manager: ModelManager,
     inference_lock: threading.Lock,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
     rate_limiter = LoginRateLimiter()
     from llm.studio.websocket import WebSocketManager
 
-    websocket_manager = WebSocketManager(studio, engine, inference_lock)
+    websocket_manager = WebSocketManager(studio, model_manager, inference_lock)
 
     @router.websocket("/ws")
     async def websocket_endpoint(socket: WebSocket) -> None:
@@ -271,6 +280,48 @@ def create_studio_router(
     def models(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
         return studio.models()
 
+    @router.get("/models/active")
+    def active_model(
+        _: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> dict[str, Any] | None:
+        return model_manager.active_info()
+
+    @router.post("/models/load")
+    def load_model(
+        payload: ModelLoadRequest,
+        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+    ) -> dict[str, Any]:
+        try:
+            return model_manager.load(payload.checkpoint_id, payload.device)
+        except ModelManagerError as error:
+            status_code = (
+                status.HTTP_404_NOT_FOUND
+                if error.code == "checkpoint_not_found"
+                else status.HTTP_409_CONFLICT
+            )
+            raise HTTPException(status_code=status_code, detail=error.detail) from error
+
+    @router.post("/models/switch")
+    def switch_model(
+        payload: ModelLoadRequest,
+        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+    ) -> dict[str, Any]:
+        try:
+            return model_manager.switch(payload.checkpoint_id, payload.device)
+        except ModelManagerError as error:
+            status_code = (
+                status.HTTP_404_NOT_FOUND
+                if error.code == "checkpoint_not_found"
+                else status.HTTP_409_CONFLICT
+            )
+            raise HTTPException(status_code=status_code, detail=error.detail) from error
+
+    @router.post("/models/unload")
+    def unload_model(
+        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+    ) -> dict[str, Any]:
+        return model_manager.unload()
+
     @router.get("/checkpoints")
     def checkpoints(
         _: Annotated[tuple[Any, str], Depends(current_identity)],
@@ -339,7 +390,15 @@ def create_studio_router(
         payload: ChatUpdateRequest,
         identity: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
-        chat = studio.update_chat(identity[0].id, chat_id, payload.title)
+        chat = studio.update_chat(
+            identity[0].id,
+            chat_id,
+            title=payload.title,
+            model_name=payload.model_name,
+            checkpoint=payload.checkpoint,
+            system_prompt=payload.system_prompt,
+            generation_settings=payload.generation_settings,
+        )
         if chat is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
         return chat
@@ -359,10 +418,12 @@ def create_studio_router(
         payload: ChatMessageRequest,
         identity: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
-        if engine is None:
+        loaded = model_manager.active
+        if loaded is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="No inference model is loaded"
             )
+        engine = loaded.engine
         chat = studio.chat(identity[0].id, chat_id)
         if chat is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
@@ -380,6 +441,14 @@ def create_studio_router(
             repetition_penalty=payload.repetition_penalty,
             seed=payload.seed,
         )
+        params_dict = {
+            "max_tokens": payload.max_tokens,
+            "temperature": payload.temperature,
+            "top_p": payload.top_p,
+            "top_k": payload.top_k,
+            "repetition_penalty": payload.repetition_penalty,
+            "seed": payload.seed,
+        }
         started = time.monotonic()
         with inference_lock:
             reply = engine.chat(messages, params)
@@ -398,6 +467,10 @@ def create_studio_router(
             output_tokens=output_tokens,
             generation_ms=elapsed_ms,
             tokens_per_second=output_tokens / max(elapsed_ms / 1000, 0.001),
+            model_id=loaded.model_id,
+            checkpoint_id=loaded.checkpoint_id,
+            generation_params=params_dict,
+            model_config=loaded.config,
         )
         return {"user": saved, "assistant": assistant_message, "finish_reason": reply.finish_reason}
 

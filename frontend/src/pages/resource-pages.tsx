@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/status-badge";
@@ -18,10 +20,98 @@ export function ProcessesPage() {
 }
 
 export function ModelsPage() {
+  const { t } = useTranslation();
+  const client = useQueryClient();
   const query = useQuery({ queryKey: ["models"], queryFn: api.models });
+  const switchModel = useMutation({
+    mutationFn: (checkpointId: string) => api.switchModel(checkpointId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["models"] });
+      void client.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+  const unloadModel = useMutation({
+    mutationFn: api.unloadModel,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["models"] });
+      void client.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
-  return <DataPage title="Model Manager" description="Checkpoint metadata is read directly from preserved model artifacts."><div className="grid gap-3">{query.data.length === 0 ? <EmptyState title="No checkpoints found" description="Saved checkpoints appear here after a training run." /> : query.data.map((model) => <Card key={model.id}><CardContent className="grid gap-3 p-4 sm:grid-cols-3"><div><p className="font-medium">{model.id}</p><p className="text-xs text-muted-foreground">Step {formatNumber(model.step, 0)} · {formatBytes(model.weights_bytes)}</p></div><div><p className="text-sm">{formatNumber(model.parameters, 0)} parameters</p><p className="text-xs text-muted-foreground">Vocab {formatNumber(model.vocab_size, 0)} · Context {formatNumber(model.context_length, 0)}</p></div><div><p className="text-sm">Validation loss {formatNumber(model.metrics["validation/loss"], 4)}</p><p className="text-xs text-muted-foreground">Tokens {formatNumber(model.tokens_seen, 0)}</p></div></CardContent></Card>)}</div></DataPage>;
+  return (
+    <DataPage title={t("resources.models.title")} description={t("resources.models.subtitle")}>
+      <div className="grid gap-3">
+        {query.data.length === 0 ? (
+          <EmptyState title={t("resources.models.empty")} description={t("resources.models.subtitle")} />
+        ) : (
+          query.data.map((model) => (
+            <Card key={model.id}>
+              <CardContent className="grid gap-3 p-4 sm:grid-cols-4 sm:items-center">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{model.checkpoint_id}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="rounded bg-muted px-1.5 py-0.5 uppercase text-foreground">
+                      {t(`resources.models.stages.${model.stage}`, { defaultValue: model.stage })}
+                    </span>
+                    {model.step !== null && model.step !== undefined ? (
+                      <span>#{formatNumber(model.step, 0)}</span>
+                    ) : null}
+                    <span>{formatBytes(model.weights_bytes)}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm">
+                    {formatNumber(model.parameters, 0)} {t("resources.models.parameters")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("resources.models.vocabulary")} {formatNumber(model.vocab_size, 0)} ·{" "}
+                    {t("resources.models.context")} {formatNumber(model.context_length, 0)}
+                  </p>
+                </div>
+                <div>
+                  <div className="flex flex-wrap gap-1.5 text-xs">
+                    <StatusBadge value={model.loaded ? "active" : model.available ? "ready" : "failed"} />
+                    <span className="rounded border px-1.5 py-0.5">
+                      {model.compatible
+                        ? t("resources.models.compatible")
+                        : t("resources.models.incompatible")}
+                    </span>
+                    {model.device ? (
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono uppercase">
+                        {model.device}
+                      </span>
+                    ) : null}
+                  </div>
+                  {model.availability_reason ? (
+                    <p className="mt-1 text-xs text-destructive">{model.availability_reason}</p>
+                  ) : null}
+                </div>
+                <div className="flex justify-start gap-2 sm:justify-end">
+                  {model.loaded ? (
+                    <Button
+                      variant="outline"
+                      disabled={unloadModel.isPending}
+                      onClick={() => unloadModel.mutate()}
+                    >
+                      {t("resources.models.unload")}
+                    </Button>
+                  ) : (
+                    <Button
+                      disabled={!model.compatible || !model.available || switchModel.isPending}
+                      onClick={() => switchModel.mutate(model.checkpoint_id)}
+                    >
+                      {t("resources.models.load")}
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+    </DataPage>
+  );
 }
 
 export function DatasetsPage() {

@@ -63,7 +63,35 @@ class MessageRecord(Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     generation_ms: Mapped[int | None] = mapped_column(Integer)
     tokens_per_second: Mapped[float | None] = mapped_column()
+    model_id: Mapped[str | None] = mapped_column(String(256))
+    checkpoint_id: Mapped[str | None] = mapped_column(String(1024))
+    generation_params: Mapped[str | None] = mapped_column(Text)
+    model_config_json: Mapped[str | None] = mapped_column(Text)
+    reasoning_trace: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="completed")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class GenerationJob(Base):
+    __tablename__ = "generation_jobs"
+
+    request_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[str] = mapped_column(ForeignKey("chats.id", ondelete="CASCADE"), index=True)
+    user_message_id: Mapped[str | None] = mapped_column(String(36))
+    assistant_message_id: Mapped[str | None] = mapped_column(String(36))
+    action: Mapped[str] = mapped_column(String(32), default="send")
+    status: Mapped[str] = mapped_column(String(32), index=True, default="queued")
+    sequence_id: Mapped[int] = mapped_column(Integer, default=0)
+    partial_text: Mapped[str] = mapped_column(Text, default="")
+    reasoning_events: Mapped[str] = mapped_column(Text, default="[]")
+    model_id: Mapped[str | None] = mapped_column(String(256))
+    checkpoint_id: Mapped[str | None] = mapped_column(String(1024))
+    queue_reason: Mapped[str | None] = mapped_column(String(128))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class ManagedProcess(Base):
