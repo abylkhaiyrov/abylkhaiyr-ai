@@ -55,23 +55,31 @@ def build_model_config(profile_name: str, vocab_size: int) -> ModelConfig:
 
 def count_parameters(config: ModelConfig) -> int:
     head_dim = config.head_dim
-    attention = config.hidden_size * head_dim * (
-        config.num_attention_heads * 2 + config.num_key_value_heads * 2
+    attention = (
+        config.hidden_size
+        * head_dim
+        * (config.num_attention_heads * 2 + config.num_key_value_heads * 2)
     )
     ffn = 3 * config.hidden_size * config.intermediate_size
     norms = 2 * config.hidden_size
     embeddings = config.vocab_size * config.hidden_size
     head = 0 if config.tie_word_embeddings else embeddings
-    return config.num_hidden_layers * (attention + ffn + norms) + embeddings + head + config.hidden_size
+    return (
+        config.num_hidden_layers * (attention + ffn + norms)
+        + embeddings
+        + head
+        + config.hidden_size
+    )
 
 
 def estimate_training_memory_gb(
     config: ModelConfig, micro_batch: int, sequence_length: int, bytes_per_activation: int = 4
 ) -> float:
     params = count_parameters(config) * PARAMS_BYTES_TRAINING
-    per_token = config.num_hidden_layers * (
-        config.hidden_size * 12 + config.intermediate_size * 3
-    ) + config.vocab_size * 3
+    per_token = (
+        config.num_hidden_layers * (config.hidden_size * 12 + config.intermediate_size * 3)
+        + config.vocab_size * 3
+    )
     activations = micro_batch * sequence_length * per_token * bytes_per_activation
     return (params + activations * ACTIVATION_SAFETY_FACTOR) / 1024**3
 
@@ -91,9 +99,10 @@ def suggest_micro_batch(
 ) -> int:
     budget = hardware.device_memory_gb * MEMORY_BUDGET_FRACTION
     batch = 1
-    while batch < ceiling and estimate_training_memory_gb(
-        config, batch * 2, sequence_length
-    ) <= budget:
+    while (
+        batch < ceiling
+        and estimate_training_memory_gb(config, batch * 2, sequence_length) <= budget
+    ):
         batch *= 2
     return batch
 

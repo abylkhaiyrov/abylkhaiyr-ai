@@ -10,6 +10,9 @@ def rotate_half(x: Tensor) -> Tensor:
 
 
 class RotaryEmbedding(nn.Module):
+    cos: Tensor
+    sin: Tensor
+
     def __init__(self, head_dim: int, max_positions: int, theta: float) -> None:
         super().__init__()
         exponents = torch.arange(0, head_dim, ROPE_DIM_STEP, dtype=torch.float32) / head_dim

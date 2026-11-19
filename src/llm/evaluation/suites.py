@@ -90,12 +90,36 @@ def check_constraint(case: ConstraintCase, response: str) -> bool:
 
 
 CODE_CASES = [
-    CodeCase("Write a Python function add(a, b) that returns the sum of a and b.", "assert add(2, 3) == 5\nassert add(-1, 1) == 0"),
-    CodeCase("Write a Python function is_even(n) that returns True if n is even.", "assert is_even(4) and not is_even(3)"),
-    CodeCase("Write a Python function reverse(s) that returns the reversed string.", "assert reverse('abc') == 'cba'\nassert reverse('') == ''"),
-    CodeCase("Write a Python function factorial(n) returning n factorial.", "assert factorial(5) == 120\nassert factorial(0) == 1"),
-    CodeCase("Write a Python function max_of(items) returning the largest item of a list.", "assert max_of([1, 9, 3]) == 9"),
-    CodeCase("Write a Python function count_vowels(s) returning the number of vowels in s.", "assert count_vowels('hello') == 2"),
-    CodeCase("Write a Python function fib(n) returning the n-th Fibonacci number with fib(0)=0.", "assert [fib(i) for i in range(7)] == [0, 1, 1, 2, 3, 5, 8]"),
-    CodeCase("Write a Python function is_palindrome(s) returning True for palindromes.", "assert is_palindrome('level') and not is_palindrome('abc')"),
+    CodeCase(
+        "Write a Python function add(a, b) that returns the sum of a and b.",
+        "assert add(2, 3) == 5\nassert add(-1, 1) == 0",
+    ),
+    CodeCase(
+        "Write a Python function is_even(n) that returns True if n is even.",
+        "assert is_even(4) and not is_even(3)",
+    ),
+    CodeCase(
+        "Write a Python function reverse(s) that returns the reversed string.",
+        "assert reverse('abc') == 'cba'\nassert reverse('') == ''",
+    ),
+    CodeCase(
+        "Write a Python function factorial(n) returning n factorial.",
+        "assert factorial(5) == 120\nassert factorial(0) == 1",
+    ),
+    CodeCase(
+        "Write a Python function max_of(items) returning the largest item of a list.",
+        "assert max_of([1, 9, 3]) == 9",
+    ),
+    CodeCase(
+        "Write a Python function count_vowels(s) returning the number of vowels in s.",
+        "assert count_vowels('hello') == 2",
+    ),
+    CodeCase(
+        "Write a Python function fib(n) returning the n-th Fibonacci number with fib(0)=0.",
+        "assert [fib(i) for i in range(7)] == [0, 1, 1, 2, 3, 5, 8]",
+    ),
+    CodeCase(
+        "Write a Python function is_palindrome(s) returning True for palindromes.",
+        "assert is_palindrome('level') and not is_palindrome('abc')",
+    ),
 ]

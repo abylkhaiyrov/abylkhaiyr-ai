@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -85,16 +84,24 @@ class ReasoningEngine:
         self.verifiers = verifiers or {"math": MathVerifier(), "code": CodeVerifier()}
 
     def decompose(self, problem: Problem, budget: Budget) -> list[str]:
-        params = SamplingParams(max_new_tokens=budget.max_new_tokens_per_candidate // 2, greedy=True)
-        reply = self.engine.chat([Message("user", DECOMPOSE_INSTRUCTION + problem.question)], params)
+        params = SamplingParams(
+            max_new_tokens=budget.max_new_tokens_per_candidate // 2, greedy=True
+        )
+        reply = self.engine.chat(
+            [Message("user", DECOMPOSE_INSTRUCTION + problem.question)], params
+        )
         steps = [line.strip(STEP_PREFIX_CHARS).strip() for line in reply.text.splitlines()]
         return [step for step in steps if step]
 
-    def _sample(self, problem: Problem, params: SamplingParams, tokens_used: int) -> tuple[str, int]:
+    def _sample(
+        self, problem: Problem, params: SamplingParams, tokens_used: int
+    ) -> tuple[str, int]:
         reply = self.engine.chat([Message("user", problem.question)], params)
         return reply.text, tokens_used + len(reply.token_ids)
 
-    def solve(self, problem: Problem, budget: Budget | None = None, decompose: bool = False) -> Solution:
+    def solve(
+        self, problem: Problem, budget: Budget | None = None, decompose: bool = False
+    ) -> Solution:
         budget = budget or Budget()
         verifier = self.verifiers[problem.kind]
         started = time.monotonic()
@@ -131,10 +138,11 @@ class ReasoningEngine:
         if problem.kind == "code":
             best = max(verified, key=lambda c: c.score)
         else:
-            votes: Counter[str] = Counter()
+            votes: dict[str, float] = {}
             for candidate in verified:
-                key = next((k for k in votes if answers_match(candidate.answer, k)), candidate.answer)
-                votes[key] += 1 + candidate.score
-            winner = votes.most_common(1)[0][0]
+                answer = candidate.answer or ""
+                key = next((k for k in votes if answers_match(answer, k)), answer)
+                votes[key] = votes.get(key, 0.0) + 1 + candidate.score
+            winner = max(votes, key=lambda key: votes[key])
             best = next(c for c in verified if answers_match(c.answer, winner))
         solution.answer, solution.text, solution.verified = best.answer, best.text, best.verified

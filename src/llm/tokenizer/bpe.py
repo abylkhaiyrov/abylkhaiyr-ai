@@ -73,7 +73,9 @@ class BPETokenizer:
         ids: list[int] = []
         for index, piece in enumerate(SPECIAL_PATTERN.split(text)):
             if index % 2 == 0:
-                ids.extend(self.backend.encode(piece, add_special_tokens=False).ids if piece else [])
+                ids.extend(
+                    self.backend.encode(piece, add_special_tokens=False).ids if piece else []
+                )
             else:
                 for part in (piece[:1], piece[1:]):
                     ids.extend(self.backend.encode(part, add_special_tokens=False).ids)

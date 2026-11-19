@@ -3,8 +3,8 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as functional
 from torch import Tensor, nn
+from torch.nn import functional
 
 from llm.core.config import ModelConfig
 from llm.model.cache import LayerKVCache
@@ -50,8 +50,10 @@ def repeat_kv(x: Tensor, groups: int) -> Tensor:
     if groups == 1:
         return x
     batch, heads, length, dim = x.shape
-    return x[:, :, None].expand(batch, heads, groups, length, dim).reshape(
-        batch, heads * groups, length, dim
+    return (
+        x[:, :, None]
+        .expand(batch, heads, groups, length, dim)
+        .reshape(batch, heads * groups, length, dim)
     )
 
 

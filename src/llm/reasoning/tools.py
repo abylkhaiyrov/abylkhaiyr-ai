@@ -5,6 +5,7 @@ from fractions import Fraction
 
 import sympy
 from sympy.parsing.sympy_parser import (
+    TokenError,
     convert_xor,
     implicit_multiplication_application,
     parse_expr,
@@ -35,7 +36,7 @@ def evaluate_expression(expression: str) -> sympy.Expr | None:
             global_dict={"__builtins__": {}},
             transformations=TRANSFORMATIONS,
         )
-    except Exception:
+    except (sympy.SympifyError, SyntaxError, TypeError, ValueError, TokenError):
         return None
 
 
@@ -59,7 +60,12 @@ def verify_annotations(text: str) -> tuple[int, int]:
     for expression, claimed in ANNOTATION_PATTERN.findall(text):
         total += 1
         value, claim = evaluate_expression(expression), to_number(claimed)
-        if value is not None and claim is not None and value.is_number and numbers_equal(value, claim):
+        if (
+            value is not None
+            and claim is not None
+            and value.is_number
+            and numbers_equal(value, claim)
+        ):
             correct += 1
     return correct, total
 

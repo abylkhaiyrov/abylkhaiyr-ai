@@ -15,10 +15,15 @@ from llm.training.checkpoint import load_model_weights, save_model_weights
 
 
 def test_config_rejects_incompatible_parameters():
-    base = dict(
-        vocab_size=10, hidden_size=32, num_hidden_layers=1, num_attention_heads=4,
-        num_key_value_heads=2, intermediate_size=64, max_position_embeddings=16,
-    )
+    base = {
+        "vocab_size": 10,
+        "hidden_size": 32,
+        "num_hidden_layers": 1,
+        "num_attention_heads": 4,
+        "num_key_value_heads": 2,
+        "intermediate_size": 64,
+        "max_position_embeddings": 16,
+    }
     ModelConfig(**base)
     with pytest.raises(ValidationError):
         ModelConfig(**{**base, "hidden_size": 30})
@@ -39,7 +44,9 @@ def test_sdpa_matches_reference_attention():
     torch.manual_seed(0)
     q, k, v = (torch.randn(2, 4, 6, 8) for _ in range(3))
     mask = build_attention_mask(6, 6, torch.device("cpu"))
-    assert torch.allclose(reference_attention(q, k, v, mask), sdpa_attention(q, k, v, mask), atol=1e-5)
+    assert torch.allclose(
+        reference_attention(q, k, v, mask), sdpa_attention(q, k, v, mask), atol=1e-5
+    )
 
 
 def test_reference_attention_gradcheck():

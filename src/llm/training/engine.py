@@ -8,11 +8,12 @@ from typing import Protocol
 
 import numpy as np
 import torch
-from torch import nn
+from torch import Tensor, nn
 
 from llm.core.config import ModelConfig, TrainConfig
 from llm.core.errors import ResourceError, TrainingError
 from llm.core.hardware import free_disk_gb
+from llm.model.transformer import CausalLM
 from llm.optimization.adamw import AdamW
 from llm.optimization.grad import clip_grad_norm
 from llm.optimization.memory import (
@@ -71,7 +72,7 @@ class TrainingResult:
 class Trainer:
     def __init__(
         self,
-        model: nn.Module,
+        model: CausalLM,
         model_config: ModelConfig,
         config: TrainConfig,
         train_source: BatchSource,
@@ -100,8 +101,7 @@ class Trainer:
             micro_batch_size=config.micro_batch_size,
             gradient_accumulation_steps=config.gradient_accumulation_steps,
         )
-        if hasattr(self.model, "activation_checkpointing"):
-            self.model.activation_checkpointing = config.activation_checkpointing
+        self.model.activation_checkpointing = config.activation_checkpointing
         self.train_source.set_batch_size(self.state.micro_batch_size)
 
     def resume(self) -> bool:
@@ -164,7 +164,9 @@ class Trainer:
     def _optimizer_step(self) -> tuple[float, bool]:
         if self.scaler:
             self.scaler.unscale_(self.optimizer)
-        grad_norm = float(clip_grad_norm(self.model.parameters(), self.config.optimizer.max_grad_norm))
+        grad_norm = float(
+            clip_grad_norm(self.model.parameters(), self.config.optimizer.max_grad_norm)
+        )
         if not math.isfinite(grad_norm):
             return grad_norm, False
         if self.scaler:

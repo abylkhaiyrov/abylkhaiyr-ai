@@ -58,7 +58,10 @@ def test_conversation_labels_mask_everything_except_assistant(tokenizer):
     assert len(ids) == len(labels)
     trained = [i for i, label in zip(ids, labels) if label != -100]
     assert trained == [
-        *tokenizer.encode("hello"), tokenizer.eos_id, *tokenizer.encode("ciao"), tokenizer.eos_id,
+        *tokenizer.encode("hello"),
+        tokenizer.eos_id,
+        *tokenizer.encode("ciao"),
+        tokenizer.eos_id,
     ]
     assert labels[0] == -100
     assert ids == tokenizer.encode_conversation(messages)

@@ -1,8 +1,7 @@
 import sys
-
-from llm.data.preference import build_preference_files, tokenize_preference_split
 from pathlib import Path
 
+from llm.data.preference import build_preference_files, tokenize_preference_split
 from llm.tokenizer.bpe import BPETokenizer
 
 root = Path(sys.argv[1])

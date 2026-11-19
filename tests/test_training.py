@@ -25,17 +25,29 @@ def write_tokens(path, vocab, size=6000):
 def build_trainer(tmp_path, model_config, steps, accumulation=2, micro=4, name="run", **extra):
     write_tokens(tmp_path / "train.bin", model_config.vocab_size)
     train = PackedTokenLoader(tmp_path / "train.bin", np.dtype(np.uint16), 16, micro, seed=0)
-    valid = PackedTokenLoader(tmp_path / "train.bin", np.dtype(np.uint16), 16, micro, 0, shuffle=False)
+    valid = PackedTokenLoader(
+        tmp_path / "train.bin", np.dtype(np.uint16), 16, micro, 0, shuffle=False
+    )
     config = TrainConfig(
-        max_steps=steps, micro_batch_size=micro, gradient_accumulation_steps=accumulation,
-        sequence_length=16, eval_interval=5, eval_batches=2, log_interval=5, checkpoint_interval=5,
-        keep_checkpoints=2, optimizer=OptimizerConfig(learning_rate=3e-3, warmup_steps=2), **extra,
+        max_steps=steps,
+        micro_batch_size=micro,
+        gradient_accumulation_steps=accumulation,
+        sequence_length=16,
+        eval_interval=5,
+        eval_batches=2,
+        log_interval=5,
+        checkpoint_interval=5,
+        keep_checkpoints=2,
+        optimizer=OptimizerConfig(learning_rate=3e-3, warmup_steps=2),
+        **extra,
     )
     seed_everything(0)
     model = CausalLM(model_config)
     checkpoints = CheckpointManager(tmp_path / f"ckpt_{name}", keep=2)
     monitor = TrainingMonitor(tmp_path / f"exp_{name}", CPU, steps)
-    trainer = Trainer(model, model_config, config, train, valid, CPU, torch.float32, checkpoints, monitor, "v1")
+    trainer = Trainer(
+        model, model_config, config, train, valid, CPU, torch.float32, checkpoints, monitor, "v1"
+    )
     return trainer
 
 
@@ -46,8 +58,13 @@ def test_loss_decreases_and_weights_update(tmp_path, model_config):
     result = trainer.train()
     assert result.last_validation_loss < initial * 0.7
     assert any(not torch.equal(a, b) for a, b in zip(before, trainer.model.parameters()))
-    records = [json.loads(line) for line in (tmp_path / "exp_run" / "metrics.jsonl").read_text().splitlines()]
-    assert {"train/loss", "train/grad_norm", "perf/tokens_per_second"} <= {k for r in records for k in r}
+    records = [
+        json.loads(line)
+        for line in (tmp_path / "exp_run" / "metrics.jsonl").read_text().splitlines()
+    ]
+    assert {"train/loss", "train/grad_norm", "perf/tokens_per_second"} <= {
+        k for r in records for k in r
+    }
 
 
 def test_resume_reproduces_uninterrupted_training(tmp_path, model_config):
@@ -143,6 +160,7 @@ def test_training_is_reproducible_with_same_seed(tmp_path, model_config):
 
 def test_no_memory_leak_across_steps(tmp_path, model_config):
     import gc
+
     trainer = build_trainer(tmp_path, model_config, steps=1)
     trainer.model.train()
     for _ in range(3):

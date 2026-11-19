@@ -25,7 +25,9 @@ def test_rms_norm_known_values():
     x = torch.tensor([[3.0, 4.0]])
     expected = x / math.sqrt((9 + 16) / 2)
     assert torch.allclose(rms_norm(x, torch.ones(2), 0.0), expected, atol=1e-6)
-    assert torch.allclose(rms_norm(x, torch.tensor([2.0, 0.5]), 0.0), expected * torch.tensor([2.0, 0.5]))
+    assert torch.allclose(
+        rms_norm(x, torch.tensor([2.0, 0.5]), 0.0), expected * torch.tensor([2.0, 0.5])
+    )
 
 
 def test_silu_and_swiglu_known_values():
@@ -42,7 +44,7 @@ def test_rope_position_zero_is_identity_and_preserves_norm():
     q0, k0 = rope(q, k, zero)
     assert torch.allclose(q0, q) and torch.allclose(k0, k)
     positions = torch.arange(5).unsqueeze(0)
-    qr, kr = rope(q, k, positions)
+    qr, _kr = rope(q, k, positions)
     assert torch.allclose(qr.norm(dim=-1), q.norm(dim=-1), atol=1e-5)
 
 
@@ -89,7 +91,7 @@ def test_adamw_matches_torch_reference():
 
 
 def test_learning_rate_schedule():
-    args = dict(max_steps=100, base_lr=1.0, warmup_steps=10, min_lr_ratio=0.1)
+    args = {"max_steps": 100, "base_lr": 1.0, "warmup_steps": 10, "min_lr_ratio": 0.1}
     assert learning_rate_at(0, **args) == pytest.approx(0.1)
     assert learning_rate_at(9, **args) == pytest.approx(1.0)
     assert learning_rate_at(10, **args) == pytest.approx(1.0)

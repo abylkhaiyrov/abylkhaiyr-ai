@@ -66,6 +66,7 @@ def run_python(code: str, limits: SandboxLimits | None = None) -> SandboxResult:
                 cwd=workdir,
                 env=RESTRICTED_ENV,
                 capture_output=True,
+                check=False,
                 text=True,
                 timeout=limits.timeout_seconds,
                 preexec_fn=_apply_limits(limits),

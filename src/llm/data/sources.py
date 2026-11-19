@@ -56,8 +56,13 @@ def _to_record(source: DataSourceConfig, row: dict[str, Any]) -> Record | None:
         if not prompt or not response:
             return None
         return Record(
-            source.name, source.kind, source.language, prompt, response,
-            source.min_chars, source.check_language,
+            source.name,
+            source.kind,
+            source.language,
+            prompt,
+            response,
+            source.min_chars,
+            source.check_language,
         )
     if source.template is not None:
         text = _render(source.template, row)
@@ -66,6 +71,11 @@ def _to_record(source: DataSourceConfig, row: dict[str, Any]) -> Record | None:
     else:
         raise DataError(f"source {source.name} needs text_field or template")
     return Record(
-        source.name, source.kind, source.language, text[: source.max_chars],
-        None, source.min_chars, source.check_language,
+        source.name,
+        source.kind,
+        source.language,
+        text[: source.max_chars],
+        None,
+        source.min_chars,
+        source.check_language,
     )

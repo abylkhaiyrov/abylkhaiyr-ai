@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 import torch
@@ -21,13 +21,14 @@ class AdamW(Optimizer):
         super().__init__(params, defaults)
 
     @torch.no_grad()
-    def step(self, closure: Any = None) -> None:
+    def step(self, closure: Callable[[], float] | None = None) -> float | None:
         for group in self.param_groups:
             beta1, beta2 = group["betas"]
             for parameter in group["params"]:
                 if parameter.grad is None:
                     continue
                 self._update(parameter, parameter.grad, group, beta1, beta2)
+        return None
 
     def _update(self, parameter: Tensor, grad: Tensor, group: dict, beta1: float, beta2: float):
         state = self.state[parameter]

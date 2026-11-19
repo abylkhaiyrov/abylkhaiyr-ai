@@ -5,7 +5,7 @@ from collections import Counter
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO
+from typing import TextIO
 
 from llm.core.config import DataConfig
 from llm.core.errors import ResourceError
@@ -57,10 +57,13 @@ class QualityFilter:
             return "symbols"
         if repeated_line_ratio(text) > self.config.max_repeated_line_ratio:
             return "repetition"
-        if self.config.detect_language and check_language:
-            if detect_language(text[: self.config.language_sample_chars]) not in self.config.allowed_languages:
-                return "language"
-        return None
+        sample = text[: self.config.language_sample_chars]
+        language_rejected = (
+            self.config.detect_language
+            and check_language
+            and detect_language(sample) not in self.config.allowed_languages
+        )
+        return "language" if language_rejected else None
 
 
 class CorpusBuilder:
@@ -87,7 +90,7 @@ class CorpusBuilder:
         stats: dict[str, SourceStats] = {}
         split_counts: Counter[str] = Counter()
         with ExitStack() as stack:
-            handles = {
+            handles: dict[tuple[str, str], TextIO] = {
                 (group, split): stack.enter_context(
                     (output / group / f"{split}.jsonl").open("w", encoding="utf-8")
                 )
@@ -123,7 +126,7 @@ class CorpusBuilder:
     def _process(
         self,
         record: Record,
-        handles: dict[tuple[str, str], IO[str]],
+        handles: dict[tuple[str, str], TextIO],
         stats: SourceStats,
         split_counts: Counter[str],
     ) -> None:
@@ -147,7 +150,11 @@ class CorpusBuilder:
         stats.kept += 1
         split_counts[split] += 1
         if response is None:
-            payload = {"source": record.source, "language": record.language, "text": text}
+            payload: dict[str, object] = {
+                "source": record.source,
+                "language": record.language,
+                "text": text,
+            }
             handles[("corpus", split)].write(json.dumps(payload, ensure_ascii=False) + "\n")
         else:
             messages = [

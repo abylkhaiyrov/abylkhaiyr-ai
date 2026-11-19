@@ -42,7 +42,9 @@ def tokenize_dataset(data_dir: str | Path, tokenizer: BPETokenizer) -> dict[str,
         corpus_file = root / "corpus" / f"{split}.jsonl"
         sft_file = root / "sft" / f"{split}.jsonl"
         summary[split] = {
-            "tokens": tokenize_corpus_split(corpus_file, root / TOKENS_DIR / f"{split}.bin", tokenizer),
+            "tokens": tokenize_corpus_split(
+                corpus_file, root / TOKENS_DIR / f"{split}.bin", tokenizer
+            ),
             "conversations": tokenize_sft_split(sft_file, root / "sft" / split, tokenizer),
         }
     manifest_path = root / MANIFEST_FILE
@@ -55,6 +57,3 @@ def tokenize_dataset(data_dir: str | Path, tokenizer: BPETokenizer) -> dict[str,
 
 def roundtrip_check(tokenizer: BPETokenizer, texts: list[str]) -> bool:
     return all(tokenizer.decode(tokenizer.encode(text)) == text for text in texts)
-
-
-

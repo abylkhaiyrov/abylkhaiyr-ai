@@ -16,6 +16,7 @@ from torch import nn
 
 from llm.core.config import ModelConfig
 from llm.core.errors import CheckpointError
+from llm.model.transformer import CausalLM
 
 MODEL_FILE = "model.safetensors"
 STATE_FILE = "training_state.pt"
@@ -34,8 +35,8 @@ class TrainingState:
     best_validation_loss: float = float("inf")
     evaluations_without_improvement: int = 0
     metrics: list[dict[str, float]] = field(default_factory=list)
-    micro_batch_size: int | None = None
-    gradient_accumulation_steps: int | None = None
+    micro_batch_size: int = 1
+    gradient_accumulation_steps: int = 1
 
 
 def file_sha256(path: Path) -> str:
@@ -87,7 +88,9 @@ def load_model_weights(model: nn.Module, path: Path) -> None:
     tied = getattr(getattr(model, "config", None), "tie_word_embeddings", False)
     missing = [key for key in result.missing_keys if not (tied and key == TIED_HEAD_KEY)]
     if missing or result.unexpected_keys:
-        raise CheckpointError(f"weights mismatch: missing={missing} unexpected={result.unexpected_keys}")
+        raise CheckpointError(
+            f"weights mismatch: missing={missing} unexpected={result.unexpected_keys}"
+        )
 
 
 class CheckpointManager:
@@ -189,9 +192,7 @@ class CheckpointManager:
         return TrainingState(**payload["state"]), payload["loader"]
 
 
-def load_model_for_inference(path: str | Path) -> tuple[nn.Module, ModelConfig, dict[str, Any]]:
-    from llm.model.transformer import CausalLM
-
+def load_model_for_inference(path: str | Path) -> tuple[CausalLM, ModelConfig, dict[str, Any]]:
     directory = Path(path)
     meta = CheckpointManager.verify(directory)
     config = ModelConfig.model_validate(meta["model_config"])

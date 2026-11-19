@@ -68,7 +68,10 @@ def create_app(engine: InferenceEngine, model_name: str) -> FastAPI:
 
     @app.get("/v1/models")
     def models() -> dict:
-        return {"object": "list", "data": [{"id": model_name, "object": "model", "owned_by": "local"}]}
+        return {
+            "object": "list",
+            "data": [{"id": model_name, "object": "model", "owned_by": "local"}],
+        }
 
     @app.post("/v1/chat/completions")
     def chat(request: ChatRequest):

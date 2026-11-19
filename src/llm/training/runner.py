@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-
 from llm.core.config import ExperimentConfig
 from llm.core.errors import ConfigError, ResourceError
 from llm.core.hardware import detect_hardware, resolve_device, resolve_dtype
@@ -34,7 +33,9 @@ def _load_init_weights(model: CausalLM, init_from: str) -> None:
 
 def _check_memory(config: ExperimentConfig, hardware_memory_gb: float) -> None:
     train = config.train
-    required = estimate_training_memory_gb(config.model, train.min_micro_batch_size, train.sequence_length)
+    required = estimate_training_memory_gb(
+        config.model, train.min_micro_batch_size, train.sequence_length
+    )
     if required > hardware_memory_gb * MEMORY_BUDGET_FRACTION:
         raise ResourceError(
             f"model needs about {required:.1f} GB at the smallest micro batch but only "
@@ -49,10 +50,12 @@ def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
     if train.stage == "pretrain":
         return (
             PackedTokenLoader(root / "tokens" / "train.bin", dtype, length, batch, seed),
-            PackedTokenLoader(root / "tokens" / "validation.bin", dtype, length, batch, seed, False),
+            PackedTokenLoader(
+                root / "tokens" / "validation.bin", dtype, length, batch, seed, False
+            ),
         )
     if train.stage == "sft":
-        make = lambda split, shuffle: ConversationLoader(  # noqa: E731
+        make = lambda split, shuffle: ConversationLoader(
             root / "sft" / split, dtype, length + 1, batch, tokenizer.pad_id, seed, shuffle
         )
         return make("train", True), make("validation", False)
@@ -88,8 +91,17 @@ def build_trainer(config: ExperimentConfig, resume: bool) -> Trainer:
     train_source, validation_source = _build_loaders(config, tokenizer)
     monitor = TrainingMonitor(train.output_dir, device, train.max_steps)
     trainer = Trainer(
-        model, config.model, train, train_source, validation_source, device, dtype,
-        checkpoints, monitor, tokenizer.version, objective,
+        model,
+        config.model,
+        train,
+        train_source,
+        validation_source,
+        device,
+        dtype,
+        checkpoints,
+        monitor,
+        tokenizer.version,
+        objective,
     )
     if resume:
         trainer.resume()
@@ -103,6 +115,3 @@ def recommend_micro_batch(config: ExperimentConfig) -> int:
 
 def recommend_profile(profile: str, vocab_size: int) -> str:
     return suggest_compact_profile(profile, vocab_size, detect_hardware())
-
-
-

@@ -67,7 +67,11 @@ def cmd_prepare_data(args: argparse.Namespace) -> int:
     if args.skip_tokenize:
         return 0
     token_file = Path(tokenizer_config.path) / "tokenizer.json"
-    tokenizer = BPETokenizer.load(token_file.parent) if token_file.is_file() and not args.retrain_tokenizer else train_tokenizer(data_config.output_dir, tokenizer_config)
+    tokenizer = (
+        BPETokenizer.load(token_file.parent)
+        if token_file.is_file() and not args.retrain_tokenizer
+        else train_tokenizer(data_config.output_dir, tokenizer_config)
+    )
     print(json.dumps(tokenize_dataset(data_config.output_dir, tokenizer)))
     return 0
 
@@ -79,7 +83,9 @@ def cmd_train_tokenizer(args: argparse.Namespace) -> int:
     config = TokenizerConfig(vocab_size=args.vocab_size, path=args.output)
     tokenizer = train_tokenizer(args.data_dir, config)
     sample = [t for _, t in zip(range(args.check_samples), tokenizer_training_texts(args.data_dir))]
-    print(f"vocab={tokenizer.vocab_size} version={tokenizer.version} roundtrip_ok={roundtrip_check(tokenizer, sample)}")
+    print(
+        f"vocab={tokenizer.vocab_size} version={tokenizer.version} roundtrip_ok={roundtrip_check(tokenizer, sample)}"
+    )
     return 0
 
 
@@ -118,7 +124,9 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     from llm.evaluation.engine import EvaluationConfig, Evaluator
 
     engine = _tokenizer_and_engine(args.checkpoint, args.tokenizer, args.device)
-    evaluator = Evaluator(engine, EvaluationConfig(data_dir=args.data_dir, gsm8k_cases=args.gsm8k_cases))
+    evaluator = Evaluator(
+        engine, EvaluationConfig(data_dir=args.data_dir, gsm8k_cases=args.gsm8k_cases)
+    )
     results = evaluator.run(include_dataset_suites=not args.offline)
     evaluator.save(results, args.output)
     print(json.dumps(results, indent=2))
@@ -174,7 +182,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from llm.api.server import create_app
 
     engine = _tokenizer_and_engine(args.checkpoint, args.tokenizer, args.device)
-    uvicorn.run(create_app(engine, args.model_name), host=args.host, port=args.port, log_level="info")
+    uvicorn.run(
+        create_app(engine, args.model_name), host=args.host, port=args.port, log_level="info"
+    )
     return 0
 
 

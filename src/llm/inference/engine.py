@@ -4,10 +4,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 
 from llm.inference.sampling import SamplingParams, apply_repetition_penalty, select_token
 from llm.model.cache import KVCache
+from llm.model.transformer import CausalLM
 from llm.tokenizer.bpe import BPETokenizer, Message
 
 REPLACEMENT_CHAR = "�"
@@ -38,7 +39,7 @@ def truncate_at_stop(text: str, stops: list[str]) -> tuple[str, bool]:
 
 
 class InferenceEngine:
-    def __init__(self, model: nn.Module, tokenizer: BPETokenizer, device: torch.device) -> None:
+    def __init__(self, model: CausalLM, tokenizer: BPETokenizer, device: torch.device) -> None:
         self.model = model.to(device).eval()
         self.tokenizer = tokenizer
         self.device = device
@@ -145,8 +146,12 @@ class InferenceEngine:
         ]
         width = max(len(ids) for ids in encoded)
         pad = self.tokenizer.pad_id
-        input_ids = torch.tensor([[pad] * (width - len(i)) + i for i in encoded], device=self.device)
-        mask = torch.tensor([[0] * (width - len(i)) + [1] * len(i) for i in encoded], device=self.device)
+        input_ids = torch.tensor(
+            [[pad] * (width - len(i)) + i for i in encoded], device=self.device
+        )
+        mask = torch.tensor(
+            [[0] * (width - len(i)) + [1] * len(i) for i in encoded], device=self.device
+        )
         generator = self._generator(params)
         cache = self.model.new_cache()
         histories = [list(ids) for ids in encoded]
@@ -177,7 +182,9 @@ class InferenceEngine:
             if all(finished):
                 break
             pending = torch.tensor([[t] for t in next_tokens], device=self.device)
-            mask = torch.cat((mask, torch.ones(len(prompts), 1, dtype=mask.dtype, device=self.device)), 1)
+            mask = torch.cat(
+                (mask, torch.ones(len(prompts), 1, dtype=mask.dtype, device=self.device)), 1
+            )
         return [
             Generation(truncate_at_stop(self.tokenizer.decode(o), params.stop_sequences)[0], o, r)
             for o, r in zip(outputs, reasons, strict=True)
@@ -201,7 +208,9 @@ class InferenceEngine:
             candidates = (scores.unsqueeze(1) + log_probs).view(-1)
             top_scores, top_indices = candidates.topk(2 * width)
             vocab = log_probs.shape[-1]
-            next_scores, next_sources, next_tokens = [], [], []
+            next_scores: list[float] = []
+            next_sources: list[int] = []
+            next_tokens: list[int] = []
             for score, index in zip(top_scores.tolist(), top_indices.tolist(), strict=True):
                 source, token = divmod(index, vocab)
                 if token == self.tokenizer.eos_id:
@@ -218,11 +227,13 @@ class InferenceEngine:
             sequences = [sequences[s] + [t] for s, t in zip(next_sources, next_tokens, strict=True)]
             scores = torch.tensor(next_scores, device=self.device)
             step_input = torch.tensor([[t] for t in next_tokens], device=self.device)
-            log_probs = torch.log_softmax(self.model(step_input, cache=cache)[:, -1].float(), dim=-1)
+            log_probs = torch.log_softmax(
+                self.model(step_input, cache=cache)[:, -1].float(), dim=-1
+            )
         for score, sequence in zip(scores.tolist(), sequences, strict=True):
             if score != float("-inf") and sequence:
                 finished.append((score / len(sequence) ** params.length_penalty, sequence))
-        best_score, best = max(finished, key=lambda item: item[0]) if finished else (0.0, [])
+        best = max(finished, key=lambda item: item[0])[1] if finished else []
         reason = "stop" if best and len(best) < params.max_new_tokens else "length"
         text, _ = truncate_at_stop(self.tokenizer.decode(best), params.stop_sequences)
         return Generation(text, best, reason)

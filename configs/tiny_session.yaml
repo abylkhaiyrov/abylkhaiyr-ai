@@ -1,0 +1,27 @@
+name: tiny_session
+model:
+  vocab_size: 8192
+  hidden_size: 384
+  num_hidden_layers: 8
+  num_attention_heads: 6
+  num_key_value_heads: 2
+  intermediate_size: 1024
+  max_position_embeddings: 512
+tokenizer:
+  vocab_size: 8192
+  path: data/tokenizer
+train:
+  stage: pretrain
+  data_dir: data/processed
+  output_dir: experiments/tiny_session
+  checkpoint_dir: checkpoints/tiny_session
+  max_steps: 600
+  micro_batch_size: 8
+  gradient_accumulation_steps: 8
+  sequence_length: 512
+  eval_interval: 100
+  eval_batches: 20
+  log_interval: 25
+  checkpoint_interval: 100
+  keep_checkpoints: 3
+  optimizer: {learning_rate: 0.001, warmup_steps: 40, weight_decay: 0.1}

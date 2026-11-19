@@ -64,7 +64,9 @@ def test_generation_with_and_without_cache_is_identical(engine):
 
 def test_seeded_sampling_reproducible(engine):
     params = SamplingParams(max_new_tokens=10, temperature=0.9, top_p=0.9, seed=7)
-    assert engine.generate("Привет", params).token_ids == engine.generate("Привет", params).token_ids
+    assert (
+        engine.generate("Привет", params).token_ids == engine.generate("Привет", params).token_ids
+    )
 
 
 def test_max_new_tokens_and_context_window_respected(engine):
@@ -105,9 +107,13 @@ def test_beam_search_not_worse_than_greedy(engine):
         logp = torch.log_softmax(engine.model(full).float(), -1)[0]
         return sum(logp[len(prompt) - 1 + i, t].item() for i, t in enumerate(ids))
 
-    beam = engine.generate_ids(prompt, SamplingParams(max_new_tokens=12, beam_width=4, length_penalty=0.0))
+    beam = engine.generate_ids(
+        prompt, SamplingParams(max_new_tokens=12, beam_width=4, length_penalty=0.0)
+    )
     assert len(beam.token_ids) > 0
-    assert score(beam.token_ids[:12]) >= score(greedy_ids[: len(beam.token_ids)]) - 1e-3 or len(beam.token_ids) != len(greedy_ids)
+    assert score(beam.token_ids[:12]) >= score(greedy_ids[: len(beam.token_ids)]) - 1e-3 or len(
+        beam.token_ids
+    ) != len(greedy_ids)
 
 
 def test_chat_uses_generation_prompt(engine):

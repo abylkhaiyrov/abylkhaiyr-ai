@@ -17,5 +17,7 @@ def clip_grad_norm(parameters: Iterable[nn.Parameter], max_norm: float) -> Tenso
     if torch.isfinite(total):
         scale = torch.clamp(max_norm / (total + 1e-6), max=1.0)
         for parameter in params:
-            parameter.grad.mul_(scale.to(parameter.grad.device))
+            grad = parameter.grad
+            if grad is not None:
+                grad.mul_(scale.to(grad.device))
     return total

@@ -1,6 +1,6 @@
 import torch
-import torch.nn.functional as functional
 from torch import Tensor
+from torch.nn import functional
 
 IGNORE_INDEX = -100
 

@@ -23,15 +23,19 @@ from llm.data.pipeline import CorpusBuilder, QualityFilter, assign_split
 
 
 def make_config(**overrides) -> DataConfig:
-    values = dict(
-        sources=[DataSourceConfig(name="s", dataset="d", text_field="text", license="MIT")],
-        min_chars=20,
-    )
+    values = {
+        "sources": [DataSourceConfig(name="s", dataset="d", text_field="text", license="MIT")],
+        "min_chars": 20,
+    }
     return DataConfig(**{**values, **overrides})
 
 
 def test_html_stripping_and_unescape():
-    assert strip_html("<p>Hi &amp; <b>bye</b></p><script>x()</script>").split() == ["Hi", "&", "bye"]
+    assert strip_html("<p>Hi &amp; <b>bye</b></p><script>x()</script>").split() == [
+        "Hi",
+        "&",
+        "bye",
+    ]
 
 
 def test_personal_data_removed():
@@ -92,7 +96,10 @@ def test_quality_filter_reasons():
     assert quality.rejection_reason("short", "text") == "too_short"
     assert quality.rejection_reason("@#$%^&*()" * 10, "text") == "symbols"
     assert quality.rejection_reason("same line here\n" * 10, "text") == "repetition"
-    assert quality.rejection_reason("Это достаточно длинный русский текст для проверки", "text") is None
+    assert (
+        quality.rejection_reason("Это достаточно длинный русский текст для проверки", "text")
+        is None
+    )
     assert quality.rejection_reason("lorem ipsum dolor sit amet consectetur", "text") == "language"
 
 
@@ -108,8 +115,12 @@ def test_no_near_duplicates_leak_across_splits(tmp_path, monkeypatch):
     records = [Record("s", "text", "ru", text) for text in docs]
     monkeypatch.setattr(pipeline, "stream_source", lambda source, raw: iter(records))
     config = make_config(
-        output_dir=str(tmp_path), validation_fraction=0.3, test_fraction=0.3,
-        detect_language=False, min_chars=10, near_duplicate_threshold=0.8,
+        output_dir=str(tmp_path),
+        validation_fraction=0.3,
+        test_fraction=0.3,
+        detect_language=False,
+        min_chars=10,
+        near_duplicate_threshold=0.8,
     )
     manifest = CorpusBuilder(config).build()
     assert manifest["sources"]["s"]["rejected"]["near_duplicate"] == 60
@@ -155,7 +166,9 @@ def test_tokenize_corpus_and_sft_end_to_end(tmp_path, tokenizer):
     assert count == len(stored)
     assert stored[0] == tokenizer.bos_id and tokenizer.eos_id in stored
     sft = tmp_path / "s.jsonl"
-    rows = [{"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "answer"}]}]
+    rows = [
+        {"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "answer"}]}
+    ]
     sft.write_text("\n".join(json.dumps(r) for r in rows * 3))
     assert tokenize_sft_split(sft, tmp_path / "s", tokenizer) == 3
     loader = ConversationLoader(tmp_path / "s", np.dtype(np.uint16), 64, 2, tokenizer.pad_id, 0)
@@ -168,10 +181,14 @@ def test_tokenize_corpus_and_sft_end_to_end(tmp_path, tokenizer):
 def test_dotted_prefixes_do_not_collide(tmp_path, tokenizer):
     for side, answer in (("chosen", "good"), ("rejected", "bad")):
         flat = tmp_path / f"train.{side}.jsonl"
-        row = {"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": answer}]}
+        row = {
+            "messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": answer}]
+        }
         flat.write_text(json.dumps(row))
         tokenize_sft_split(flat, tmp_path / f"train.{side}", tokenizer)
     dtype = np.dtype(np.uint16)
     chosen = ConversationLoader(tmp_path / "train.chosen", dtype, 64, 1, tokenizer.pad_id, 0, False)
-    rejected = ConversationLoader(tmp_path / "train.rejected", dtype, 64, 1, tokenizer.pad_id, 0, False)
+    rejected = ConversationLoader(
+        tmp_path / "train.rejected", dtype, 64, 1, tokenizer.pad_id, 0, False
+    )
     assert chosen.next_batch()[1].tolist() != rejected.next_batch()[1].tolist()

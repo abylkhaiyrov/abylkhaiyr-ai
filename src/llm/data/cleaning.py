@@ -23,8 +23,47 @@ CARD_TOKEN = "<card>"
 KAZAKH_LETTERS = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
 UKRAINIAN_LETTERS = set("їєґЇЄҐ")
 ENGLISH_STOPWORDS = frozenset(
-    "the of and to in is that it for as with was on are by this be at from or an have not"
-    " but his her they you which their has had were been one all would there what".split()
+    [
+        "the",
+        "of",
+        "and",
+        "to",
+        "in",
+        "is",
+        "that",
+        "it",
+        "for",
+        "as",
+        "with",
+        "was",
+        "on",
+        "are",
+        "by",
+        "this",
+        "be",
+        "at",
+        "from",
+        "or",
+        "an",
+        "have",
+        "not",
+        "but",
+        "his",
+        "her",
+        "they",
+        "you",
+        "which",
+        "their",
+        "has",
+        "had",
+        "were",
+        "been",
+        "one",
+        "all",
+        "would",
+        "there",
+        "what",
+    ]
 )
 SCRIPT_DOMINANCE = 0.5
 KAZAKH_LETTER_RATIO = 0.01
@@ -39,7 +78,9 @@ def strip_html(text: str) -> str:
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize("NFC", text).replace("\r\n", "\n").replace("\r", "\n")
     text = "".join(
-        ch for ch in text if ch in KEEP_CONTROL or unicodedata.category(ch) not in CONTROL_CATEGORIES
+        ch
+        for ch in text
+        if ch in KEEP_CONTROL or unicodedata.category(ch) not in CONTROL_CATEGORIES
     )
     text = INLINE_SPACES.sub(" ", text)
     text = "\n".join(line.strip() for line in text.split("\n"))
@@ -71,7 +112,10 @@ def detect_language(text: str) -> str:
         return "kk" if kazakh / len(cyrillic) >= KAZAKH_LETTER_RATIO else "ru"
     if len(latin) / len(letters) >= SCRIPT_DOMINANCE:
         words = re.findall(r"[a-z]+", text.lower())
-        if words and sum(w in ENGLISH_STOPWORDS for w in words) / len(words) >= ENGLISH_STOPWORD_RATIO:
+        if (
+            words
+            and sum(w in ENGLISH_STOPWORDS for w in words) / len(words) >= ENGLISH_STOPWORD_RATIO
+        ):
             return "en"
     return OTHER_LANGUAGE
 

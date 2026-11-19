@@ -5,11 +5,11 @@ import re
 from pathlib import Path
 
 from datasets import load_dataset
+from torch import Tensor
 
 from llm.core.errors import DataError
-from llm.data.binary import ConversationLoader, read_jsonl, tokenize_sft_split, token_dtype
+from llm.data.binary import ConversationLoader, read_jsonl, token_dtype, tokenize_sft_split
 from llm.tokenizer.bpe import BPETokenizer
-from torch import Tensor
 
 PREFERENCE_DIR = "preference"
 TURN_PATTERN = re.compile(r"\n\n(Human|Assistant): ")
@@ -37,8 +37,11 @@ def build_preference_files(
     for row in dataset:
         chosen, rejected = parse_hh_dialogue(row["chosen"]), parse_hh_dialogue(row["rejected"])
         if (
-            chosen and rejected and chosen[-1]["role"] == "assistant"
-            and rejected[-1]["role"] == "assistant" and chosen[:-1] == rejected[:-1]
+            chosen
+            and rejected
+            and chosen[-1]["role"] == "assistant"
+            and rejected[-1]["role"] == "assistant"
+            and chosen[:-1] == rejected[:-1]
             and chosen[-1] != rejected[-1]
         ):
             rows.append({"chosen": chosen, "rejected": rejected})
@@ -85,7 +88,13 @@ class PreferenceLoader:
             base / f"{split}.chosen", dtype, max_length, batch_size, tokenizer.pad_id, seed, shuffle
         )
         self.rejected = ConversationLoader(
-            base / f"{split}.rejected", dtype, max_length, batch_size, tokenizer.pad_id, seed, shuffle
+            base / f"{split}.rejected",
+            dtype,
+            max_length,
+            batch_size,
+            tokenizer.pad_id,
+            seed,
+            shuffle,
         )
 
     def set_batch_size(self, batch_size: int) -> None:
@@ -101,5 +110,3 @@ class PreferenceLoader:
     def load_state_dict(self, state: dict[str, int]) -> None:
         self.chosen.load_state_dict(state)
         self.rejected.load_state_dict(state)
-
-

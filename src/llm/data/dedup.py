@@ -10,7 +10,9 @@ HASH_BYTES = 8
 
 
 def stable_hash(text: str) -> int:
-    return int.from_bytes(hashlib.blake2b(text.encode("utf-8"), digest_size=HASH_BYTES).digest(), "big")
+    return int.from_bytes(
+        hashlib.blake2b(text.encode("utf-8"), digest_size=HASH_BYTES).digest(), "big"
+    )
 
 
 class ExactDeduplicator:
@@ -52,14 +54,14 @@ class MinHashDeduplicator:
         size = min(self.shingle_size, max(len(words), 1))
         shingles = {" ".join(words[i : i + size]) for i in range(max(len(words) - size + 1, 1))}
         hashes = np.fromiter((stable_hash(s) & HASH_MASK for s in shingles), dtype=np.uint64)
-        mixed = (hashes[:, None] * self.multipliers[None, :] + self.offsets[None, :]) % MERSENNE_PRIME
+        mixed = (
+            hashes[:, None] * self.multipliers[None, :] + self.offsets[None, :]
+        ) % MERSENNE_PRIME
         return (mixed & HASH_MASK).min(axis=0)
 
     def is_duplicate(self, text: str) -> bool:
         signature = self.signature(text)
-        keys = [
-            signature[b * self.rows : (b + 1) * self.rows].tobytes() for b in range(self.bands)
-        ]
+        keys = [signature[b * self.rows : (b + 1) * self.rows].tobytes() for b in range(self.bands)]
         for table, key in zip(self.tables, keys, strict=True):
             for candidate in table.get(key, ()):
                 if float(np.mean(candidate == signature)) >= self.threshold:

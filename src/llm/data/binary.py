@@ -46,18 +46,20 @@ def write_token_stream(path: Path, streams: Iterable[list[int]], dtype: np.dtype
     return total
 
 
-def tokenize_corpus_split(
-    corpus_file: Path, output_file: Path, tokenizer: BPETokenizer
-) -> int:
+def tokenize_corpus_split(corpus_file: Path, output_file: Path, tokenizer: BPETokenizer) -> int:
     texts = (row["text"] for row in read_jsonl(corpus_file))
-    documents = ([tokenizer.bos_id, *ids, tokenizer.eos_id] for ids in tokenizer.encode_stream(texts))
+    documents = (
+        [tokenizer.bos_id, *ids, tokenizer.eos_id] for ids in tokenizer.encode_stream(texts)
+    )
     return write_token_stream(output_file, documents, token_dtype(tokenizer.vocab_size))
 
 
 def tokenize_sft_split(sft_file: Path, prefix: Path, tokenizer: BPETokenizer) -> int:
     dtype = token_dtype(tokenizer.vocab_size)
     lengths: list[int] = []
-    ids_path, labels_path = with_extension(prefix, ".ids.bin"), with_extension(prefix, ".labels.bin")
+    ids_path, labels_path = with_extension(prefix, ".ids.bin"), with_extension(
+        prefix, ".labels.bin"
+    )
     with ids_path.open("wb") as ids_handle, labels_path.open("wb") as labels_handle:
         for row in read_jsonl(sft_file):
             messages = [Message(m["role"], m["content"]) for m in row["messages"]]
@@ -100,7 +102,7 @@ class PackedTokenLoader:
         self.batch_size = batch_size
 
     def next_batch(self) -> tuple[Tensor, Tensor]:
-        indices = []
+        indices: list[int] = []
         while len(indices) < self.batch_size:
             if self.cursor >= self.num_chunks:
                 self.epoch += 1
@@ -160,7 +162,7 @@ class ConversationLoader:
         self.batch_size = batch_size
 
     def next_batch(self) -> tuple[Tensor, Tensor]:
-        picked = []
+        picked: list[int] = []
         while len(picked) < self.batch_size:
             if self.cursor >= self.count:
                 self.epoch += 1
@@ -172,7 +174,9 @@ class ConversationLoader:
         for index in picked:
             start, end = int(self.offsets[index]), int(self.offsets[index + 1])
             end = min(end, start + self.max_length)
-            rows.append((self.ids[start:end].astype(np.int64), self.labels[start:end].astype(np.int64)))
+            rows.append(
+                (self.ids[start:end].astype(np.int64), self.labels[start:end].astype(np.int64))
+            )
         width = max(len(ids) for ids, _ in rows)
         inputs = torch.full((len(rows), width), self.pad_id, dtype=torch.long)
         targets = torch.full((len(rows), width), IGNORE_INDEX, dtype=torch.long)
