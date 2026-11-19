@@ -58,7 +58,10 @@ def test_studio_login_csrf_and_password_change(model_config, tokenizer, tmp_path
         json={"current_password": "admin", "new_password": "a secure local password"},
     )
     assert changed.status_code == 204
-    assert client.post("/api/auth/login", json={"username": "admin", "password": "admin"}).status_code == 401
+    assert (
+        client.post("/api/auth/login", json={"username": "admin", "password": "admin"}).status_code
+        == 401
+    )
     assert (
         client.post(
             "/api/auth/login",
@@ -66,3 +69,89 @@ def test_studio_login_csrf_and_password_change(model_config, tokenizer, tmp_path
         ).status_code
         == 200
     )
+
+
+def test_websocket_streams_and_restores_history(model_config, tokenizer, tmp_path, monkeypatch):
+    client = studio_client(model_config, tokenizer, tmp_path)
+    client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    csrf = client.cookies.get("abylkhaiyr_csrf")
+    chat = client.post("/api/chats", headers={"X-CSRF-Token": csrf}, json={}).json()
+    monkeypatch.setattr(InferenceEngine, "stream_chat", lambda *args: iter(["Привет", " мир"]))
+    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+        ws.send_json({"type": "subscribe", "channels": ["chat"]})
+        ws.send_json(
+            {
+                "type": "generation.start",
+                "request_id": "request-1",
+                "chat_id": chat["id"],
+                "content": "Hello",
+            }
+        )
+        events = []
+        while not events or events[-1]["type"] != "generation.completed":
+            events.append(ws.receive_json())
+        assert (
+            "".join(event["text"] for event in events if event["type"] == "generation.delta")
+            == "Привет мир"
+        )
+        assert [event["sequence_id"] for event in events] == list(range(1, len(events) + 1))
+        ws.send_json(
+            {
+                "type": "generation.start",
+                "request_id": "request-1",
+                "chat_id": chat["id"],
+                "content": "Hello",
+            }
+        )
+        assert ws.receive_json()["type"] == "generation.snapshot"
+    messages = client.get(f"/api/chats/{chat['id']}").json()["messages"]
+    assert [message["content"] for message in messages] == ["Hello", "Привет мир"]
+
+
+def test_websocket_rejects_cross_origin(model_config, tokenizer, tmp_path):
+    import pytest
+    from starlette.websockets import WebSocketDisconnect
+
+    client = studio_client(model_config, tokenizer, tmp_path)
+    client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    with (
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect("/api/ws", headers={"origin": "https://example.com"}),
+    ):
+        pass
+
+
+def test_websocket_cancellation_keeps_partial_answer(
+    model_config, tokenizer, tmp_path, monkeypatch
+):
+    import time
+
+    client = studio_client(model_config, tokenizer, tmp_path)
+    client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    csrf = client.cookies.get("abylkhaiyr_csrf")
+    chat = client.post("/api/chats", headers={"X-CSRF-Token": csrf}, json={}).json()
+
+    def generate(*args):
+        yield "first"
+        time.sleep(0.2)
+        yield "second"
+
+    monkeypatch.setattr(InferenceEngine, "stream_chat", generate)
+    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+        ws.send_json({"type": "subscribe", "channels": ["chat"]})
+        ws.send_json(
+            {
+                "type": "generation.start",
+                "request_id": "cancel-1",
+                "chat_id": chat["id"],
+                "content": "Hello",
+            }
+        )
+        while ws.receive_json()["type"] != "generation.delta":
+            pass
+        ws.send_json({"type": "generation.cancel", "request_id": "cancel-1"})
+        result = ws.receive_json()
+        assert result["type"] == "generation.cancelled"
+        assert result["text"] == "first"
+    messages = client.get(f"/api/chats/{chat['id']}").json()["messages"]
+    assert messages[-1]["content"] == "first"

@@ -345,6 +345,41 @@ class StudioService:
             database.flush()
             return self._serialize_message(message)
 
+    def start_chat_generation(
+        self, user_id: int, chat_id: str, content: str
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        with self.session_factory.begin() as database:
+            chat = database.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
+            if chat is None:
+                return None
+            user = MessageRecord(
+                id=str(uuid.uuid4()), chat_id=chat_id, role="user", content=content
+            )
+            assistant = MessageRecord(
+                id=str(uuid.uuid4()), chat_id=chat_id, role="assistant", content=""
+            )
+            if chat.title == "New chat":
+                chat.title = " ".join(content.split())[:80]
+            if chat.model_name is None:
+                chat.model_name = self.inference_model
+            chat.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            database.add_all([user, assistant])
+            database.flush()
+            return self._serialize_message(user), self._serialize_message(assistant)
+
+    def update_message_content(
+        self, user_id: int, chat_id: str, message_id: str | None, content: str
+    ) -> None:
+        with self.session_factory.begin() as database:
+            message = database.scalar(
+                select(MessageRecord)
+                .join(Chat, MessageRecord.chat_id == Chat.id)
+                .where(Chat.id == chat_id, Chat.user_id == user_id, MessageRecord.id == message_id)
+            )
+            if message is None:
+                raise ValueError("Message not found")
+            message.content = content
+
     @staticmethod
     def _parameter_count(config: dict[str, Any]) -> int | None:
         values = ("vocab_size", "hidden_size", "num_hidden_layers", "intermediate_size")
@@ -450,19 +485,25 @@ class StudioService:
             "tokenizer": (
                 "running"
                 if "tokenizer" in active_kinds
-                else "completed" if has_tokenizer else "pending"
+                else "completed"
+                if has_tokenizer
+                else "pending"
             ),
             "pretraining": (
                 "running"
                 if "pretrain" in active_kinds
-                else "completed" if has_pretrain else "pending"
+                else "completed"
+                if has_pretrain
+                else "pending"
             ),
             "sft": "running" if "sft" in active_kinds else "completed" if has_sft else "pending",
             "dpo": "running" if "dpo" in active_kinds else "completed" if has_dpo else "pending",
             "evaluation": (
                 "running"
                 if "evaluation" in active_kinds
-                else "completed" if has_evaluation else "pending"
+                else "completed"
+                if has_evaluation
+                else "pending"
             ),
             "model": "completed" if checkpoints else "pending",
         }

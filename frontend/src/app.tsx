@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 
 import { AppShell } from "@/components/app-shell";
 import { LoadingState } from "@/components/data-state";
-import { useStudioEvents } from "@/hooks/use-studio-events";
+import { StudioEventsProvider } from "@/hooks/use-studio-events";
 import { api } from "@/lib/api";
 
 const LoginPage = lazy(() => import("@/pages/login-page").then((module) => ({ default: module.LoginPage })));
@@ -32,11 +32,10 @@ const client = new QueryClient({
 
 function ProtectedApp() {
   const auth = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false, staleTime: Infinity });
-  useStudioEvents();
   if (auth.isPending) return <LoadingState />;
   if (auth.isError) return <Navigate to="/login" replace />;
   return (
-    <Suspense fallback={<LoadingState />}>
+    <StudioEventsProvider><Suspense fallback={<LoadingState />}>
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<DashboardPage />} />
@@ -53,7 +52,7 @@ function ProtectedApp() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </Suspense>
+    </Suspense></StudioEventsProvider>
   );
 }
 

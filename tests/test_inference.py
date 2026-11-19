@@ -76,6 +76,16 @@ def test_max_new_tokens_and_context_window_respected(engine):
     assert len(fitted) == engine.max_positions - 10
 
 
+def test_fit_prompt_with_one_token_budget_keeps_only_bos(engine):
+    prompt = [engine.tokenizer.bos_id, 20, 21, 22]
+    assert engine.fit_prompt(prompt, engine.max_positions) == [engine.tokenizer.bos_id]
+
+
+def test_fit_prompt_with_one_token_budget_keeps_latest_token_without_bos(engine):
+    prompt = [20, 21, 22]
+    assert engine.fit_prompt(prompt, engine.max_positions) == [22]
+
+
 def test_stop_sequence_truncates_output(engine):
     full = engine.generate("Hello", greedy())
     if len(full.text) < 4:

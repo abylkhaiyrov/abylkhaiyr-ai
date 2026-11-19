@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatBytes, formatNumber } from "@/lib/utils";
 
 export function MonitoringPage() {
-  const query = useQuery({ queryKey: ["system"], queryFn: api.system, refetchInterval: 5000 });
+  const query = useQuery({ queryKey: ["system"], queryFn: api.system });
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
   const system = query.data;

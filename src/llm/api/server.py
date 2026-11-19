@@ -93,7 +93,8 @@ def create_app(
         params = to_params(request)
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
-        prompt_tokens = len(engine.tokenizer.encode_conversation(messages, True))
+        prompt_ids = engine.tokenizer.encode_conversation(messages, True)
+        prompt_tokens = len(engine.fit_prompt(prompt_ids, params.max_new_tokens))
         if request.stream:
             return StreamingResponse(
                 stream_chunks(engine, lock, messages, params, completion_id, created, model_name),

@@ -8,7 +8,7 @@ import { formatBytes, formatDuration, formatNumber } from "@/lib/utils";
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
-  const query = useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard, refetchInterval: 5000 });
+  const query = useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard });
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
   const { training, inference_model: inferenceModel, pipeline, system, counts, events } = query.data;

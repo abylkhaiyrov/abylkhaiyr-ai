@@ -91,6 +91,19 @@ def test_api_chat_completion_shape(client):
     assert client.post("/v1/chat/completions", json=body).json()["choices"] == response["choices"]
 
 
+def test_api_usage_reports_fitted_prompt_tokens(model_config, tokenizer, tmp_path):
+    engine = InferenceEngine(CausalLM(model_config), tokenizer, torch.device("cpu"))
+    client = TestClient(create_app(engine, "test-model", studio_root=tmp_path))
+    body = {
+        "messages": [{"role": "user", "content": "a" * 1000}],
+        "max_tokens": 8,
+        "temperature": 0,
+    }
+    response = client.post("/v1/chat/completions", json=body)
+    assert response.status_code == 200
+    assert response.json()["usage"]["prompt_tokens"] == engine.max_positions - 8
+
+
 def test_api_streaming_matches_non_streaming(client):
     body = {"messages": [{"role": "user", "content": "hi"}], "max_tokens": 12, "temperature": 0}
     full = client.post("/v1/chat/completions", json=body).json()["choices"][0]["message"]["content"]

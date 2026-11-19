@@ -13,8 +13,8 @@ export function TrainingPage() {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [configPath, setConfigPath] = useState("configs/tiny_v2.yaml");
-  const processes = useQuery({ queryKey: ["processes"], queryFn: api.processes, refetchInterval: 5000 });
-  const metrics = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, refetchInterval: 5000 });
+  const processes = useQuery({ queryKey: ["processes"], queryFn: api.processes });
+  const metrics = useQuery({ queryKey: ["metrics"], queryFn: api.metrics });
   const start = useMutation({ mutationFn: () => api.startTraining(configPath), onSuccess: () => client.invalidateQueries({ queryKey: ["processes"] }) });
   const pause = useMutation({ mutationFn: api.pauseTraining, onSuccess: () => client.invalidateQueries({ queryKey: ["processes"] }) });
   const stop = useMutation({ mutationFn: api.stopTraining, onSuccess: () => client.invalidateQueries({ queryKey: ["processes"] }) });

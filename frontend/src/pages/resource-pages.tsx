@@ -11,7 +11,7 @@ function DataPage({ title, description, children }: { title: string; description
 }
 
 export function ProcessesPage() {
-  const query = useQuery({ queryKey: ["processes"], queryFn: api.processes, refetchInterval: 5000 });
+  const query = useQuery({ queryKey: ["processes"], queryFn: api.processes });
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
   return <DataPage title="Process Manager" description="Only processes recognised as Abylkhaiyr AI CLI jobs are listed and controllable."><div className="grid gap-3">{query.data.length === 0 ? <EmptyState title="No project processes" description="Start a training or data job to see it here." /> : query.data.map((process) => <Card key={process.id}><CardContent className="grid gap-2 p-4 sm:grid-cols-4"><div><p className="text-xs text-muted-foreground">Process</p><p>{process.kind} · {process.pid ?? "unknown PID"}</p></div><div><p className="text-xs text-muted-foreground">Status</p><StatusBadge value={process.status} /></div><div><p className="text-xs text-muted-foreground">Resources</p><p>{formatNumber(process.cpu_percent)}% CPU · {formatBytes(process.memory_bytes)}</p></div><div><p className="text-xs text-muted-foreground">Configuration</p><p className="truncate">{process.config_path ?? "Not recorded"}</p></div></CardContent></Card>)}</div></DataPage>;
@@ -51,7 +51,7 @@ export function EvaluationPage() {
 }
 
 export function LogsPage() {
-  const query = useQuery({ queryKey: ["logs"], queryFn: api.logs, refetchInterval: 5000 });
+  const query = useQuery({ queryKey: ["logs"], queryFn: api.logs });
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
   return <DataPage title="Logs and Events" description={`${query.data.total} records. Sensitive key-value values are redacted on the server.`}><Card><CardContent className="max-h-[70vh] overflow-auto p-0"><ul className="divide-y font-mono text-xs">{query.data.items.map((item, index) => <li className="p-3" key={`${item.source}-${index}`}><span className="mr-3 text-muted-foreground">{item.source}</span>{item.message}</li>)}</ul></CardContent></Card></DataPage>;

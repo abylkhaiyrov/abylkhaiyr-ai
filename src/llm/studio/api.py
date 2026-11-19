@@ -1,13 +1,9 @@
-import asyncio
-import json
 import threading
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, WebSocket, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from llm.inference.engine import InferenceEngine
@@ -91,6 +87,13 @@ def create_studio_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
     rate_limiter = LoginRateLimiter()
+    from llm.studio.websocket import WebSocketManager
+
+    websocket_manager = WebSocketManager(studio, engine, inference_lock)
+
+    @router.websocket("/ws")
+    async def websocket_endpoint(socket: WebSocket) -> None:
+        await websocket_manager.handle(socket)
 
     def current_identity(
         session_token: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
@@ -299,30 +302,6 @@ def create_studio_router(
     ) -> dict[str, Any]:
         return studio.logs(category, max(offset, 0), limit)
 
-    @router.get("/events")
-    async def events(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> StreamingResponse:
-        async def stream() -> AsyncIterator[str]:
-            last_payload = ""
-            while True:
-                payload = json.dumps(
-                    {
-                        "system": studio.record_system_metric(),
-                        "processes": studio.list_processes(),
-                        "events": studio.events(20),
-                    },
-                    separators=(",", ":"),
-                )
-                if payload != last_payload:
-                    yield f"event: studio\ndata: {payload}\n\n"
-                    last_payload = payload
-                else:
-                    yield ": keepalive\n\n"
-                await asyncio.sleep(2)
-
-        return StreamingResponse(
-            stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
-        )
-
     @router.get("/chats")
     def chats(
         identity: Annotated[tuple[Any, str], Depends(current_identity)],
@@ -411,7 +390,11 @@ def create_studio_router(
             chat_id,
             "assistant",
             reply.text,
-            input_tokens=len(engine.tokenizer.encode_conversation(messages, True)),
+            input_tokens=len(
+                engine.fit_prompt(
+                    engine.tokenizer.encode_conversation(messages, True), params.max_new_tokens
+                )
+            ),
             output_tokens=output_tokens,
             generation_ms=elapsed_ms,
             tokens_per_second=output_tokens / max(elapsed_ms / 1000, 0.001),

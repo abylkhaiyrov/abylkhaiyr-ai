@@ -16,6 +16,7 @@ dependencies = [
     "tensorboard",
     "fastapi",
     "uvicorn",
+    "websockets>=12,<16",
     "psutil",
     "sqlalchemy>=2.0",
     "alembic>=1.13",
