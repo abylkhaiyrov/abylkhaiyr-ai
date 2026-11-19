@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import time
 
 import psutil
 import torch
@@ -8,6 +9,8 @@ import torch
 from llm.core.errors import ResourceError
 
 BYTES_PER_GB = 1024**3
+RAM_CHECK_ATTEMPTS = 5
+RAM_CHECK_WAIT_SECONDS = 2.0
 OOM_MARKERS = ("out of memory", "invalid buffer size", "mps backend out of memory")
 
 
@@ -42,8 +45,13 @@ def release_device_memory(device: torch.device) -> None:
 
 
 def ensure_ram_budget(max_fraction: float) -> None:
-    if ram_fraction_used() > max_fraction:
-        raise ResourceError(f"system RAM usage above {max_fraction:.0%}")
+    for attempt in range(RAM_CHECK_ATTEMPTS):
+        if ram_fraction_used() <= max_fraction:
+            return
+        gc.collect()
+        if attempt + 1 < RAM_CHECK_ATTEMPTS:
+            time.sleep(RAM_CHECK_WAIT_SECONDS)
+    raise ResourceError(f"system RAM usage stayed above {max_fraction:.0%}")
 
 
 def configure_threads(num_threads: int | None) -> None:
