@@ -83,13 +83,15 @@ def cmd_train_tokenizer(args: argparse.Namespace) -> int:
     return 0
 
 
-def _train(args: argparse.Namespace, resume: bool) -> int:
+def _train(args: argparse.Namespace, resume: bool, finetuning: bool = False) -> int:
     from llm.core.config import load_experiment_config
     from llm.training.runner import build_trainer
 
     config = load_experiment_config(args.config)
     if args.stage:
         config.train.stage = args.stage
+    elif finetuning and config.train.stage == "pretrain":
+        config.train.stage = "sft"
     if args.max_steps:
         config.train.max_steps = args.max_steps
     if args.init_from:
@@ -109,8 +111,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
 
 
 def cmd_finetune(args: argparse.Namespace) -> int:
-    args.stage = args.stage or "sft"
-    return _train(args, resume=args.resume)
+    return _train(args, resume=args.resume, finetuning=True)
 
 
 def cmd_evaluate(args: argparse.Namespace) -> int:

@@ -16,6 +16,10 @@ FLUSH_TOKENS = 1 << 20
 IGNORE_INDEX = -100
 
 
+def with_extension(prefix: Path, extension: str) -> Path:
+    return prefix.parent / f"{prefix.name}{extension}"
+
+
 def token_dtype(vocab_size: int) -> np.dtype:
     return np.dtype(np.uint16 if vocab_size <= UINT16_LIMIT else np.uint32)
 
@@ -53,16 +57,15 @@ def tokenize_corpus_split(
 def tokenize_sft_split(sft_file: Path, prefix: Path, tokenizer: BPETokenizer) -> int:
     dtype = token_dtype(tokenizer.vocab_size)
     lengths: list[int] = []
-    with prefix.with_suffix(".ids.bin").open("wb") as ids_handle, prefix.with_suffix(
-        ".labels.bin"
-    ).open("wb") as labels_handle:
+    ids_path, labels_path = with_extension(prefix, ".ids.bin"), with_extension(prefix, ".labels.bin")
+    with ids_path.open("wb") as ids_handle, labels_path.open("wb") as labels_handle:
         for row in read_jsonl(sft_file):
             messages = [Message(m["role"], m["content"]) for m in row["messages"]]
             ids, labels = tokenizer.encode_conversation_with_labels(messages, IGNORE_INDEX)
             np.asarray(ids, dtype=dtype).tofile(ids_handle)
             np.asarray(labels, dtype=np.int32).tofile(labels_handle)
             lengths.append(len(ids))
-    np.save(prefix.with_suffix(".lengths.npy"), np.asarray(lengths, dtype=np.int64))
+    np.save(with_extension(prefix, ".lengths.npy"), np.asarray(lengths, dtype=np.int64))
     return len(lengths)
 
 
@@ -132,9 +135,9 @@ class ConversationLoader:
         shuffle: bool = True,
     ) -> None:
         prefix = Path(prefix)
-        self.ids = np.memmap(prefix.with_suffix(".ids.bin"), dtype=dtype, mode="r")
-        self.labels = np.memmap(prefix.with_suffix(".labels.bin"), dtype=np.int32, mode="r")
-        lengths = np.load(prefix.with_suffix(".lengths.npy"))
+        self.ids = np.memmap(with_extension(prefix, ".ids.bin"), dtype=dtype, mode="r")
+        self.labels = np.memmap(with_extension(prefix, ".labels.bin"), dtype=np.int32, mode="r")
+        lengths = np.load(with_extension(prefix, ".lengths.npy"))
         self.offsets = np.concatenate(([0], np.cumsum(lengths)))
         self.count = len(lengths)
         if self.count == 0:

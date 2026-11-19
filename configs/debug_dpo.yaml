@@ -1,0 +1,24 @@
+name: debug_dpo
+model:
+  vocab_size: 8192
+  hidden_size: 128
+  num_hidden_layers: 4
+  num_attention_heads: 4
+  num_key_value_heads: 2
+  intermediate_size: 384
+  max_position_embeddings: 256
+tokenizer:
+  path: data/tokenizer
+train:
+  stage: dpo
+  data_dir: data/processed
+  output_dir: experiments/debug_dpo
+  checkpoint_dir: checkpoints/debug_dpo
+  init_from: checkpoints/debug_sft
+  max_steps: 60
+  micro_batch_size: 4
+  gradient_accumulation_steps: 2
+  sequence_length: 255
+  eval_interval: 20
+  checkpoint_interval: 30
+  optimizer: {learning_rate: 0.00002, warmup_steps: 10}

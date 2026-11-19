@@ -163,3 +163,15 @@ def test_tokenize_corpus_and_sft_end_to_end(tmp_path, tokenizer):
     assert inputs.shape == targets.shape
     trained = targets[0][targets[0] != -100].tolist()
     assert trained == [*tokenizer.encode("answer"), tokenizer.eos_id]
+
+
+def test_dotted_prefixes_do_not_collide(tmp_path, tokenizer):
+    for side, answer in (("chosen", "good"), ("rejected", "bad")):
+        flat = tmp_path / f"train.{side}.jsonl"
+        row = {"messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": answer}]}
+        flat.write_text(json.dumps(row))
+        tokenize_sft_split(flat, tmp_path / f"train.{side}", tokenizer)
+    dtype = np.dtype(np.uint16)
+    chosen = ConversationLoader(tmp_path / "train.chosen", dtype, 64, 1, tokenizer.pad_id, 0, False)
+    rejected = ConversationLoader(tmp_path / "train.rejected", dtype, 64, 1, tokenizer.pad_id, 0, False)
+    assert chosen.next_batch()[1].tolist() != rejected.next_batch()[1].tolist()
