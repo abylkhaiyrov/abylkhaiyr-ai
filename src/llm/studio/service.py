@@ -17,6 +17,7 @@ from llm.studio.auth import AuthenticationService
 from llm.studio.database import Base, create_sqlite_engine, make_session_factory
 from llm.studio.models import Chat, MessageRecord, ProcessEvent, SystemMetric
 from llm.studio.processes import ProcessManager
+from llm.studio.runtime import RuntimeState
 from llm.studio.telemetry import (
     checkpoint_inventory,
     latest_metrics,
@@ -40,19 +41,28 @@ class StudioService:
         self.auth = AuthenticationService(self.session_factory)
         self.auth.initialize()
         self.processes = ProcessManager(self.session_factory, self.root)
+        self.runtime = RuntimeState(self.root)
         self.storage_metrics = storage_snapshot(self.root)
         self.storage_metrics_at = time.monotonic()
 
     def dashboard(self) -> dict[str, Any]:
         processes = self.processes.list()
+        pipeline = self.runtime.pipeline()
         checkpoints = checkpoint_inventory(self.root)
         active = next(
             (item for item in processes if item["status"] in {"running", "pausing"}), None
         )
+        if pipeline is not None:
+            active = pipeline
         metrics: dict[str, float] = {}
-        if active is not None and active.get("output_dir"):
+        if pipeline is not None:
+            metrics = pipeline["metrics"]
+        elif active is not None and active.get("output_dir"):
             output_dir = (self.root / active["output_dir"]).resolve()
-            if output_dir == self.root / "experiments" or self.root / "experiments" in output_dir.parents:
+            if (
+                output_dir == self.root / "experiments"
+                or self.root / "experiments" in output_dir.parents
+            ):
                 from llm.studio.telemetry import read_metrics
 
                 for record in read_metrics(output_dir / "metrics.jsonl"):
@@ -61,7 +71,7 @@ class StudioService:
             "stage": None if active is None else active["kind"],
             "process_id": None if active is None else active["id"],
             "step": metrics.get("step"),
-            "max_steps": self._max_steps(active),
+            "max_steps": pipeline["max_steps"] if pipeline else self._max_steps(active),
             "tokens_seen": metrics.get("perf/tokens_seen"),
             "train_loss": metrics.get("train/loss"),
             "validation_loss": metrics.get("validation/loss"),
@@ -69,6 +79,8 @@ class StudioService:
             "throughput": metrics.get("perf/tokens_per_second"),
             "eta_seconds": metrics.get("perf/eta_seconds"),
             "started_at": None if active is None else active["started_at"],
+            "model_name": pipeline["model_name"] if pipeline else None,
+            "checkpoint": pipeline["checkpoint"] if pipeline else None,
         }
         return {
             "system_status": "busy" if active is not None else "ready",
@@ -76,10 +88,11 @@ class StudioService:
             "inference_model": self.inference_model,
             "training": training,
             "active_process": active,
-            "pipeline": self._pipeline(processes, checkpoints),
+            "pipeline": self._pipeline(processes, checkpoints, pipeline),
             "system": self._system_snapshot(),
             "counts": {
-                "active_processes": sum(item["status"] == "running" for item in processes),
+                "active_processes": sum(item["status"] == "running" for item in processes)
+                + int(pipeline is not None),
                 "checkpoints": len(checkpoints),
             },
             "events": self.events(limit=12),
@@ -91,6 +104,24 @@ class StudioService:
             database.add(SystemMetric(payload=json.dumps(snapshot)))
             self._prune_system_metrics(database)
         return snapshot
+
+    def list_processes(self) -> list[dict[str, Any]]:
+        processes = self.processes.list()
+        pipeline = self.runtime.pipeline()
+        if pipeline is not None:
+            processes.insert(
+                0,
+                {
+                    **pipeline,
+                    "command": "scripts/run_pipeline.py",
+                    "completed_at": None,
+                    "exit_code": None,
+                    "error_reason": None,
+                    "cpu_percent": None,
+                    "managed": False,
+                },
+            )
+        return processes
 
     def system_history(self, seconds: int) -> list[dict[str, Any]]:
         cutoff = datetime.now(UTC).replace(tzinfo=None).timestamp() - seconds
@@ -109,6 +140,15 @@ class StudioService:
         return items
 
     def metrics(self, run_name: str | None, limit: int) -> list[dict[str, float]]:
+        if run_name is None:
+            pipeline = self.runtime.pipeline()
+            if pipeline is not None:
+                output_dir = (self.root / pipeline["output_dir"]).resolve()
+                if self.root / "experiments" in output_dir.parents:
+                    from llm.studio.telemetry import read_metrics
+
+                    return read_metrics(output_dir / "metrics.jsonl", min(max(limit, 1), 3000))
+            return []
         return run_metrics(self.root, run_name, min(max(limit, 1), 3000))
 
     def models(self) -> list[dict[str, Any]]:
@@ -154,12 +194,23 @@ class StudioService:
 
     def evaluations(self) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
-        for path in self.root.glob("experiments/**/evaluation.json"):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            results.append({"path": str(path.relative_to(self.root)), "results": data})
+        seen: set[Path] = set()
+        for pattern in ("experiments/**/evaluation.json", "experiments/*_eval.json"):
+            for path in sorted(self.root.glob(pattern)):
+                if path in seen:
+                    continue
+                seen.add(path)
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                payload = data.get("metrics", data) if isinstance(data, dict) else {}
+                numeric = {
+                    key: float(value)
+                    for key, value in payload.items()
+                    if isinstance(value, (int, float))
+                }
+                results.append({"path": str(path.relative_to(self.root)), "results": numeric})
         return results
 
     def events(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -178,13 +229,20 @@ class StudioService:
         ]
 
     def logs(self, category: str | None, offset: int, limit: int) -> dict[str, Any]:
-        files = list((self.root / "experiments").glob("**/train.log"))
+        files = sorted(
+            {
+                *list((self.root / "experiments").glob("**/train.log")),
+                *list((self.root / "experiments").glob("**/pipeline.log")),
+                *list((self.root / "experiments").glob("**/run.log")),
+            }
+        )
         entries: list[dict[str, Any]] = []
         for path in files:
+            log_category = "pipeline" if path.name in {"pipeline.log", "run.log"} else "training"
             for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
                 entries.append(
                     {
-                        "category": "training",
+                        "category": log_category,
                         "source": str(path.relative_to(self.root)),
                         "message": self._redact(line),
                     }
@@ -336,21 +394,76 @@ class StudioService:
         except ConfigError:
             return None
 
-    def _pipeline(self, processes: list[dict[str, Any]], checkpoints: list[dict[str, Any]]) -> list[dict[str, str]]:
-        active_kinds = {item["kind"] for item in processes if item["status"] in {"running", "pausing"}}
+    def _pipeline(
+        self,
+        processes: list[dict[str, Any]],
+        checkpoints: list[dict[str, Any]],
+        pipeline: dict[str, Any] | None = None,
+    ) -> list[dict[str, str]]:
         has_data = any((self.root / "data").glob("**/manifest.json"))
         has_tokenizer = (self.root / "data" / "tokenizer" / "tokenizer.json").is_file()
+        if pipeline is not None:
+            stages = pipeline["stages"]
+            eval_statuses = [
+                stages.get(name, {}).get("status", "pending")
+                for name in ("eval_pretrain", "eval_sft", "eval_final")
+            ]
+            eval_status = (
+                "running"
+                if "running" in eval_statuses
+                else (
+                    "failed"
+                    if "failed" in eval_statuses
+                    else (
+                        "completed"
+                        if stages.get("eval_final", {}).get("status") == "completed"
+                        else "pending"
+                    )
+                )
+            )
+            return [
+                {"id": "dataset", "status": "completed" if has_data else "pending"},
+                {"id": "tokenizer", "status": "completed" if has_tokenizer else "pending"},
+                {
+                    "id": "pretraining",
+                    "status": stages.get("pretrain", {}).get("status", "pending"),
+                },
+                {"id": "sft", "status": stages.get("sft", {}).get("status", "pending")},
+                {"id": "dpo", "status": stages.get("dpo", {}).get("status", "pending")},
+                {"id": "evaluation", "status": eval_status},
+                {
+                    "id": "model",
+                    "status": stages.get("export_release", {}).get("status", "pending"),
+                },
+            ]
+        active_kinds = {
+            item["kind"] for item in processes if item["status"] in {"running", "pausing"}
+        }
         has_pretrain = any(item["name"] not in {"debug_sft", "debug_dpo"} for item in checkpoints)
         has_sft = any("sft" in item["name"] for item in checkpoints)
         has_dpo = any("dpo" in item["name"] for item in checkpoints)
         has_evaluation = any((self.root / "experiments").glob("**/evaluation.json"))
         states = {
-            "dataset": "running" if "dataset" in active_kinds else "completed" if has_data else "pending",
-            "tokenizer": "running" if "tokenizer" in active_kinds else "completed" if has_tokenizer else "pending",
-            "pretraining": "running" if "pretrain" in active_kinds else "completed" if has_pretrain else "pending",
+            "dataset": (
+                "running" if "dataset" in active_kinds else "completed" if has_data else "pending"
+            ),
+            "tokenizer": (
+                "running"
+                if "tokenizer" in active_kinds
+                else "completed" if has_tokenizer else "pending"
+            ),
+            "pretraining": (
+                "running"
+                if "pretrain" in active_kinds
+                else "completed" if has_pretrain else "pending"
+            ),
             "sft": "running" if "sft" in active_kinds else "completed" if has_sft else "pending",
             "dpo": "running" if "dpo" in active_kinds else "completed" if has_dpo else "pending",
-            "evaluation": "running" if "evaluation" in active_kinds else "completed" if has_evaluation else "pending",
+            "evaluation": (
+                "running"
+                if "evaluation" in active_kinds
+                else "completed" if has_evaluation else "pending"
+            ),
             "model": "completed" if checkpoints else "pending",
         }
         return [{"id": key, "status": value} for key, value in states.items()]

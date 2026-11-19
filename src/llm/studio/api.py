@@ -220,7 +220,7 @@ def create_studio_router(
 
     @router.get("/processes")
     def processes(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
-        return studio.processes.list()
+        return studio.list_processes()
 
     @router.post("/training")
     def start_training(
@@ -228,6 +228,8 @@ def create_studio_router(
         _: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
         try:
+            if studio.runtime.pipeline() is not None:
+                raise ProcessError("Another resource-intensive process is already active")
             return studio.processes.start_training(payload.config_path, payload.stage)
         except (ProcessError, ValueError) as error:
             raise HTTPException(
@@ -305,7 +307,7 @@ def create_studio_router(
                 payload = json.dumps(
                     {
                         "system": studio.record_system_metric(),
-                        "processes": studio.processes.list(),
+                        "processes": studio.list_processes(),
                         "events": studio.events(20),
                     },
                     separators=(",", ":"),

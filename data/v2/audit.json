@@ -1,0 +1,122 @@
+{
+ "token_files": {
+  "train": {
+   "train.bin": 309257064,
+   "train.code.bin": 51433233,
+   "train.en.bin": 86583028,
+   "train.kk.bin": 72718227,
+   "train.math.bin": 24749897,
+   "train.ru.bin": 73772679
+  },
+  "validation": {
+   "validation.bin": 1719970,
+   "validation.code.bin": 322155,
+   "validation.en.bin": 485612,
+   "validation.kk.bin": 374599,
+   "validation.math.bin": 184201,
+   "validation.ru.bin": 353403
+  },
+  "test": {
+   "test.bin": 1622804,
+   "test.code.bin": 243618,
+   "test.en.bin": 469070,
+   "test.kk.bin": 383648,
+   "test.math.bin": 134853,
+   "test.ru.bin": 391615
+  }
+ },
+ "manifest_tokens": {
+  "train": 309257064,
+  "validation": 1719970,
+  "test": 1622804
+ },
+ "licenses": {
+  "CC-BY-SA-3.0": 5,
+  "ODC-By-1.0": 4,
+  "MIT": 2,
+  "per-file-permissive-only": 2,
+  "C-UDA-1.0-MIT": 1,
+  "CC-BY-4.0": 2,
+  "Apache-2.0": 1
+ },
+ "benchmark_overlap_rejected": {
+  "web_edu_en": 1,
+  "math_web": 8,
+  "gsm8k_train": 800,
+  "code_python": 1,
+  "dolly_sft": 1,
+  "gsm8k_sft": 242
+ },
+ "corpus_documents_by_group": {
+  "train": {
+   "ru": 35389,
+   "kk": 76738,
+   "en": 67632,
+   "math": 18196,
+   "code": 77241
+  },
+  "validation": {
+   "ru": 156,
+   "kk": 396,
+   "en": 358,
+   "math": 117,
+   "code": 396
+  },
+  "test": {
+   "ru": 196,
+   "kk": 402,
+   "en": 355,
+   "math": 83,
+   "code": 406
+  }
+ },
+ "corpus_overlap": {
+  "train&validation": 0,
+  "train&test": 0,
+  "validation&test": 0
+ },
+ "sft_tokens": {
+  "train": 9020526,
+  "validation": 54764,
+  "test": 42673
+ },
+ "sft_examples_by_source": {
+  "train": {
+   "dolly_sft": 14049,
+   "gsm8k_sft": 7038,
+   "sql_sft": 19787,
+   "aya_sft": 12555
+  },
+  "validation": {
+   "dolly_sft": 70,
+   "gsm8k_sft": 34,
+   "sql_sft": 107,
+   "aya_sft": 75
+  },
+  "test": {
+   "dolly_sft": 66,
+   "gsm8k_sft": 32,
+   "sql_sft": 99,
+   "aya_sft": 61
+  }
+ },
+ "sft_overlap_full": {
+  "train&validation": 0,
+  "train&test": 0,
+  "validation&test": 0
+ },
+ "sft_overlap_prompt": {
+  "train&validation": 0,
+  "train&test": 0,
+  "validation&test": 0
+ },
+ "permissive_allowlist": [
+  "mit",
+  "apache-2.0",
+  "bsd-2-clause",
+  "bsd-3-clause",
+  "isc",
+  "unlicense",
+  "cc0-1.0"
+ ]
+}

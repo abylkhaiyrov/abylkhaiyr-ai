@@ -22,6 +22,7 @@ from llm.data.mathgen import (
     read_dataset,
     write_dataset,
 )
+from llm.data.preference import tokenize_preference_split
 from llm.tokenizer.bpe import BPETokenizer
 
 SPLITS = ("train", "validation", "test")
@@ -218,6 +219,8 @@ def build_sft_groups(
             buckets[split].append(pair)
         for split, items in buckets.items():
             _write_jsonl(pref / f"{split}.jsonl", items)
+            if items:
+                tokenize_preference_split(root, split, tokenizer)
         counts["preference"] = {split: len(items) for split, items in buckets.items()}
     for group in SFT_GROUPS:
         for split in SPLITS:

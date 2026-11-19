@@ -24,6 +24,8 @@ export type Dashboard = {
     throughput: number | null;
     eta_seconds: number | null;
     started_at: string | null;
+    model_name: string | null;
+    checkpoint: string | null;
   };
   active_process: Process | null;
   pipeline: { id: string; status: string }[];
@@ -48,6 +50,7 @@ export type Process = {
   error_reason: string | null;
   cpu_percent: number | null;
   memory_bytes: number | null;
+  managed?: boolean;
 };
 
 export type Model = {

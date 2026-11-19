@@ -1,0 +1,309 @@
+{
+  "sources": {
+    "wiki_ru": {
+      "dataset": "wikimedia/wikipedia",
+      "config": "20231101.ru",
+      "license": "CC-BY-SA-3.0",
+      "seen": 16000,
+      "kept": 15841,
+      "rejected": {
+        "too_short": 115,
+        "language": 30,
+        "near_duplicate": 14
+      }
+    },
+    "web_ru": {
+      "dataset": "HuggingFaceFW/fineweb-2",
+      "config": "rus_Cyrl",
+      "license": "ODC-By-1.0",
+      "seen": 20000,
+      "kept": 19900,
+      "rejected": {
+        "language": 96,
+        "too_short": 1,
+        "near_duplicate": 3
+      }
+    },
+    "wiki_kk": {
+      "dataset": "wikimedia/wikipedia",
+      "config": "20231101.kk",
+      "license": "CC-BY-SA-3.0",
+      "seen": 40000,
+      "kept": 37796,
+      "rejected": {
+        "too_short": 2021,
+        "language": 163,
+        "symbols": 1,
+        "near_duplicate": 15,
+        "repetition": 2,
+        "exact_duplicate": 2
+      }
+    },
+    "web_kk": {
+      "dataset": "HuggingFaceFW/fineweb-2",
+      "config": "kaz_Cyrl",
+      "license": "ODC-By-1.0",
+      "seen": 40000,
+      "kept": 39740,
+      "rejected": {
+        "near_duplicate": 223,
+        "language": 36,
+        "symbols": 1
+      }
+    },
+    "wiki_en": {
+      "dataset": "wikimedia/wikipedia",
+      "config": "20231101.en",
+      "license": "CC-BY-SA-3.0",
+      "seen": 10000,
+      "kept": 9642,
+      "rejected": {
+        "language": 194,
+        "too_short": 159,
+        "near_duplicate": 5
+      }
+    },
+    "wiki_simple": {
+      "dataset": "wikimedia/wikipedia",
+      "config": "20231101.simple",
+      "license": "CC-BY-SA-3.0",
+      "seen": 20000,
+      "kept": 18731,
+      "rejected": {
+        "too_short": 996,
+        "symbols": 12,
+        "language": 255,
+        "near_duplicate": 1,
+        "repetition": 5
+      }
+    },
+    "web_edu_en": {
+      "dataset": "HuggingFaceFW/fineweb-edu",
+      "config": "sample-10BT",
+      "license": "ODC-By-1.0",
+      "seen": 40000,
+      "kept": 39972,
+      "rejected": {
+        "language": 20,
+        "exact_duplicate": 3,
+        "near_duplicate": 4,
+        "benchmark_overlap": 1
+      }
+    },
+    "math_web": {
+      "dataset": "open-web-math/open-web-math",
+      "config": null,
+      "license": "ODC-By-1.0",
+      "seen": 12000,
+      "kept": 11860,
+      "rejected": {
+        "symbols": 122,
+        "benchmark_overlap": 8,
+        "repetition": 9,
+        "near_duplicate": 1
+      }
+    },
+    "gsm8k_train": {
+      "dataset": "openai/gsm8k",
+      "config": "main",
+      "license": "MIT",
+      "seen": 7473,
+      "kept": 6536,
+      "rejected": {
+        "language": 137,
+        "benchmark_overlap": 800
+      }
+    },
+    "code_python": {
+      "dataset": "codeparrot/codeparrot-clean",
+      "config": null,
+      "license": "per-file-permissive-only",
+      "seen": 12000,
+      "kept": 11620,
+      "rejected": {
+        "near_duplicate": 359,
+        "exact_duplicate": 20,
+        "benchmark_overlap": 1
+      }
+    },
+    "code_javascript": {
+      "dataset": "angie-chen55/javascript-github-code",
+      "config": null,
+      "license": "per-file-permissive-only",
+      "seen": 8000,
+      "kept": 6541,
+      "rejected": {
+        "too_short": 1445,
+        "near_duplicate": 14
+      }
+    },
+    "code_java": {
+      "dataset": "google/code_x_glue_ct_code_to_text",
+      "config": "java",
+      "license": "C-UDA-1.0-MIT",
+      "seen": 20000,
+      "kept": 19888,
+      "rejected": {
+        "too_short": 109,
+        "near_duplicate": 3
+      }
+    },
+    "code_sql": {
+      "dataset": "b-mc2/sql-create-context",
+      "config": null,
+      "license": "CC-BY-4.0",
+      "seen": 40000,
+      "kept": 39994,
+      "rejected": {
+        "near_duplicate": 6
+      }
+    },
+    "dolly_sft": {
+      "dataset": "databricks/databricks-dolly-15k",
+      "config": null,
+      "license": "CC-BY-SA-3.0",
+      "seen": 15011,
+      "kept": 14189,
+      "rejected": {
+        "language": 607,
+        "near_duplicate": 195,
+        "exact_duplicate": 15,
+        "repetition": 3,
+        "symbols": 1,
+        "benchmark_overlap": 1
+      }
+    },
+    "gsm8k_sft": {
+      "dataset": "openai/gsm8k",
+      "config": "main",
+      "license": "MIT",
+      "seen": 7473,
+      "kept": 7104,
+      "rejected": {
+        "language": 127,
+        "benchmark_overlap": 242
+      }
+    },
+    "sql_sft": {
+      "dataset": "b-mc2/sql-create-context",
+      "config": null,
+      "license": "CC-BY-4.0",
+      "seen": 20000,
+      "kept": 19993,
+      "rejected": {
+        "near_duplicate": 7
+      }
+    },
+    "aya_sft": {
+      "dataset": "CohereForAI/aya_dataset",
+      "config": null,
+      "license": "Apache-2.0",
+      "seen": 202352,
+      "kept": 13315,
+      "rejected": {
+        "language": 135847,
+        "symbols": 52072,
+        "exact_duplicate": 422,
+        "repetition": 66,
+        "near_duplicate": 630
+      }
+    }
+  },
+  "version": "v2",
+  "splits": {
+    "train": 329252,
+    "test": 1700,
+    "validation": 1710
+  },
+  "seed": 1234,
+  "near_duplicate_threshold": 0.8,
+  "tokenizer": {
+    "version": "c9931e24cbcc4963",
+    "vocab_size": 8192
+  },
+  "tokenized": {
+    "train": {
+      "tokens": 309257064,
+      "groups": {
+        "ru": 73772679,
+        "kk": 72718227,
+        "en": 86583028,
+        "math": 24749897,
+        "code": 51433233
+      },
+      "conversations": 54056
+    },
+    "validation": {
+      "tokens": 1719970,
+      "groups": {
+        "ru": 353403,
+        "kk": 374599,
+        "en": 485612,
+        "math": 184201,
+        "code": 322155
+      },
+      "conversations": 287
+    },
+    "test": {
+      "tokens": 1622804,
+      "groups": {
+        "ru": 391615,
+        "kk": 383648,
+        "en": 469070,
+        "math": 134853,
+        "code": 243618
+      },
+      "conversations": 258
+    }
+  },
+  "sft_deduplicated": {
+    "train": 53429,
+    "validation": 286,
+    "test": 258
+  },
+  "sft_tokens": {
+    "train": 9020526,
+    "validation": 54764,
+    "test": 42673
+  },
+  "sft_groups": {
+    "chat": {
+      "train": 57942,
+      "validation": 570,
+      "test": 861
+    },
+    "math": {
+      "train": 39154,
+      "validation": 444,
+      "test": 402
+    },
+    "code": {
+      "train": 382,
+      "validation": 5,
+      "test": 3
+    }
+  },
+  "preference": {
+    "train": 9222,
+    "validation": 613
+  },
+  "overlaps": {
+    "corpus": {
+      "train&validation": 0,
+      "train&test": 0,
+      "validation&test": 0
+    },
+    "sft_full": {
+      "train&validation": 0,
+      "train&test": 0,
+      "validation&test": 0
+    },
+    "sft_prompt": {
+      "train&validation": 0,
+      "train&test": 0,
+      "validation&test": 0
+    }
+  },
+  "frozen": true,
+  "frozen_at": "2026-11-19T10:32:49.979479+00:00"
+}

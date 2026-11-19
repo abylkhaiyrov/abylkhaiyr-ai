@@ -17,6 +17,19 @@ def test_studio_requires_authentication(model_config, tokenizer, tmp_path):
     assert response.status_code == 401, response.text
 
 
+def test_training_start_rejects_active_pipeline(model_config, tokenizer, tmp_path, monkeypatch):
+    client = studio_client(model_config, tokenizer, tmp_path)
+    monkeypatch.setattr(client.app.state.studio.runtime, "pipeline", lambda: {"pid": 42})
+    client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
+    token = client.cookies.get("abylkhaiyr_csrf")
+    response = client.post(
+        "/api/training",
+        headers={"X-CSRF-Token": token},
+        json={"config_path": "configs/debug.yaml"},
+    )
+    assert response.status_code == 400
+
+
 def test_dashboard_does_not_report_old_metrics_as_active(model_config, tokenizer, tmp_path):
     metrics_dir = tmp_path / "experiments" / "old"
     metrics_dir.mkdir(parents=True)

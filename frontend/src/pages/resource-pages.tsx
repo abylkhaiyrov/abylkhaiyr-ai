@@ -35,7 +35,12 @@ export function ExperimentsPage() {
   const query = useQuery({ queryKey: ["experiments"], queryFn: api.experiments });
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
-  return <DataPage title="Experiment Manager" description="History comes directly from experiments/registry.jsonl."><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted text-xs text-muted-foreground"><tr><th className="p-3">Name</th><th className="p-3">Validation loss</th><th className="p-3">Perplexity</th><th className="p-3">Tokens/s</th></tr></thead><tbody>{query.data.map((experiment) => <tr className="border-t" key={experiment.name}><td className="p-3">{experiment.name}</td><td className="p-3">{formatNumber(experiment.results.validation_loss, 4)}</td><td className="p-3">{formatNumber(experiment.results.test_perplexity, 2)}</td><td className="p-3">{formatNumber(experiment.results.generation_tokens_per_second, 1)}</td></tr>)}</tbody></table></div></DataPage>;
+  return <DataPage title="Experiment Manager" description="History comes directly from experiments/registry.jsonl.">{query.data.length === 0 ? <EmptyState title="No experiments recorded" description="Run a sweep or evaluation to record results." /> : <div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted text-xs text-muted-foreground"><tr><th className="p-3">Name</th><th className="p-3">Validation loss</th><th className="p-3">Perplexity</th><th className="p-3">Tokens/s</th></tr></thead><tbody>{query.data.map((experiment) => {
+    const valLoss = experiment.results.validation_loss ?? experiment.results.test_loss;
+    const ppl = experiment.results.test_perplexity ?? (valLoss !== undefined ? Math.exp(valLoss) : undefined);
+    const speed = experiment.results.tokens_per_second ?? experiment.results.generation_tokens_per_second;
+    return <tr className="border-t" key={experiment.name}><td className="p-3">{experiment.name}</td><td className="p-3">{formatNumber(valLoss, 4)}</td><td className="p-3">{formatNumber(ppl, 2)}</td><td className="p-3">{formatNumber(speed, 1)}</td></tr>;
+  })}</tbody></table></div>}</DataPage>;
 }
 
 export function EvaluationPage() {
