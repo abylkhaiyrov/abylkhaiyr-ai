@@ -205,8 +205,25 @@ class WebSocketManager:
                     },
                 )
                 return
+            if len(self.generations) >= 1000:
+                completed = next(
+                    (
+                        key
+                        for key, item in self.generations.items()
+                        if item.status not in {"queued", "running"}
+                    ),
+                    None,
+                )
+                if completed is not None:
+                    del self.generations[completed]
+            training_uses_device = (
+                self.engine is not None
+                and self.engine.device.type == "mps"
+                and await asyncio.to_thread(self.studio.runtime.pipeline) is not None
+            )
             if (
                 self.engine is None
+                or training_uses_device
                 or len(self.generations) >= 1000
                 or (self.worker is not None and not self.worker.done())
             ):
@@ -285,12 +302,13 @@ class WebSocketManager:
             )
 
     async def delta(self, state: GenerationState, piece: str) -> None:
-        state.text += piece
+        updated_text = state.text + piece
         await asyncio.to_thread(
             self.studio.update_message_content,
             state.user_id,
             state.chat_id,
             state.message_id,
-            state.text,
+            updated_text,
         )
+        state.text = updated_text
         await self.publish(state, "generation.delta", text=piece)
