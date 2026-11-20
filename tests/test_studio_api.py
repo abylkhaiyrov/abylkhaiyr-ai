@@ -90,6 +90,8 @@ def test_unknown_api_routes_return_json_not_the_spa_shell(model_config, tokenize
     (dist / "index.html").write_text("<!doctype html><html></html>")
     client = studio_client(model_config, tokenizer, tmp_path)
     for method, path in (
+        ("get", "/api"),
+        ("get", "/v1"),
         ("get", "/api/nope"),
         ("post", "/api/nope"),
         ("get", "/v1/nope"),
@@ -101,6 +103,7 @@ def test_unknown_api_routes_return_json_not_the_spa_shell(model_config, tokenize
         assert response.json() == {"detail": "endpoint_not_found"}
     assert client.get("/api/runtime").status_code == 401
     assert client.get("/missing.js").status_code == 404
+    assert client.get("/training", headers={"Accept": "application/json"}).status_code == 404
     page = client.get("/training")
     assert page.status_code == 200
     assert page.headers["content-type"].startswith("text/html")

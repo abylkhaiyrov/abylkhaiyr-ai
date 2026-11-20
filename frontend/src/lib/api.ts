@@ -56,6 +56,7 @@ export type PipelineStage = {
   note: string | null;
   note_code?: "sft_perplexity_regression";
   note_values?: { sft: number; limit: number; pretrain: number };
+  history?: { status: StageStatus; at: string }[];
   output_dir: string | null;
   checkpoint_dir: string | null;
 };

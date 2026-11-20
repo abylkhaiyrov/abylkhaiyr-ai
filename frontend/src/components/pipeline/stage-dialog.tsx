@@ -38,6 +38,19 @@ export function StageDialog({ stage, onClose }: { stage: PipelineStage | null; o
             <ResultsGrid entries={results} />
           </div>
         ) : null}
+        {stage.history?.length ? (
+          <div>
+            <p className="label-caps mb-2">{t("stageDialog.history")}</p>
+            <ol className="grid gap-2">
+              {stage.history.map((event, index) => (
+                <li key={`${event.at}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                  <StatusBadge value={event.status} />
+                  <time dateTime={event.at}>{format.dateTime(event.at)}</time>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
         {stage.note ? <p className="rounded-lg bg-muted p-3 text-sm">{stage.note_code && stage.note_values ? t(`stageNote.${stage.note_code}`, stage.note_values) : stage.note}</p> : null}
         {stage.error ? <p role="alert" className="break-words rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{stage.error}</p> : null}
       </div>

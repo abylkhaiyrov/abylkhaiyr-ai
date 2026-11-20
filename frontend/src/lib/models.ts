@@ -10,3 +10,13 @@ export function defaultModel(registry: ModelRegistry | undefined, runtime: Runti
 export function modelById(registry: ModelRegistry | undefined, id: string | null): Model | null {
   return registry?.models.find((model) => model.id === id) ?? null;
 }
+
+export function modelAvailabilityKey(model: Model): string | null {
+  if (!model.compatible) {
+    return model.compatibility_issues[0] ?? "incompatible_model";
+  }
+  if (!model.available && model.availability_reason) {
+    return model.availability_reason.split(" ")[0];
+  }
+  return null;
+}

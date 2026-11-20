@@ -68,9 +68,12 @@ class RuntimeState:
         return [
             pipeline
             for path in paths
-            if (pipeline := self._pipeline_view(
-                path.parent, running if path.parent == active_dir else None, now
-            )) is not None
+            if (
+                pipeline := self._pipeline_view(
+                    path.parent, running if path.parent == active_dir else None, now
+                )
+            )
+            is not None
         ]
 
     def active_pipeline(self) -> dict[str, Any] | None:

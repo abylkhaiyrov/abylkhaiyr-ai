@@ -23,7 +23,7 @@ function Filter({ label, value, options, onChange }: {
   return (
     <label className="grid min-w-0 gap-1 text-xs font-medium">
       {label}
-      <select className="field" value={value} onChange={(event) => onChange(event.target.value)}>
+      <select aria-label={label} className="field" value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
@@ -48,7 +48,7 @@ function EvaluationComparison({ reports }: { reports: Evaluation[] }) {
   const cohorts = [...new Map(reports.map((report) => [cohort(report), {
     value: cohort(report), label: [report.experiment, report.dataset].filter(Boolean).join(" · "),
   }])).values()].sort((left, right) => Number(right.label.startsWith("pipeline_")) - Number(left.label.startsWith("pipeline_")));
-  const current = selection || cohorts[0].value;
+  const current = cohorts.find((item) => item.value === selection)?.value ?? cohorts[0].value;
   const candidates = reports.filter((report) => cohort(report) === current);
   const models = candidates.filter((report) => !model || report.model === model);
   const rows = models.filter((report) => !checkpoint || report.checkpoint === checkpoint);

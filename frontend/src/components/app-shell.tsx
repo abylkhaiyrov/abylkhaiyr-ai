@@ -149,7 +149,7 @@ export function AppShell() {
           </div>
         </header>
         <main id="content" tabIndex={-1} className={cn("min-h-0 flex-1 outline-none", chatRoute ? "overflow-hidden" : "overflow-y-auto")}>
-          {chatRoute ? <Outlet /> : <div className="mx-auto w-full max-w-[1240px] px-4 py-6 lg:px-8"><Outlet /></div>}
+          {chatRoute ? <Outlet /> : <div className="mx-auto w-full max-w-[1440px] px-4 py-5 lg:px-7"><Outlet /></div>}
         </main>
       </div>
       <Toaster />

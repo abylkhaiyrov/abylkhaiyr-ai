@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -295,6 +296,31 @@ def overall_progress(stages: list[dict[str, Any]], running: bool, now: datetime)
     }
 
 
+STAGE_LOG = re.compile(
+    r"(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(?:\d+) \w+ "
+    r"(?:(?:starting stage (?P<started>\w+))|"
+    r"(?:finished stage (?P<finished>\w+) \(status=(?P<status>\w+)\))|"
+    r"(?:stage (?P<failed>\w+) failed))"
+)
+
+
+def stage_history(path: Path) -> dict[str, list[dict[str, str]]]:
+    history: dict[str, deque[dict[str, str]]] = defaultdict(lambda: deque(maxlen=30))
+    try:
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                match = STAGE_LOG.fullmatch(line.strip())
+                if match is None:
+                    continue
+                key = match["started"] or match["finished"] or match["failed"]
+                status = "running" if match["started"] else match["status"] or "failed"
+                stamp = datetime.fromisoformat(match["time"]).astimezone(UTC).isoformat()
+                history[key].append({"status": status, "at": stamp})
+    except OSError:
+        return {}
+    return {key: list(events) for key, events in history.items()}
+
+
 def build_pipeline_view(
     root: Path,
     state: dict[str, Any],
@@ -305,6 +331,7 @@ def build_pipeline_view(
 ) -> list[dict[str, Any]]:
     entries = state.get("stages", {})
     tracked = read_progress(state_dir)
+    history = stage_history(state_dir / "pipeline.log")
     pretrain = configs.get("pretrain")
     prepared, tokenized = data_stages(root, pretrain.data_dir if pretrain else None)
     stages: list[dict[str, Any]] = [prepared, tokenized]
@@ -313,6 +340,7 @@ def build_pipeline_view(
         entry = entries.get(spec.key, {})
         apply_state_entry(stage, entry, alive)
         stage["results"] = stage_results_from_entry(spec, entry)
+        stage["history"] = history.get(spec.key, [])
         if spec.kind == "train":
             config = configs.get(spec.key)
             if config is not None and stage["status"] != "pending":

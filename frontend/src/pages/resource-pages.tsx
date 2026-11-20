@@ -9,7 +9,8 @@ import { useFormat } from "@/hooks/use-format";
 import { useMetricFormat } from "@/hooks/use-metric-format";
 import { useModelRegistry } from "@/hooks/use-runtime";
 import { useApiError } from "@/hooks/use-api-error";
-import { api, type Model, type ModelRole } from "@/lib/api";
+import { api, type ModelRole } from "@/lib/api";
+import { modelAvailabilityKey } from "@/lib/models";
 import { useToastStore } from "@/store/toast-store";
 
 const ROLES: ModelRole[] = ["production", "best_evaluated", "latest_trained", "loaded"];
@@ -18,12 +19,6 @@ function Query<T>({ query, children }: { query: { isPending: boolean; isError: b
   if (query.isPending) return <LoadingState />;
   if (query.isError || query.data === undefined) return <ErrorState error={query.error ?? new Error("unknown")} retry={() => void query.refetch()} />;
   return <>{children(query.data)}</>;
-}
-
-function modelReason(model: Model, t: (key: string) => string) {
-  if (!model.compatible) return t(`modelIssue.${model.compatibility_issues[0] ?? "incompatible_model"}`);
-  if (!model.available && model.availability_reason) return t(`modelIssue.${model.availability_reason.split(" ")[0]}`);
-  return null;
 }
 
 export function ModelsPage() {
@@ -62,7 +57,8 @@ export function ModelsPage() {
                   <thead><tr><th>{t("models.model")}</th><th>{t("models.stage")}</th><th>{t("models.roles")}</th><th>{t("models.parameters")}</th><th>{t("models.context")}</th><th>{t("models.size")}</th><th>{t("models.status")}</th><th /></tr></thead>
                   <tbody>
                     {registry.models.map((model) => {
-                      const blocked = modelReason(model, t);
+                      const issue = modelAvailabilityKey(model);
+                      const blocked = issue ? t(`modelIssue.${issue}`) : null;
                       return (
                         <tr key={model.id}>
                           <td className="max-w-64"><p className="truncate font-medium" title={model.id}>{model.display_name}</p><p className="truncate text-xs text-muted-foreground" title={model.id}>{model.id}</p></td>

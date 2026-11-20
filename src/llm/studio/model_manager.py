@@ -17,6 +17,7 @@ from llm.core.errors import CheckpointError, ConfigError, TokenizerError
 from llm.core.hardware import resolve_device
 from llm.core.profiles import count_parameters
 from llm.inference.engine import InferenceEngine
+from llm.studio.evaluations import evaluation_reports
 from llm.studio.model_registry import annotate_models
 from llm.studio.runtime import RuntimeState
 from llm.studio.telemetry import read_metrics
@@ -124,6 +125,9 @@ class ModelManager:
             models,
             active.checkpoint_id if active is not None else None,
         )
+        evaluated = {item["checkpoint"] for item in evaluation_reports(self.root)}
+        for model in models:
+            model["evaluated"] = model["evaluated"] or model["id"] in evaluated
         return {"roles": assignments, "models": models}
 
     def list_models(self) -> list[dict[str, Any]]:

@@ -200,7 +200,7 @@ export function ChatPage() {
           ) : selected !== null && chat.isError ? (
             <div className="mx-auto w-full max-w-[44rem] p-4"><ErrorState error={chat.error} retry={() => void chat.refetch()} /></div>
           ) : empty ? (
-            <div className="mx-auto flex min-h-full w-full max-w-[44rem] flex-col justify-center gap-8 px-4 pb-16">
+            <div className="mx-auto flex min-h-full w-full max-w-[44rem] flex-col justify-center gap-6 px-4 pb-10">
               <div className="text-center">
                 <h1 className="text-[28px] font-semibold tracking-tight">{t("chat.welcome")}</h1>
                 <p className="mt-1.5 text-[13px] text-muted-foreground">{t("chat.localOnly")}</p>

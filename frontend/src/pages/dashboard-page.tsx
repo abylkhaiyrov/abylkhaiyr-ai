@@ -19,7 +19,9 @@ export function DashboardPage() {
   if (query.isPending) return <LoadingState />;
   if (query.isError) return <ErrorState error={query.error} retry={() => void query.refetch()} />;
   const runtime = query.data;
-  const pipeline = history.data?.find((item) => item.id === selected) ?? runtime.pipeline;
+  const pipeline = selected && selected !== runtime.pipeline?.id
+    ? history.data?.find((item) => item.id === selected) ?? runtime.pipeline
+    : runtime.pipeline;
   return (
     <div className="grid gap-8">
       <PageHeader title={t("dashboard.title")} subtitle={t("dashboard.subtitle")} actions={history.data?.length ? (

@@ -84,7 +84,9 @@ export function TrainingPage() {
               {tab === "config" ? <ConfigView run={detail.data} /> : null}
               {tab === "logs" ? <LogView name={summary.name} live={live} /> : null}
             </>
-          ) : detail.isPending && selected ? <LoadingState /> : <EmptyState title={t("training.selectRun")} />}
+          ) : detail.isPending && selected ? <LoadingState /> : detail.isError ? (
+            <ErrorState error={detail.error} retry={() => void detail.refetch()} />
+          ) : <EmptyState title={t("training.selectRun")} />}
         </section>
       </div>
     </div>

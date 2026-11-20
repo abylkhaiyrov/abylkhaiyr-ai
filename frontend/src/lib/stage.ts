@@ -26,6 +26,19 @@ export const METRIC_KINDS: Record<string, MetricKind> = {
   test_loss: "loss",
   validation_perplexity: "ppl",
   test_perplexity: "ppl",
+  perplexity_ru: "ppl",
+  perplexity_kk: "ppl",
+  perplexity_en: "ppl",
+  multiturn_dialogue_accuracy: "pct",
+  context_retrieval_accuracy: "pct",
+  logic_model_accuracy: "pct",
+  logic_tool_accuracy: "pct",
+  code_pass_at_4: "pct",
+  code_tool_pass_rate: "pct",
+  factual_accuracy: "pct",
+  factual_wrong_rate: "pct",
+  non_empty_response_rate: "pct",
+  coherence_distinct_bigram: "pct",
   baseline_test_perplexity: "ppl",
   baseline_perplexity: "ppl",
   next_token_accuracy: "pct",
@@ -51,7 +64,7 @@ export const METRIC_KINDS: Record<string, MetricKind> = {
   release_path: "text",
 };
 
-const TRAIN_ORDER = ["final_step", "validation_loss", "validation_perplexity", "best_validation_loss", "tokens_seen", "train_loss", "reward_accuracy", "reward_margin", "learning_rate", "grad_norm", "tokens_per_second"];
+const TRAIN_ORDER = ["final_step", "last_validation_loss", "validation_loss", "validation_perplexity", "best_validation_loss", "tokens_seen", "train_loss", "reward_accuracy", "reward_margin", "learning_rate", "grad_norm", "tokens_per_second"];
 const EVAL_ORDER = ["checkpoints_evaluated", "best_checkpoint", "test_perplexity", "baseline_test_perplexity", "test_loss", "next_token_accuracy", "instruction_following_accuracy", "math_bench_model_accuracy", "arithmetic_exact_match", "code_pass_at_1", "repeated_trigram_ratio_greedy", "generation_tokens_per_second"];
 
 export const INTERIM_METRICS = ["test_perplexity", "next_token_accuracy", "arithmetic_exact_match", "math_bench_model_accuracy", "instruction_following_accuracy", "code_pass_at_1"];

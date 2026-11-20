@@ -106,7 +106,11 @@ function AssistantMessage({ message, streaming, isLast, busy, onRegenerate, onCo
           </div>
         ) : null}
         {model ? <span className="truncate" title={model}>{model.split("/").slice(-2).join("/")}</span> : null}
-        {tps ? <span className="tabular-nums">{format.number(tps, 1)} {t("units.tokensPerSecond")}</span> : null}
+        {tps ? (
+          <span className="tabular-nums">{format.number(tps, 1)} {t("units.tokensPerSecond")}</span>
+        ) : !inProgress && shown.generation_ms !== null ? (
+          <span className="tabular-nums">{t("chat.responseTime", { value: format.number(shown.generation_ms / 1000, 2) })}</span>
+        ) : null}
         {!inProgress && outputTokens ? <span className="tabular-nums">{t("chat.tokens", { count: outputTokens })}</span> : null}
         {first ? <span className="tabular-nums">{t("chat.ttft", { value: format.number(first / 1000, 2) })}</span> : null}
       </div>

@@ -3,6 +3,7 @@ import { BadgeCheck, ChevronDown } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import type { Model, ModelRegistry } from "@/lib/api";
+import { modelAvailabilityKey } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
 type ModelPickerProps = {
@@ -11,12 +12,6 @@ type ModelPickerProps = {
   locked: boolean;
   onSelect: (model: Model) => void;
 };
-
-function reason(model: Model, t: (key: string) => string): string | null {
-  if (!model.compatible) return t(`modelIssue.${model.compatibility_issues[0] ?? "incompatible_model"}`);
-  if (!model.available && model.availability_reason) return t(`modelIssue.${model.availability_reason.split(" ")[0]}`);
-  return null;
-}
 
 export function ModelPicker({ registry, selected, locked, onSelect }: ModelPickerProps) {
   const { t } = useTranslation();
@@ -45,7 +40,8 @@ export function ModelPicker({ registry, selected, locked, onSelect }: ModelPicke
         <ul role="listbox" aria-label={t("chat.selectModel")} className="absolute left-0 top-full z-30 mt-1 max-h-80 w-80 max-w-[85vw] overflow-y-auto rounded-xl border bg-background p-1 shadow-xl animate-rise">
           {models.length === 0 ? <li className="p-3 text-sm text-muted-foreground">{t("chat.noModels")}</li> : null}
           {models.map((model) => {
-            const blocked = reason(model, t);
+            const issue = modelAvailabilityKey(model);
+            const blocked = issue ? t(`modelIssue.${issue}`) : null;
             return (
               <li key={model.id}>
                 <button
@@ -63,6 +59,7 @@ export function ModelPicker({ registry, selected, locked, onSelect }: ModelPicke
                   </span>
                   <span className="flex flex-wrap gap-1 text-[11px] text-muted-foreground">
                     {model.roles.map((role) => <span key={role} className="rounded border px-1">{t(`role.${role}`)}</span>)}
+                    {model.quality_failed ? <span className="text-warning">{t("modelEvidence.qualityFailed")}</span> : null}
                     {blocked ? <span className="text-destructive">{blocked}</span> : null}
                   </span>
                 </button>
