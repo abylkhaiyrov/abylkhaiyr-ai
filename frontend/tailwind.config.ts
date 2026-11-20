@@ -4,7 +4,10 @@ const token = (name: string) => `hsl(var(--${name}) / <alpha-value>)`;
 
 export default {
   darkMode: ["class"],
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: {
+    relative: true,
+    files: ["./index.html", "./src/**/*.{ts,tsx}"],
+  },
   theme: {
     extend: {
       colors: {

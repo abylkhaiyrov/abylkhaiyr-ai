@@ -240,8 +240,8 @@ const me = shape<{ username: string; requires_password_change: boolean }>({ user
 const runtimeGuard = shape<RuntimeState>({ generated_at: string, pipeline: nullable(shape<Pipeline>({ stages: arrayOf(shape<PipelineStage>({ key: string, status: string })), running: boolean })), compute: shape({ busy: boolean }), models: record(anything), events: arrayOf(anything) });
 const registryGuard = shape<ModelRegistry>({ roles: record(anything), models: arrayOf(shape<Model>({ id: string, roles: arrayOf(string) })) });
 const systemGuard = shape<SystemSnapshot>({ recorded_at: string, cpu: shape({ percent: number }), memory: shape({ total_bytes: number }), gpu: shape({ device: string }), disk: shape({ total_bytes: number }) });
-const chatSummary = shape<ChatSummary>({ id: string, title: string, pinned: boolean });
-const chatGuard = shape<Chat>({ id: string, title: string, messages: arrayOf(shape<ChatMessage>({ id: string, role: string, content: string })) });
+const chatSummary = shape<ChatSummary>({ id: string, title: string, pinned: boolean, updated_at: string });
+const chatGuard = shape<Chat>({ id: string, title: string, messages: arrayOf(shape<ChatMessage>({ id: string, role: string, content: string, variants: arrayOf(anything), reasoning_trace: arrayOf(anything) })) });
 const rows = listOf<Metric>(shape({ step: number }));
 
 export const api = {

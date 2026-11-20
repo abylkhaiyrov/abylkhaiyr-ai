@@ -10,6 +10,7 @@ import { MessageItem } from "@/components/chat/message-item";
 import { ModelPicker } from "@/components/chat/model-picker";
 import { SettingsDialog } from "@/components/chat/settings-dialog";
 import { Button } from "@/components/ui/button";
+import { ErrorState, LoadingState } from "@/components/data-state";
 import { useApiError } from "@/hooks/use-api-error";
 import { useChatGeneration } from "@/hooks/use-chat-generation";
 import { useModelRegistry, useRuntime } from "@/hooks/use-runtime";
@@ -194,7 +195,11 @@ export function ChatPage() {
           </div>
         </div>
         <div ref={viewport} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto" data-testid="messages">
-          {empty ? (
+          {selected !== null && chat.isPending ? (
+            <div className="mx-auto w-full max-w-[44rem] p-4"><LoadingState /></div>
+          ) : selected !== null && chat.isError ? (
+            <div className="mx-auto w-full max-w-[44rem] p-4"><ErrorState error={chat.error} retry={() => void chat.refetch()} /></div>
+          ) : empty ? (
             <div className="mx-auto flex min-h-full w-full max-w-[44rem] flex-col justify-center gap-8 px-4 pb-16">
               <div className="text-center">
                 <h1 className="text-[28px] font-semibold tracking-tight">{t("chat.welcome")}</h1>

@@ -323,5 +323,5 @@ export const en: Mirror<typeof ru> = {
       no_inference_model_loaded: "No inference model is loaded.",
     },
   },
-  errors: { load: "Could not load data" },
+  errors: { load: "Could not load data", render: "Could not display this page. Reload it and try again.", reload: "Reload page" },
 };
