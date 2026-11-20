@@ -144,6 +144,9 @@ class TrainConfig(StrictModel):
     device: DeviceName = "auto"
     activation_checkpointing: bool = False
     pack_sequences: bool = False
+    bucket_window: int = Field(default=0, ge=0)
+    curriculum_start: dict[str, float] = Field(default_factory=dict)
+    curriculum_batches: int = Field(default=0, ge=0)
     native_gqa: bool = False
     fast_causal: bool = False
     dynamic_batch_size: bool = True

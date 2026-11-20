@@ -101,9 +101,10 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
         if (isGenerationEvent(event)) applyGeneration(event);
         else applyData(event);
       };
-      ws.onclose = () => {
+      ws.onclose = (closeEvent) => {
         if (heartbeat) clearInterval(heartbeat);
         setConnection(false);
+        if (closeEvent.code === 1008) void queryClient.invalidateQueries({ queryKey: ["me"] });
         if (!stopped) {
           retryTimer = setTimeout(connect, Math.min(15_000, 500 * 2 ** retry) * (0.8 + Math.random() * 0.4));
           retry += 1;

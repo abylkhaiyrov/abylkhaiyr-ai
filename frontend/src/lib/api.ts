@@ -1,4 +1,5 @@
-import { csrfToken } from "@/lib/utils";
+import { body, http } from "@/lib/http";
+import { anything, arrayOf, boolean, listOf, nullable, number, record, shape, string } from "@/lib/schema";
 
 export type Metric = Record<string, number>;
 export type StageStatus = "pending" | "running" | "completed" | "skipped" | "failed" | "interrupted";
@@ -160,6 +161,7 @@ export type GenerationSettings = {
   top_k?: number;
   max_tokens?: number;
   repetition_penalty?: number;
+  context_messages?: number;
 };
 
 export type StudioEvent = { process_id: string; level: string; message: string; created_at: string };
@@ -217,65 +219,61 @@ export type ChatMessage = {
   checkpoint_id: string | null;
   generation_params: Record<string, unknown> | null;
   reasoning_trace: ReasoningStageEvent[];
+  variants: MessageVariant[];
+  status: string;
+  created_at: string;
+};
+export type MessageVariant = {
+  content: string;
+  model_id: string | null;
+  checkpoint_id: string | null;
+  output_tokens: number | null;
+  generation_ms: number | null;
+  tokens_per_second: number | null;
   status: string;
   created_at: string;
 };
 export type Chat = ChatSummary & { messages: ChatMessage[] };
 
-export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
-    super(message);
-  }
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (init.body) headers.set("Content-Type", "application/json");
-  if (init.method && !["GET", "HEAD"].includes(init.method)) {
-    const token = csrfToken();
-    if (token) headers.set("X-CSRF-Token", token);
-  }
-  const response = await fetch(`/api${path}`, { ...init, headers, credentials: "same-origin" });
-  if (response.status === 204) return undefined as T;
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => ({}));
-    const detail = typeof payload === "object" && payload !== null && "detail" in payload ? String(payload.detail) : response.statusText;
-    throw new ApiError(response.status, detail);
-  }
-  return response.json() as Promise<T>;
-}
-
-const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
+const named = shape<{ name: string }>({ name: string });
+const me = shape<{ username: string; requires_password_change: boolean }>({ username: string, requires_password_change: boolean });
+const runtimeGuard = shape<RuntimeState>({ generated_at: string, pipeline: nullable(shape<Pipeline>({ stages: arrayOf(shape<PipelineStage>({ key: string, status: string })), running: boolean })), compute: shape({ busy: boolean }), models: record(anything), events: arrayOf(anything) });
+const registryGuard = shape<ModelRegistry>({ roles: record(anything), models: arrayOf(shape<Model>({ id: string, roles: arrayOf(string) })) });
+const systemGuard = shape<SystemSnapshot>({ recorded_at: string, cpu: shape({ percent: number }), memory: shape({ total_bytes: number }), gpu: shape({ device: string }), disk: shape({ total_bytes: number }) });
+const chatSummary = shape<ChatSummary>({ id: string, title: string, pinned: boolean });
+const chatGuard = shape<Chat>({ id: string, title: string, messages: arrayOf(shape<ChatMessage>({ id: string, role: string, content: string })) });
+const rows = listOf<Metric>(shape({ step: number }));
 
 export const api = {
-  login: (username: string, password: string) => request<{ username: string; requires_password_change: boolean }>("/auth/login", json("POST", { username, password })),
-  me: () => request<{ username: string; requires_password_change: boolean }>("/auth/me"),
-  logout: () => request<void>("/auth/logout", json("POST")),
-  changePassword: (currentPassword: string, newPassword: string) => request<void>("/auth/password", json("PUT", { current_password: currentPassword, new_password: newPassword })),
-  runtime: () => request<RuntimeState>("/runtime"),
-  system: () => request<SystemSnapshot>("/system"),
-  systemHistory: (seconds: number) => request<SystemSnapshot[]>(`/system/history?seconds=${seconds}`),
-  processes: () => request<Process[]>("/processes"),
-  startTraining: (configPath: string, stage?: string) => request<Process>("/training", json("POST", { config_path: configPath, stage })),
-  pauseTraining: (id: string) => request<Process>(`/training/${id}/pause`, json("POST")),
-  stopTraining: (id: string) => request<Process>(`/training/${id}/stop`, json("POST")),
-  stopPipeline: () => request<{ pid: number }>("/pipeline/stop", json("POST")),
-  trainingConfigs: () => request<{ path: string; name: string; stage: string }[]>("/training/configs"),
-  runs: () => request<Run[]>("/runs"),
-  run: (name: string) => request<RunDetail>(`/runs/${encodeURIComponent(name)}`),
-  runMetrics: (name: string, maxPoints = 600) => request<Metric[]>(`/runs/${encodeURIComponent(name)}/metrics?max_points=${maxPoints}`),
-  runLogs: (name: string, limit = 300) => request<string[]>(`/runs/${encodeURIComponent(name)}/logs?limit=${limit}`),
-  modelRegistry: () => request<ModelRegistry>("/models/registry"),
-  switchModel: (checkpointId: string, device?: string) => request<Model>("/models/switch", json("POST", { checkpoint_id: checkpointId, device })),
-  unloadModel: () => request<{ loaded: boolean }>("/models/unload", json("POST")),
-  datasets: () => request<Dataset[]>("/datasets"),
-  experiments: () => request<Experiment[]>("/experiments"),
-  evaluations: () => request<Evaluation[]>("/evaluation"),
-  logs: (category?: string) => request<{ items: { category: string; source: string; message: string }[]; total: number }>(`/logs${category ? `?category=${category}` : ""}`),
-  chats: (query?: string) => request<ChatSummary[]>(`/chats${query ? `?query=${encodeURIComponent(query)}` : ""}`),
-  chat: (id: string) => request<Chat>(`/chats/${id}`),
-  createChat: (payload?: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings }) => request<ChatSummary>("/chats", json("POST", payload ?? {})),
-  updateChat: (id: string, payload: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings; pinned?: boolean }) => request<ChatSummary>(`/chats/${id}`, json("PATCH", payload)),
-  deleteChat: (id: string) => request<void>(`/chats/${id}`, json("DELETE")),
+  login: (username: string, password: string) => http<{ username: string; requires_password_change: boolean }>("/auth/login", body("POST", { username, password }), me, { session: false }),
+  me: () => http<{ username: string; requires_password_change: boolean }>("/auth/me", {}, me, { session: false }),
+  logout: () => http<void>("/auth/logout", body("POST"), undefined, { session: false }),
+  changePassword: (currentPassword: string, newPassword: string) => http<void>("/auth/password", body("PUT", { current_password: currentPassword, new_password: newPassword })),
+  runtime: () => http<RuntimeState>("/runtime", {}, runtimeGuard),
+  system: () => http<SystemSnapshot>("/system", {}, systemGuard),
+  systemHistory: (seconds: number) => http<SystemSnapshot[]>(`/system/history?seconds=${seconds}`, {}, listOf<SystemSnapshot>(systemGuard)),
+  processes: () => http<Process[]>("/processes", {}, listOf<Process>(shape({ id: string, status: string }))),
+  startTraining: (configPath: string, stage?: string) => http<Process>("/training", body("POST", { config_path: configPath, stage })),
+  pauseTraining: (id: string) => http<Process>(`/training/${id}/pause`, body("POST")),
+  stopTraining: (id: string) => http<Process>(`/training/${id}/stop`, body("POST")),
+  stopPipeline: () => http<{ pid: number }>("/pipeline/stop", body("POST")),
+  trainingConfigs: () => http<{ path: string; name: string; stage: string }[]>("/training/configs", {}, listOf(shape({ path: string, name: string, stage: string }))),
+  runs: () => http<Run[]>("/runs", {}, listOf<Run>(shape({ name: string, status: string, stage: string }))),
+  run: (name: string) => http<RunDetail>(`/runs/${encodeURIComponent(name)}`, {}, shape<RunDetail>({ name: string, checkpoints: arrayOf(anything), evaluations: arrayOf(anything) })),
+  runMetrics: (name: string, maxPoints = 600) => http<Metric[]>(`/runs/${encodeURIComponent(name)}/metrics?max_points=${maxPoints}`, {}, rows),
+  runLogs: (name: string, limit = 300) => http<string[]>(`/runs/${encodeURIComponent(name)}/logs?limit=${limit}`, {}, listOf<string>(string)),
+  modelRegistry: () => http<ModelRegistry>("/models/registry", {}, registryGuard),
+  switchModel: (checkpointId: string, device?: string) => http<Model>("/models/switch", body("POST", { checkpoint_id: checkpointId, device })),
+  unloadModel: () => http<{ loaded: boolean }>("/models/unload", body("POST")),
+  datasets: () => http<Dataset[]>("/datasets", {}, listOf<Dataset>(shape({ name: string, size_bytes: number }))),
+  experiments: () => http<Experiment[]>("/experiments", {}, listOf<Experiment>(named)),
+  evaluations: () => http<Evaluation[]>("/evaluation", {}, listOf<Evaluation>(shape({ path: string, results: record(number) }))),
+  logs: (category?: string) => http<{ items: { category: string; source: string; message: string }[]; total: number }>(`/logs${category ? `?category=${category}` : ""}`, {}, shape({ items: arrayOf(shape({ message: string })), total: number })),
+  chats: (query?: string) => http<ChatSummary[]>(`/chats${query ? `?query=${encodeURIComponent(query)}` : ""}`, {}, listOf<ChatSummary>(chatSummary)),
+  chat: (id: string) => http<Chat>(`/chats/${id}`, {}, chatGuard),
+  createChat: (payload?: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings }) => http<ChatSummary>("/chats", body("POST", payload ?? {}), chatSummary),
+  updateChat: (id: string, payload: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings; pinned?: boolean }) => http<ChatSummary>(`/chats/${id}`, body("PATCH", payload), chatSummary),
+  deleteChat: (id: string) => http<void>(`/chats/${id}`, body("DELETE")),
+  selectVariant: (chatId: string, messageId: string, index: number) => http<ChatMessage>(`/chats/${chatId}/messages/${messageId}/variants/${index}`, body("POST")),
   exportChatUrl: (id: string, format: "md" | "json") => `/api/chats/${id}/export?format=${format}`,
 };

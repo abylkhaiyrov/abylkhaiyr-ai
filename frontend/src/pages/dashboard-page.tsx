@@ -15,11 +15,11 @@ export function DashboardPage() {
   if (query.isError) return <ErrorState error={query.error} retry={() => void query.refetch()} />;
   const runtime = query.data;
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-8">
       <PageHeader title={t("dashboard.title")} subtitle={t("dashboard.subtitle")} />
       <HeroCard pipeline={runtime.pipeline} />
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="grid gap-4">
+      <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="grid gap-8">
           {runtime.pipeline ? (
             <Panel title={t("dashboard.pipeline")}>
               <PipelineTimeline pipeline={runtime.pipeline} />
@@ -27,7 +27,7 @@ export function DashboardPage() {
           ) : null}
           <CompletedTraining pipeline={runtime.pipeline} />
         </div>
-        <div className="grid gap-4">
+        <div className="grid gap-8">
           <ModelRolesCard runtime={runtime} />
           <HardwareCard />
           <EventsCard events={runtime.events} />

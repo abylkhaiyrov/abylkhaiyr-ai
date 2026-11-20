@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Brush, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/data-state";
 import { downsample, niceDomain, pivot, smooth, summarize, type Series, type Smoothing } from "@/components/charts/chart-utils";
 import { useFormat } from "@/hooks/use-format";
@@ -95,7 +94,7 @@ export function TimeSeriesChart({
   const hasData = series.some((item) => item.points.length > 0);
 
   return (
-    <Card className="min-w-0 p-4">
+    <section className="min-w-0">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">{title}{unit ? <span className="ml-1.5 font-normal text-muted-foreground">({unit})</span> : null}</h3>
         <div className="flex flex-wrap items-center gap-1">
@@ -146,7 +145,7 @@ export function TimeSeriesChart({
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-2 border-t pt-2">
+          <div className="mt-2 border-t hairline pt-2">
             <Summary series={series} goal={goal} formatY={fmtY} unit={unit} />
             {markers.length > 0 ? <p className="mt-1.5 text-[11px] text-muted-foreground">┆ {t("chart.checkpointMarkers")}</p> : null}
           </div>
@@ -154,6 +153,6 @@ export function TimeSeriesChart({
       ) : (
         <EmptyState title={t("chart.noData")} />
       )}
-    </Card>
+    </section>
   );
 }

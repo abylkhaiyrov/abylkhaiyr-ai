@@ -345,3 +345,59 @@ def test_packed_loader_keeps_every_conversation_whole_and_resumes_exactly(tmp_pa
     for left, right in zip(expected, [resumed.next_batch() for _ in range(3)], strict=True):
         for a, b in zip(left, right, strict=True):
             assert torch.equal(a, b)
+
+
+def test_length_bucketing_groups_similar_lengths_and_keeps_every_conversation(tmp_path, tokenizer):
+    import numpy as np
+
+    from llm.data.binary import ConversationLoader
+
+    pairs = [(f"q{i}", "word " * (1 + (i * 7) % 30)) for i in range(64)]
+    prefix = _write_conversations(tmp_path, tokenizer, pairs)
+    dtype = np.dtype(np.uint16)
+    plain = ConversationLoader(prefix, dtype, 256, 4, tokenizer.pad_id, 0, True)
+    bucketed = ConversationLoader(
+        prefix, dtype, 256, 4, tokenizer.pad_id, 0, True, pad_multiple=1, bucket_window=8
+    )
+    assert sorted(bucketed.order.tolist()) == list(range(64))
+
+    def spread(loader):
+        order = loader.order.reshape(-1, 4)
+        return float(
+            np.mean([loader.lengths[row].max() - loader.lengths[row].min() for row in order])
+        )
+
+    assert spread(bucketed) < spread(plain) * 0.5
+    assert plain.pad_multiple == 64
+
+
+def test_mixture_curriculum_ramps_probabilities_and_resumes(tmp_path, tokenizer):
+    import numpy as np
+
+    from llm.data.binary import ConversationLoader, MixtureLoader
+
+    prefix = _write_conversations(tmp_path, tokenizer, [(f"q{i}", f"a{i}") for i in range(10)])
+    dtype = np.dtype(np.uint16)
+
+    def make():
+        loaders = {
+            name: ConversationLoader(prefix, dtype, 64, 2, tokenizer.pad_id, 0, True)
+            for name in ("easy", "hard")
+        }
+        return MixtureLoader(
+            loaders, {"easy": 0.5, "hard": 0.5}, 0, {"easy": 0.9, "hard": 0.1}, ramp_batches=100
+        )
+
+    loader = make()
+    assert np.allclose(loader.probabilities, [0.9, 0.1])
+    for _ in range(50):
+        loader.next_batch()
+    assert np.allclose(loader.probabilities, [0.7, 0.3])
+    for _ in range(80):
+        loader.next_batch()
+    assert np.allclose(loader.probabilities, [0.5, 0.5])
+    state = loader.state_dict()
+    follow = [loader.next_batch()[0].tolist() for _ in range(3)]
+    resumed = make()
+    resumed.load_state_dict(state)
+    assert [resumed.next_batch()[0].tolist() for _ in range(3)] == follow

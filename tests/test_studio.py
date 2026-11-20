@@ -364,7 +364,7 @@ def test_reasoning_mode_and_chat_edit_regenerate_continue(
                 "type": "generation.start",
                 "request_id": "reason-1",
                 "chat_id": chat["id"],
-                "content": "Compute 2 + 2",
+                "content": "Compute 2 plus 2",
                 "mode": "reasoning",
             }
         )

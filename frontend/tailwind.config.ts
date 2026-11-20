@@ -18,11 +18,17 @@ export default {
         primary: token("primary"),
         "primary-foreground": token("primary-foreground"),
         destructive: token("destructive"),
+        accent: token("accent"),
+        "accent-foreground": token("accent-foreground"),
         success: token("success"),
         warning: token("warning"),
         info: token("info"),
       },
-      borderRadius: { lg: "0.625rem", xl: "0.875rem" },
+      fontFamily: {
+        sans: ["Inter Variable", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+      },
+      borderRadius: { md: "0.5rem", lg: "0.625rem", xl: "0.875rem", "2xl": "1.25rem" },
       keyframes: {
         indeterminate: {
           "0%": { transform: "translateX(-100%)" },

@@ -5,7 +5,10 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { AppShell } from "@/components/app-shell";
 import { LoadingState } from "@/components/data-state";
 import { StudioEventsProvider } from "@/hooks/studio-events-provider";
+import i18n from "@/i18n";
 import { api } from "@/lib/api";
+import { setUnauthorizedHandler } from "@/lib/http";
+import { useToastStore } from "@/store/toast-store";
 
 const LoginPage = lazy(() => import("@/pages/login-page").then((module) => ({ default: module.LoginPage })));
 const DashboardPage = lazy(() => import("@/pages/dashboard-page").then((module) => ({ default: module.DashboardPage })));
@@ -30,8 +33,18 @@ const client = new QueryClient({
   },
 });
 
+let sessionNoticeShown = false;
+setUnauthorizedHandler(() => {
+  if (!sessionNoticeShown) {
+    sessionNoticeShown = true;
+    useToastStore.getState().push("info", i18n.t("auth.sessionExpired"));
+  }
+  void client.invalidateQueries({ queryKey: ["me"] });
+});
+
 function ProtectedApp() {
   const auth = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false, staleTime: Infinity });
+  if (auth.isSuccess) sessionNoticeShown = false;
   if (auth.isPending) return <LoadingState />;
   if (auth.isError) return <Navigate to="/login" replace />;
   return (

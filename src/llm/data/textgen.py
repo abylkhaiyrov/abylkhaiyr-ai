@@ -246,7 +246,7 @@ def reading_row(rng: random.Random, passage: Passage, pool: list[str]) -> dict |
     question, answer, category = built
     prompt = f"{question}\n\n{passage.text}"
     return {
-        "source": "text_reading",
+        "source": "synthetic_reading",
         "group": f"reading_{lang}",
         "category": f"reading_{category}",
         "language": lang,

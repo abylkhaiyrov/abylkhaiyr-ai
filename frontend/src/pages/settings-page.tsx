@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { PageHeader, Panel } from "@/components/data-state";
 import { Button } from "@/components/ui/button";
+import { useApiError } from "@/hooks/use-api-error";
 import { api } from "@/lib/api";
 import { useToastStore } from "@/store/toast-store";
 import { useUiStore } from "@/store/ui-store";
@@ -11,6 +12,7 @@ export function SettingsPage() {
   const { t } = useTranslation();
   const client = useQueryClient();
   const push = useToastStore((state) => state.push);
+  const describe = useApiError();
   const { locale, setLocale, theme, setTheme } = useUiStore();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -47,7 +49,7 @@ export function SettingsPage() {
             <input type="password" autoComplete="new-password" minLength={12} className="field" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
             <span className="text-xs font-normal text-muted-foreground">{t("auth.passwordHint")}</span>
           </label>
-          {change.error ? <p role="alert" className="text-sm text-destructive">{change.error.message}</p> : null}
+          {change.error ? <p role="alert" className="text-sm text-destructive">{describe(change.error, "auth.passwordRejected")}</p> : null}
           <Button className="w-fit" type="submit" disabled={change.isPending}>{t("auth.changePassword")}</Button>
         </form>
       </Panel>

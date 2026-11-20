@@ -188,7 +188,7 @@ class SFTQualityFilter:
             cap = self.rules.source_caps.get(row["source"])
             if cap is not None and self.source_counts[row["source"]] >= cap:
                 reason = "source_cap"
-        if reason is None and row["group"] == "chat":
+        if reason is None and row["group"].startswith("chat"):
             prefix = self._prefix(row)
             if self.prefix_counts[prefix] >= self.rules.prefix_cap:
                 reason = "template_cap"

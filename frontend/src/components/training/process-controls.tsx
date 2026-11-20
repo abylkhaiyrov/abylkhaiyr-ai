@@ -8,13 +8,15 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { useFormat } from "@/hooks/use-format";
 import { useRuntime } from "@/hooks/use-runtime";
-import { api, ApiError } from "@/lib/api";
+import { useApiError } from "@/hooks/use-api-error";
+import { api } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import { useToastStore } from "@/store/toast-store";
 
 type StopTarget = { kind: "pipeline" } | { kind: "process"; id: string } | null;
 
 function reasonKey(error: unknown) {
-  return error instanceof ApiError && /^[a-z_]+$/.test(error.message) ? `training.errors.${error.message}` : null;
+  return error instanceof ApiError && error.detail && /^[a-z_]+$/.test(error.detail) ? `training.errors.${error.detail}` : null;
 }
 
 export function ProcessControls() {
@@ -22,6 +24,7 @@ export function ProcessControls() {
   const format = useFormat();
   const client = useQueryClient();
   const push = useToastStore((state) => state.push);
+  const describe = useApiError();
   const runtime = useRuntime().data;
   const busy = runtime?.compute.busy ?? false;
   const processes = useQuery({ queryKey: ["processes"], queryFn: api.processes, staleTime: 30_000 });
@@ -35,7 +38,7 @@ export function ProcessControls() {
   };
   const fail = (error: Error) => {
     const key = reasonKey(error);
-    push("error", key ? t(key) : error.message);
+    push("error", key ? t(key) : describe(error));
   };
   const start = useMutation({ mutationFn: () => api.startTraining(config), onSuccess: () => { push("success", t("training.started")); settle(); }, onError: fail });
   const pause = useMutation({ mutationFn: api.pauseTraining, onSuccess: settle, onError: fail });

@@ -1,0 +1,43 @@
+name: tiny_v31_dpo
+model:
+  vocab_size: 8192
+  hidden_size: 384
+  num_hidden_layers: 8
+  num_attention_heads: 6
+  num_key_value_heads: 2
+  intermediate_size: 1024
+  max_position_embeddings: 512
+tokenizer:
+  vocab_size: 8192
+  path: data/tokenizer
+train:
+  stage: dpo
+  data_dir: data/v3_1
+  init_from: checkpoints/tiny_v31_sft/tiny_v31_sft_best
+  restore_optimizer: false
+  output_dir: experiments/tiny_v31_dpo
+  checkpoint_dir: checkpoints/tiny_v31_dpo
+  device: mps
+  precision: fp32
+  max_steps: 300
+  micro_batch_size: 4
+  gradient_accumulation_steps: 4
+  sequence_length: 511
+  eval_interval: 50
+  eval_batches: 20
+  log_interval: 25
+  checkpoint_interval: 100
+  keep_checkpoints: 3
+  protected_steps:
+  - 100
+  - 200
+  - 300
+  checkpoint_alias: tiny_v31_dpo
+  dpo_beta: 0.1
+  dataset_version: v3.1
+  optimizer:
+    learning_rate: 5.0e-06
+    warmup_steps: 30
+    weight_decay: 0.1
+    min_lr_ratio: 0.1
+    max_grad_norm: 1.0

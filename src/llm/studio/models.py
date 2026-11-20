@@ -67,6 +67,7 @@ class MessageRecord(Base):
     generation_params: Mapped[str | None] = mapped_column(Text)
     model_config_json: Mapped[str | None] = mapped_column(Text)
     reasoning_trace: Mapped[str | None] = mapped_column(Text)
+    variants: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default="completed")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 

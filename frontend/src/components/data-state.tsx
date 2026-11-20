@@ -2,7 +2,7 @@ import { AlertCircle, Inbox } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { useApiError } from "@/hooks/use-api-error";
 
 export function LoadingState() {
   const { t } = useTranslation();
@@ -26,12 +26,13 @@ export function EmptyState({ title, description }: { title: string; description?
 
 export function ErrorState({ error, retry }: { error: Error; retry: () => void }) {
   const { t } = useTranslation();
+  const message = useApiError();
   return (
     <div role="alert" className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
       <AlertCircle className="mt-0.5 shrink-0 text-destructive" size={18} />
       <div>
         <p className="font-medium">{t("errors.load")}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{message(error)}</p>
         <Button variant="outline" size="sm" className="mt-3" onClick={retry}>{t("common.retry")}</Button>
       </div>
     </div>
@@ -53,8 +54,8 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="label-caps">{label}</dt>
-      <dd className="mt-1 truncate text-base font-semibold tabular-nums" title={typeof value === "string" ? value : undefined}>{value}</dd>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 truncate text-[15px] font-medium tabular-nums" title={typeof value === "string" ? value : undefined}>{value}</dd>
       {hint ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -62,9 +63,14 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
 
 export function Panel({ title, actions, children, className }: { title?: string; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <Card className={className}>
-      {title ? <div className="flex items-center justify-between gap-3 border-b px-4 py-3"><h2 className="text-sm font-semibold">{title}</h2>{actions}</div> : null}
-      <CardContent>{children}</CardContent>
-    </Card>
+    <section className={className}>
+      {title ? (
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-[13px] font-semibold">{title}</h2>
+          {actions}
+        </div>
+      ) : null}
+      {children}
+    </section>
   );
 }

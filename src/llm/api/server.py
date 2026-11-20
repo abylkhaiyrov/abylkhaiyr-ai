@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import uuid
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -144,6 +145,24 @@ def create_app(
             },
         }
 
+    @app.api_route(
+        "/api/{rest:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        include_in_schema=False,
+    )
+    @app.api_route(
+        "/v1/{rest:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+        include_in_schema=False,
+    )
+    def unknown_endpoint(rest: str) -> JSONResponse:
+        return JSONResponse({"detail": "endpoint_not_found"}, status_code=404)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request: Request, error: Exception) -> JSONResponse:
+        logging.getLogger(__name__).exception("Unhandled error on %s", request.url.path)
+        return JSONResponse({"detail": "internal_error"}, status_code=500)
+
     frontend_dist = root / "frontend" / "dist"
     if frontend_dist.is_dir():
         assets = frontend_dist / "assets"
@@ -155,7 +174,9 @@ def create_app(
             requested = (frontend_dist / path).resolve()
             if path and frontend_dist in requested.parents and requested.is_file():
                 return FileResponse(requested)
-            return FileResponse(frontend_dist / "index.html")
+            if PurePosixPath(path).suffix:
+                raise HTTPException(status_code=404, detail="file_not_found")
+            return FileResponse(frontend_dist / "index.html", headers={"Cache-Control": "no-store"})
 
     return app
 

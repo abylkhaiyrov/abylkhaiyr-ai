@@ -9,6 +9,7 @@ import { MessageItem } from "@/components/chat/message-item";
 import { SettingsDialog } from "@/components/chat/settings-dialog";
 import { DEFAULT_SETTINGS } from "@/lib/chat-settings";
 import { Button } from "@/components/ui/button";
+import { useApiError } from "@/hooks/use-api-error";
 import { useChatGeneration } from "@/hooks/use-chat-generation";
 import { useModelRegistry, useRuntime } from "@/hooks/use-runtime";
 import { api, type ChatMessage, type ChatSummary, type GenerationSettings, type Model } from "@/lib/api";
@@ -28,6 +29,7 @@ export function ChatPage() {
   const { t } = useTranslation();
   const client = useQueryClient();
   const push = useToastStore((state) => state.push);
+  const describe = useApiError();
   const backendOnline = useUiStore((state) => state.backendOnline);
   const [params, setParams] = useSearchParams();
   const selected = params.get("c");
@@ -61,7 +63,7 @@ export function ChatPage() {
       refreshChats();
       void client.invalidateQueries({ queryKey: ["chat", id] });
     },
-    onError: (error: Error) => push("error", error.message),
+    onError: (error: Error) => push("error", describe(error)),
   });
   const removeChat = useMutation({
     mutationFn: api.deleteChat,

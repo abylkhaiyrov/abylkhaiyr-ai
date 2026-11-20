@@ -377,3 +377,55 @@ TOOL_HOLDOUT_CASES = [
     PromptCase("100-дің 15 пайызын тап.", "15"),
     PromptCase("2x + 4 = 10 теңдеуін шеш", "3"),
 ]
+
+
+@dataclass(frozen=True)
+class TriageCase:
+    prompt: str
+    status: str
+    answer: str = ""
+
+
+REASONING_HOLDOUT = [
+    TriageCase("How much is 7 times 8 plus 9?", "model_needed"),
+    TriageCase("What is 1/3 + 1/6?", "solved", "1/2"),
+    TriageCase("Solve 7x - 3 = 25.", "solved", "4"),
+    TriageCase("If 2y + 10 = 30, what is y?", "solved", "10"),
+    TriageCase("Find the roots of x^2 - 4x + 3 = 0.", "solved", "1, 3"),
+    TriageCase("Find f'(3) if f(x) = x^3.", "solved", "27"),
+    TriageCase("Calculate the definite integral of x from 0 to 4.", "solved", "8"),
+    TriageCase("What is the mean of 2, 3, 5, 10?", "solved", "5"),
+    TriageCase("Найди 20% от 150.", "solved", "30"),
+    TriageCase("Реши уравнение 9x + 1 = 46", "solved", "5"),
+    TriageCase("Вычисли: (8 + 4) * 5", "solved", "60"),
+    TriageCase("Чему равен определитель матрицы [[4, 3], [2, 1]]?", "solved", "-2"),
+    TriageCase("Есепте: 12 * 12 - 4", "solved", "140"),
+    TriageCase("x^2 = 49 теңдеуінің оң түбірін тап.", "solved", "7"),
+    TriageCase("Solve it.", "clarification"),
+    TriageCase("Translate this.", "clarification"),
+    TriageCase("Summarize the text.", "clarification"),
+    TriageCase("Write code", "clarification"),
+    TriageCase("Реши.", "clarification"),
+    TriageCase("Переведи это.", "clarification"),
+    TriageCase("Есепті шеш", "clarification"),
+    TriageCase(
+        "Anna is older than Boris. Boris is older than Clara. Clara is older than Anna. "
+        "Who is the oldest?",
+        "contradiction",
+    ),
+    TriageCase("Solve x + 4 = x + 9.", "contradiction"),
+    TriageCase("Solve x + y = 5 and x + y = 7.", "contradiction"),
+    TriageCase("Solve 2x + 6 = 2(x + 3).", "underdetermined"),
+    TriageCase("Реши: x + 1 = x + 3", "contradiction"),
+    TriageCase("What is the capital of France?", "model_needed"),
+    TriageCase("Write a haiku about the sea", "model_needed"),
+    TriageCase("Prove that the sum of two even numbers is even.", "model_needed"),
+    TriageCase("Hello!", "model_needed"),
+    TriageCase("Explain recursion", "model_needed"),
+    TriageCase("Расскажи о Казахстане", "model_needed"),
+    TriageCase(
+        "A train leaves at 9:15 and travels 2 hours 40 minutes. When does it arrive?",
+        "model_needed",
+    ),
+    TriageCase("Sort the list 5, 2, 9 in ascending order", "model_needed"),
+]

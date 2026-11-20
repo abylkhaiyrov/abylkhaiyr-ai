@@ -9,6 +9,7 @@ from pathlib import Path
 from llm.core.config import ModelConfig
 from llm.data.binary import read_jsonl, tokenize_sft_split
 from llm.data.cleaning import detect_language
+from llm.data.codegen import build_code_dataset
 from llm.data.identity import build_identity_dataset, load_identity_facts
 from llm.data.instructgen import build_instruction_dataset
 from llm.data.sft_builder import SPLITS, write_group_files
@@ -19,32 +20,48 @@ from llm.data.sft_quality import (
     equations_hold,
     repair_gsm8k,
 )
+from llm.data.textgen import build_reading_dataset
 from llm.evaluation.prompts import evaluation_prompts
 from llm.tokenizer.bpe import BPETokenizer
 
 REAL_GROUPS = ("chat", "math", "code")
-OUTPUT_GROUPS = ("chat", "dialog", "skills", "identity", "math", "word_math", "code")
+CHAT_LANGUAGES = ("en", "ru", "kk")
+OUTPUT_GROUPS = (
+    *(f"chat_{language}" for language in CHAT_LANGUAGES),
+    "chat_other",
+    *(f"reading_{language}" for language in CHAT_LANGUAGES),
+    "dialog",
+    "skills",
+    "identity",
+    "math",
+    "word_math",
+    "code",
+)
 KEEP_ORDER = {"math"}
 GSM8K_SOURCE = "gsm8k_sft"
 SQL_SOURCE = "sql_sft"
 REFUSAL_SOURCE = "synthetic_refusal"
+GENERATED_CODE_PREFIX = "synthetic_code"
 MANIFEST = "manifest.json"
 
 
 @dataclass
 class InstructionBuildConfig:
     source_dir: str = "data/v2"
-    output_dir: str = "data/v3"
+    output_dir: str = "data/v3_1"
+    corpus_file: str = "data/v2/corpus/train.jsonl"
     benchmark_dir: str = "data/benchmarks"
     synthetic_count: int = 12000
     identity_count: int = 400
-    sql_cap: int = 1500
+    sql_cap: int = 400
+    reading_per_language: int = 3500
+    code_count: int = 6000
     oasst_cap: int = 6000
     dolly_cap: int = 8000
     aya_cap: int = 6000
     prefix_cap: int = 600
     seed: int = 1
-    version: str = "v3"
+    version: str = "v3.1"
     rules: QualityRules = field(default_factory=QualityRules)
 
     def quality_rules(self) -> QualityRules:
@@ -76,12 +93,18 @@ def reassign(row: dict) -> dict | None:
         return {**row, "group": "code", "category": "sql"}
     if source == REFUSAL_SOURCE:
         return {**row, "group": "dialog", "category": "refusal"}
+    if row["group"] == "chat":
+        language = detect_language(row["messages"][-1]["content"])
+        suffix = language if language in CHAT_LANGUAGES else "other"
+        return {**row, "group": f"chat_{suffix}"}
     return row
 
 
 def real_rows(source_dir: Path) -> Iterator[dict]:
     for group in REAL_GROUPS:
         for row in read_group(source_dir, group):
+            if row.get("source", "").startswith(GENERATED_CODE_PREFIX):
+                continue
             updated = reassign(row)
             if updated is not None:
                 yield updated
@@ -93,6 +116,10 @@ def synthetic_rows(config: InstructionBuildConfig, model: ModelConfig) -> list[d
     facts = load_identity_facts(model)
     rows = build_instruction_dataset(facts, config.synthetic_count, config.seed)
     rows.extend(build_identity_dataset(facts, config.identity_count, config.seed))
+    rows.extend(build_code_dataset(config.code_count, config.seed))
+    rows.extend(
+        build_reading_dataset(Path(config.corpus_file), config.reading_per_language, config.seed)
+    )
     return rows
 
 

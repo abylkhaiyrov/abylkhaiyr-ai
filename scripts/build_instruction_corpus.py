@@ -13,7 +13,7 @@ def main() -> int:
     parser.add_argument("--config", default="configs/tiny_v2.yaml")
     parser.add_argument("--tokenizer", default="data/tokenizer")
     parser.add_argument("--source-dir", default="data/v2")
-    parser.add_argument("--output-dir", default="data/v3")
+    parser.add_argument("--output-dir", default="data/v3_1")
     parser.add_argument("--synthetic-count", type=int, default=12000)
     parser.add_argument("--seed", type=int, default=1)
     args = parser.parse_args()

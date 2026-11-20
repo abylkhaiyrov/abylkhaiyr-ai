@@ -360,7 +360,9 @@ class GenerationScheduler:
                 },
             )
             history = [Message("system", chat["system_prompt"])] if chat["system_prompt"] else []
-            history.extend(Message(item["role"], item["content"]) for item in history_records)
+            window = int((chat.get("generation_settings") or {}).get("context_messages") or 0)
+            visible = history_records[-window:] if window > 0 else history_records
+            history.extend(Message(item["role"], item["content"]) for item in visible)
             prefix_tokens = (
                 len(engine.tokenizer.encode(continuation_prefix)) if continuation_prefix else 0
             )

@@ -38,6 +38,7 @@ from llm.reasoning.tools import (
     extract_text_answer,
     run_code_tests,
 )
+from llm.reasoning.triage import triage
 from llm.tokenizer.bpe import Message
 
 _T = TypeVar("_T")
@@ -67,6 +68,7 @@ BASE_SUITES = (
     "arithmetic",
     "math_benchmark",
     "tool_solvers",
+    "reasoning_triage",
     "logical_reasoning",
     "factual",
     "instruction_following",
@@ -237,6 +239,20 @@ class Evaluator:
             metrics[f"tool_{name}_accuracy"] = correct / len(cases)
             metrics[f"tool_{name}_coverage"] = answered / len(cases)
         return metrics
+
+    def reasoning_triage(self) -> dict[str, float]:
+        cases = suites.REASONING_HOLDOUT
+        results = [(case, triage(case.prompt)) for case in cases]
+        solved = [(case, result) for case, result in results if case.status == "solved"]
+        unsolvable = [(case, result) for case, result in results if case.status != "solved"]
+        status_hits = sum(result.status == case.status for case, result in results)
+        answer_hits = sum((result.answer or "").strip() == case.answer for case, result in solved)
+        false_solves = sum(result.status == "solved" for case, result in unsolvable)
+        return {
+            "triage_holdout_status_accuracy": status_hits / len(cases),
+            "triage_holdout_answer_accuracy": answer_hits / len(solved),
+            "triage_holdout_false_solve_rate": false_solves / len(unsolvable),
+        }
 
     def factual(self) -> dict[str, float]:
         self.hooks.items_planned(len(suites.FACTUAL_CASES))

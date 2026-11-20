@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from llm.core.config import ExperimentConfig
+from llm.core.config import ExperimentConfig, TrainConfig
 from llm.core.errors import ConfigError, ResourceError
 from llm.core.hardware import detect_hardware, resolve_device, resolve_dtype
 from llm.core.profiles import (
@@ -60,7 +60,7 @@ def _conversation_mixture(
     batch: int,
     tokenizer: BPETokenizer,
     seed: int,
-    pack: bool = False,
+    train: TrainConfig | None = None,
 ) -> MixtureLoader:
     dtype = token_dtype(tokenizer.vocab_size)
     loaders = {}
@@ -68,11 +68,26 @@ def _conversation_mixture(
         prefix = root / "sft_groups" / f"{split}.{name}"
         if prefix.parent.joinpath(f"{prefix.name}.ids.bin").is_file():
             shuffle = split == "train" and name not in CURRICULUM_GROUPS
+            pack = train is not None and train.pack_sequences
             loader_class = PackedConversationLoader if pack else ConversationLoader
+            window = train.bucket_window if train is not None and not pack else 0
             loaders[name] = loader_class(
-                prefix, dtype, length + 1, batch, tokenizer.pad_id, seed, shuffle
+                prefix,
+                dtype,
+                length + 1,
+                batch,
+                tokenizer.pad_id,
+                seed,
+                shuffle,
+                bucket_window=window,
             )
-    return MixtureLoader(loaders, {name: weights[name] for name in loaders}, seed)
+    start = None
+    if train is not None and train.curriculum_start and split == "train":
+        start = {name: train.curriculum_start.get(name, weights[name]) for name in loaders}
+    ramp = train.curriculum_batches if train is not None else 0
+    return MixtureLoader(
+        loaders, {name: weights[name] for name in loaders}, seed, start, ramp if start else 0
+    )
 
 
 def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
@@ -102,9 +117,7 @@ def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
         )
     if train.stage == "sft" and train.mixture:
         return tuple(
-            _conversation_mixture(
-                root, split, train.mixture, length, batch, tokenizer, seed, train.pack_sequences
-            )
+            _conversation_mixture(root, split, train.mixture, length, batch, tokenizer, seed, train)
             for split in ("train", "validation")
         )
     if train.stage == "sft":

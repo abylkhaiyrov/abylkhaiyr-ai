@@ -485,6 +485,24 @@ def create_studio_router(
             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
         )
 
+    @router.post("/chats/{chat_id}/messages/{message_id}/variants/{index}")
+    def select_variant(
+        chat_id: str,
+        message_id: str,
+        index: int,
+        identity: Annotated[tuple[Any, str], Depends(require_csrf)],
+    ) -> dict[str, Any]:
+        reject_during_generation()
+        try:
+            message = studio.select_variant(identity[0].id, chat_id, message_id, index)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="variant_not_found"
+            ) from error
+        if message is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message_not_found")
+        return message
+
     @router.delete("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_chat(
         chat_id: str,

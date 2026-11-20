@@ -556,6 +556,10 @@ class StudioService:
                 )
                 if index is None or ordered[index].role != "assistant":
                     raise ValueError("Assistant message not found")
+                previous_variants = [
+                    *json.loads(ordered[index].variants or "[]"),
+                    self._variant_snapshot(ordered[index]),
+                ]
                 for trailing in ordered[index:]:
                     database.delete(trailing)
                 history_records = ordered[:index]
@@ -564,6 +568,7 @@ class StudioService:
                 assistant = MessageRecord(
                     id=str(uuid.uuid4()),
                     chat_id=chat_id,
+                    variants=json.dumps(previous_variants),
                     role="assistant",
                     content="",
                     model_id=resolved_model_id,
@@ -807,6 +812,44 @@ class StudioService:
             ).all()
             return [self._serialize_job(item) for item in rows]
 
+    VARIANT_FIELDS = (
+        "content",
+        "model_id",
+        "checkpoint_id",
+        "output_tokens",
+        "generation_ms",
+        "tokens_per_second",
+        "status",
+    )
+
+    @classmethod
+    def _variant_snapshot(cls, record: MessageRecord) -> dict[str, Any]:
+        snapshot = {field: getattr(record, field) for field in cls.VARIANT_FIELDS}
+        snapshot["created_at"] = record.created_at.isoformat()
+        return snapshot
+
+    def select_variant(
+        self, user_id: int, chat_id: str, message_id: str, index: int
+    ) -> dict[str, Any] | None:
+        with self.session_factory.begin() as database:
+            message = database.scalar(
+                select(MessageRecord)
+                .join(Chat, MessageRecord.chat_id == Chat.id)
+                .where(Chat.id == chat_id, Chat.user_id == user_id, MessageRecord.id == message_id)
+            )
+            if message is None or message.role != "assistant":
+                return None
+            variants = json.loads(message.variants or "[]")
+            if not 0 <= index < len(variants):
+                raise ValueError("Variant not found")
+            chosen = variants.pop(index)
+            variants.append(self._variant_snapshot(message))
+            for field in self.VARIANT_FIELDS:
+                setattr(message, field, chosen.get(field))
+            message.variants = json.dumps(variants)
+            database.flush()
+            return self._serialize_message(message)
+
     @staticmethod
     def _serialize_job(job: GenerationJob) -> dict[str, Any]:
         return {
@@ -878,6 +921,7 @@ class StudioService:
             "reasoning_trace": (
                 json.loads(message.reasoning_trace) if message.reasoning_trace else []
             ),
+            "variants": json.loads(message.variants) if message.variants else [],
             "status": message.status,
             "created_at": message.created_at.isoformat(),
         }

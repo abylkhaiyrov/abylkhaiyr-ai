@@ -170,19 +170,21 @@ class ConversationLoader:
         seed: int,
         shuffle: bool = True,
         pad_multiple: int = PAD_MULTIPLE,
+        bucket_window: int = 0,
     ) -> None:
         prefix = Path(prefix)
         self.ids = np.memmap(with_extension(prefix, ".ids.bin"), dtype=dtype, mode="r")
         self.labels = np.memmap(with_extension(prefix, ".labels.bin"), dtype=np.int32, mode="r")
-        lengths = np.load(with_extension(prefix, ".lengths.npy"))
-        self.offsets = np.concatenate(([0], np.cumsum(lengths)))
-        self.count = len(lengths)
+        self.lengths = np.load(with_extension(prefix, ".lengths.npy"))
+        self.offsets = np.concatenate(([0], np.cumsum(self.lengths)))
+        self.count = len(self.lengths)
         if self.count == 0:
             raise DataError(f"no conversations in {prefix}")
         self.max_length = max_length
         self.batch_size = batch_size
         self.pad_id = pad_id
         self.pad_multiple = pad_multiple
+        self.bucket_window = bucket_window
         self.seed = seed
         self.shuffle = shuffle
         self.epoch = 0
@@ -192,7 +194,21 @@ class ConversationLoader:
     def _make_order(self) -> np.ndarray:
         if not self.shuffle:
             return np.arange(self.count)
-        return np.random.default_rng(self.seed + self.epoch).permutation(self.count)
+        rng = np.random.default_rng(self.seed + self.epoch)
+        order = rng.permutation(self.count)
+        return self._bucketed(order, rng) if self.bucket_window else order
+
+    def _bucketed(self, order: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+        span = self.batch_size * self.bucket_window
+        pieces: list[np.ndarray] = []
+        for start in range(0, len(order), span):
+            chunk = order[start : start + span]
+            chunk = chunk[np.argsort(self.lengths[chunk], kind="stable")]
+            batches = [
+                chunk[i : i + self.batch_size] for i in range(0, len(chunk), self.batch_size)
+            ]
+            pieces.extend(batches[i] for i in rng.permutation(len(batches)))
+        return np.concatenate(pieces)
 
     def set_batch_size(self, batch_size: int) -> None:
         self.batch_size = batch_size
@@ -308,15 +324,36 @@ class Loader(Protocol):
 
 
 class MixtureLoader:
-    def __init__(self, loaders: Mapping[str, Loader], weights: Mapping[str, float], seed: int):
+    def __init__(
+        self,
+        loaders: Mapping[str, Loader],
+        weights: Mapping[str, float],
+        seed: int,
+        start_weights: Mapping[str, float] | None = None,
+        ramp_batches: int = 0,
+    ):
         if set(weights) != set(loaders):
             raise DataError("mixture weights must match the available groups")
-        total = sum(weights.values())
+        if start_weights is not None and set(start_weights) != set(loaders):
+            raise DataError("curriculum weights must match the available groups")
         self.names = sorted(loaders)
-        self.probabilities = np.asarray([weights[name] / total for name in self.names])
+        self.final = self._normalize(weights)
+        self.start = self._normalize(start_weights) if start_weights is not None else self.final
+        self.ramp_batches = ramp_batches
         self.loaders = loaders
         self.seed = seed
         self.counter = 0
+
+    def _normalize(self, weights: Mapping[str, float]) -> np.ndarray:
+        values = np.asarray([weights[name] for name in self.names], dtype=float)
+        return values / values.sum()
+
+    @property
+    def probabilities(self) -> np.ndarray:
+        if not self.ramp_batches:
+            return self.final
+        progress = min(self.counter / self.ramp_batches, 1.0)
+        return self.start + (self.final - self.start) * progress
 
     def set_batch_size(self, batch_size: int) -> None:
         for loader in self.loaders.values():

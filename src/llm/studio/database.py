@@ -12,6 +12,7 @@ MESSAGE_MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("generation_params", "TEXT"),
     ("model_config_json", "TEXT"),
     ("reasoning_trace", "TEXT"),
+    ("variants", "TEXT"),
     ("status", "VARCHAR(32) DEFAULT 'completed' NOT NULL"),
 )
 

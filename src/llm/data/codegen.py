@@ -370,12 +370,18 @@ def write_function_task(rng: random.Random, spec: Spec, language: str) -> dict |
 
 
 OPTIMIZE_PROMPTS = (
-    "This Python function {name} should {description}, but it runs in {slow}. "
-    "Rewrite it to run in {fast} and keep the same behavior.\n\n{code}",
-    "Эта Python-функция {name} должна {ru}, но работает за {slow}. "
-    "Перепиши её так, чтобы она работала за {fast}, не меняя поведения.\n\n{code}",
-    "Бұл Python {name} функциясы {kk}, бірақ {slow} уақытта жұмыс істейді. "
-    "Оны мінез-құлқын өзгертпей, {fast} уақытта жұмыс істейтін етіп қайта жаз.\n\n{code}",
+    (
+        "This Python function {name} should {description}, but it runs in {slow}. "
+        "Rewrite it to run in {fast} and keep the same behavior.\n\n{code}"
+    ),
+    (
+        "Эта Python-функция {name} должна {ru}, но работает за {slow}. "
+        "Перепиши её так, чтобы она работала за {fast}, не меняя поведения.\n\n{code}"
+    ),
+    (
+        "Бұл Python {name} функциясы {kk}, бірақ {slow} уақытта жұмыс істейді. "
+        "Оны мінез-құлқын өзгертпей, {fast} уақытта жұмыс істейтін етіп қайта жаз.\n\n{code}"
+    ),
 )
 OPTIMIZE_ANSWERS = (
     "Here is a faster version with {fast} time complexity:\n\n{code}",
@@ -427,18 +433,34 @@ def complexity_task(rng: random.Random, spec: Spec) -> dict | None:
     )
 
 
+BUGFIX_PROMPTS = (
+    "This Python function {name} should {description}, but it has a bug. Fix it.\n\n{code}",
+    "Эта Python-функция {name} должна {ru}, но в ней есть ошибка. Исправь её.\n\n{code}",
+    "Бұл Python {name} функциясы {kk}, бірақ қатесі бар. Оны түзет.\n\n{code}",
+    "The tests for {name} fail. It should {description}. Find the bug and give the corrected code.\n\n{code}",
+)
+BUGFIX_ANSWERS = (
+    "The bug is in the highlighted logic; here is the corrected version:\n\n{code}",
+    "Ошибка в логике функции; вот исправленная версия:\n\n{code}",
+    "Қате функцияның логикасында; міне, түзетілген нұсқа:\n\n{code}",
+    "The condition or the formula was wrong. Corrected code:\n\n{code}",
+)
+
+
 def bug_fix_task(rng: random.Random, spec: Spec) -> dict | None:
     buggy = mutate(spec)
     if buggy is None or passes(spec, "python", buggy) or not passes(spec, "python", spec.python):
         return None
-    prompt = f"This Python function {spec.name} should {spec.description}, but it has a bug. Fix it.\n\n{fenced(buggy, 'python')}"
-    return conversation(
-        prompt,
-        "The bug is in the highlighted logic; here is the corrected version:\n\n"
-        + fenced(spec.python, "python"),
-        "bugfix",
-        "python",
+    index = rng.randrange(len(BUGFIX_PROMPTS))
+    prompt = BUGFIX_PROMPTS[index].format(
+        name=spec.name,
+        description=spec.description,
+        ru=spec.ru,
+        kk=spec.kk,
+        code=fenced(buggy, "python"),
     )
+    answer = BUGFIX_ANSWERS[index].format(code=fenced(spec.python, "python"))
+    return conversation(prompt, answer, "bugfix", "python")
 
 
 def analysis_task(rng: random.Random, spec: Spec) -> dict | None:
@@ -452,13 +474,21 @@ def analysis_task(rng: random.Random, spec: Spec) -> dict | None:
     return conversation(prompt, f"It prints {stdout.strip()}.", "analysis", "python")
 
 
+TEST_PROMPTS = (
+    "Write unit tests as assert statements for this Python function.\n\n{code}",
+    "Напиши модульные тесты в виде assert для этой Python-функции.\n\n{code}",
+    "Бұл Python функциясына assert түріндегі модульдік тесттер жаз.\n\n{code}",
+    "Cover the typical and edge cases of this function with assert tests.\n\n{code}",
+)
+
+
 def tests_task(rng: random.Random, spec: Spec) -> dict | None:
     buggy = mutate(spec)
     if buggy is None or not passes(spec, "python", spec.python) or passes(spec, "python", buggy):
         return None
     cases = [(a, spec.reference(*a)) for a in spec.inputs]
     asserts = "\n".join(f"assert {spec.name}({', '.join(map(repr, a))}) == {e!r}" for a, e in cases)
-    prompt = f"Write unit tests as assert statements for this Python function.\n\n{fenced(spec.python, 'python')}"
+    prompt = rng.choice(TEST_PROMPTS).format(code=fenced(spec.python, "python"))
     return conversation(prompt, fenced(asserts, "python"), "tests", "python")
 
 

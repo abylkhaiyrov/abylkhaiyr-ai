@@ -10,7 +10,7 @@ from llm.evaluation.metrics import repeated_ngram_ratio
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.reasoning.intent import classify_intent, classify_task
-from llm.reasoning.solvers import ToolSolution, solve_with_tools
+from llm.reasoning.sandbox import SandboxLimits, run_program
 from llm.reasoning.tools import (
     answers_match,
     extract_code,
@@ -21,6 +21,7 @@ from llm.reasoning.tools import (
     run_code_tests,
     verify_annotations,
 )
+from llm.reasoning.triage import CLARIFICATION, MODEL_NEEDED, triage
 from llm.tokenizer.bpe import Message
 
 DECOMPOSE_INSTRUCTION = "Break the problem into short numbered steps. Do not solve it yet.\n\n"
@@ -28,6 +29,7 @@ STEP_PREFIX_CHARS = ".)- 0123456789"
 FAILED_ANSWER = None
 LONG_QUESTION_CHARS = 200
 GENERAL_CANDIDATES = 2
+EXECUTION_LIMITS = SandboxLimits(timeout_seconds=5.0, cpu_seconds=5, memory_mb=256)
 TOOL_KINDS = frozenset({"math", "logic"})
 
 
@@ -65,6 +67,7 @@ class Solution:
     tokens_used: int = 0
     stopped_by_budget: bool = False
     tool: str | None = None
+    status: str = "unverified"
 
 
 GENERAL_MIN_QUALITY = 0.7
@@ -100,7 +103,8 @@ class CodeVerifier:
         if not is_valid_python(code):
             return Candidate(text, None, 0.0, False)
         if problem.tests is None:
-            return Candidate(text, code, 0.5, False)
+            runs = run_program("python", code, EXECUTION_LIMITS).passed
+            return Candidate(text, code if runs else None, 0.75 if runs else 0.1, False)
         result = run_code_tests(code, problem.tests)
         return Candidate(text, code if result.passed else None, float(result.passed), result.passed)
 
@@ -118,9 +122,11 @@ class ReasoningEngine:
         engine: InferenceEngine,
         verifiers: dict[str, Verifier] | None = None,
         use_solvers: bool = True,
+        clarify: bool = True,
     ) -> None:
         self.engine = engine
         self.use_solvers = use_solvers
+        self.clarify = clarify
         self.verifiers = verifiers or {
             "math": MathVerifier(),
             "code": CodeVerifier(),
@@ -128,27 +134,27 @@ class ReasoningEngine:
             "general": GeneralVerifier(),
         }
 
-    def _solve_with_tool(
+    def _triaged(
         self,
         problem: Problem,
+        history: list[Message] | None,
         on_event: Callable[[dict[str, Any]], None] | None,
     ) -> Solution | None:
-        if not self.use_solvers or problem.kind not in TOOL_KINDS:
+        tool_kind = self.use_solvers and problem.kind in TOOL_KINDS
+        result = triage(problem.question, self.clarify and not history, tool_kind)
+        if result.status == MODEL_NEEDED:
+            if tool_kind:
+                self._emit(on_event, "tool_execution", "completed", tool="solver", solved=False)
             return None
+        if result.status == CLARIFICATION:
+            self._emit(on_event, "clarification", "completed", missing=list(result.missing))
+            return Solution(None, result.text, False, status=CLARIFICATION)
         self._emit(on_event, "tool_execution", "running", tool="solver")
-        tool: ToolSolution | None = solve_with_tools(problem.question)
-        self._emit(
-            on_event,
-            "tool_execution",
-            "completed",
-            tool=tool.tool if tool else "solver",
-            solved=tool is not None,
+        self._emit(on_event, "tool_execution", "completed", tool=result.tool, solved=True)
+        candidate = Candidate(result.text, result.answer, 1.0, True)
+        return Solution(
+            result.answer, result.text, True, [candidate], tool=result.tool, status=result.status
         )
-        if tool is None:
-            return None
-        text = tool.text()
-        candidate = Candidate(text, tool.answer, 1.0, True)
-        return Solution(tool.answer, text, True, [candidate], tool=tool.tool)
 
     def decompose(self, problem: Problem, budget: Budget) -> list[str]:
         params = SamplingParams(
@@ -245,17 +251,18 @@ class ReasoningEngine:
             message_count=len(prompt_messages),
             max_candidates=budget.max_candidates,
         )
-        tooled = self._solve_with_tool(problem, on_event)
+        tooled = self._triaged(problem, history, on_event)
         if tooled is not None:
             self._emit(
                 on_event,
                 "answer_formation",
                 "completed",
-                verified=True,
-                candidates=1,
+                verified=tooled.verified,
+                candidates=len(tooled.candidates),
                 tokens_used=0,
                 stopped_by_budget=False,
                 tool=tooled.tool,
+                outcome=tooled.status,
             )
             return tooled
         if decompose and not (cancel is not None and cancel.is_set()):
@@ -348,6 +355,7 @@ class ReasoningEngine:
                 score=round(candidate.score, 4),
             )
         self._select(solution, problem)
+        solution.status = "solved" if solution.verified else "unverified"
         self._emit(
             on_event,
             "answer_formation",

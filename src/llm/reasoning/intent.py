@@ -16,7 +16,7 @@ VERIFIED_KINDS = {MATH, LOGIC, CODE}
 
 FLAGS = re.IGNORECASE
 CODE_HINTS = re.compile(
-    r"```|\b(function|def|class|sql|query|python|java|javascript|typescript|algorithm|"
+    r"```|\b(code|function|def|class|sql|query|python|java|javascript|typescript|algorithm|"
     r"функци\w*|код\w*|программ\w*|алгоритм\w*|бағдарлама\w*|функция\w*)\b",
     FLAGS,
 )

@@ -82,3 +82,106 @@ def test_outbox_drops_telemetry_but_disconnects_slow_consumers():
         assert connection not in manager.connections
 
     asyncio.run(scenario())
+
+
+def test_unknown_api_routes_return_json_not_the_spa_shell(model_config, tokenizer, tmp_path):
+    dist = tmp_path / "frontend" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><html></html>")
+    client = studio_client(model_config, tokenizer, tmp_path)
+    for method, path in (
+        ("get", "/api/nope"),
+        ("post", "/api/nope"),
+        ("get", "/v1/nope"),
+        ("delete", "/api/chats/x/y/z"),
+    ):
+        response = getattr(client, method)(path)
+        assert response.status_code == 404, path
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json() == {"detail": "endpoint_not_found"}
+    assert client.get("/api/runtime").status_code == 401
+    assert client.get("/missing.js").status_code == 404
+    page = client.get("/training")
+    assert page.status_code == 200
+    assert page.headers["content-type"].startswith("text/html")
+    assert page.headers["cache-control"] == "no-store"
+
+
+def test_unhandled_api_errors_are_json(model_config, tokenizer, tmp_path, monkeypatch):
+    import torch
+    from fastapi.testclient import TestClient
+
+    from llm.api.server import create_app
+    from llm.inference.engine import InferenceEngine
+    from llm.model.transformer import CausalLM
+
+    engine = InferenceEngine(CausalLM(model_config), tokenizer, device=torch.device("cpu"))
+    app = create_app(engine, "test-model", studio_root=tmp_path)
+    client = TestClient(app, raise_server_exceptions=False)
+    login(client)
+    monkeypatch.setattr(app.state.studio, "runtime_state", lambda: 1 / 0)
+    response = client.get("/api/runtime")
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {"detail": "internal_error"}
+
+
+def test_regeneration_keeps_previous_answers_as_selectable_variants(
+    model_config, tokenizer, tmp_path
+):
+    client = studio_client(model_config, tokenizer, tmp_path)
+    headers = login(client)
+    chat = client.post("/api/chats", headers=headers, json={}).json()
+    studio = client.app.state.studio
+    studio.add_message(1, chat["id"], "user", "question")
+    first = studio.add_message(
+        1, chat["id"], "assistant", "first answer", model_id="m", checkpoint_id="c1"
+    )
+    saved = studio.start_chat_generation(
+        1, chat["id"], action="regenerate", target_message_id=first["id"]
+    )
+    assert saved is not None
+    current = saved[1]
+    studio.finalize_message(
+        1, chat["id"], current["id"], "second answer", "completed", model_id="m", checkpoint_id="c2"
+    )
+    message = client.get(f"/api/chats/{chat['id']}").json()["messages"][-1]
+    assert message["content"] == "second answer"
+    assert [item["content"] for item in message["variants"]] == ["first answer"]
+    selected = client.post(
+        f"/api/chats/{chat['id']}/messages/{message['id']}/variants/0", headers=headers
+    )
+    assert selected.status_code == 200
+    body = selected.json()
+    assert body["content"] == "first answer"
+    assert body["checkpoint_id"] == "c1"
+    assert [item["content"] for item in body["variants"]] == ["second answer"]
+    missing = client.post(
+        f"/api/chats/{chat['id']}/messages/{message['id']}/variants/5", headers=headers
+    )
+    assert missing.status_code == 404
+
+
+def test_frontend_only_calls_existing_endpoints(model_config, tokenizer, tmp_path):
+    import re
+    from pathlib import Path
+
+    client = studio_client(model_config, tokenizer, tmp_path)
+    paths = {
+        (method.upper(), re.sub(r"\{[^/}]+\}", "{}", path))
+        for path, item in client.app.openapi()["paths"].items()
+        for method in item
+    }
+    source = Path("frontend/src/lib/api.ts").read_text()
+    missing = []
+    for line in source.splitlines():
+        match = re.search(r"(?:request|http)<.*?>\(\s*[`\"]([^`\"]+)[`\"]", line)
+        if not match:
+            continue
+        raw = re.sub(r"\$\{(query|category)[^`]*$", "", match.group(1))
+        path = re.sub(r"\{[^/}]+\}", "{}", re.sub(r"\$\{[^}]*\}", "{}", "/api" + raw.split("?")[0]))
+        verb = re.search(r"json\(\"(\w+)\"", line)
+        key = (verb.group(1) if verb else "GET", path)
+        if key not in paths:
+            missing.append(key)
+    assert missing == []

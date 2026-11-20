@@ -8,7 +8,7 @@ type ProgressBarProps = {
   className?: string;
 };
 
-const tones = { primary: "bg-primary", success: "bg-success", warning: "bg-warning", danger: "bg-destructive" };
+const tones = { primary: "bg-accent", success: "bg-success", warning: "bg-warning", danger: "bg-destructive" };
 
 export function ProgressBar({ percent, indeterminate = false, label, tone = "primary", className }: ProgressBarProps) {
   const unknown = indeterminate || percent === null;
@@ -19,7 +19,7 @@ export function ProgressBar({ percent, indeterminate = false, label, tone = "pri
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={unknown ? undefined : Math.round(percent)}
-      className={cn("relative h-2 w-full overflow-hidden rounded-full bg-muted", className)}
+      className={cn("relative h-1.5 w-full overflow-hidden rounded-full bg-muted", className)}
     >
       {unknown ? (
         <div className={cn("absolute inset-y-0 w-1/4 rounded-full animate-indeterminate", tones[tone])} />

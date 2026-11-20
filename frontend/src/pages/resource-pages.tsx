@@ -9,7 +9,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { useFormat } from "@/hooks/use-format";
 import { useMetricFormat } from "@/hooks/use-metric-format";
 import { useModelRegistry } from "@/hooks/use-runtime";
-import { api, ApiError, type Model, type ModelRole } from "@/lib/api";
+import { useApiError } from "@/hooks/use-api-error";
+import { api, type Model, type ModelRole } from "@/lib/api";
 import { useToastStore } from "@/store/toast-store";
 
 const ROLES: ModelRole[] = ["production", "best_evaluated", "latest_trained", "loaded"];
@@ -32,9 +33,10 @@ export function ModelsPage() {
   const metric = useMetricFormat();
   const client = useQueryClient();
   const push = useToastStore((state) => state.push);
+  const describe = useApiError();
   const query = useModelRegistry();
   const settle = () => void client.invalidateQueries({ queryKey: ["models"] });
-  const fail = (error: Error) => push("error", error instanceof ApiError && error.message === "generation_active" ? t("models.generationActive") : error.message);
+  const fail = (error: Error) => push("error", describe(error));
   const load = useMutation({ mutationFn: (id: string) => api.switchModel(id), onSuccess: settle, onError: fail });
   const unload = useMutation({ mutationFn: api.unloadModel, onSuccess: settle, onError: fail });
   return (

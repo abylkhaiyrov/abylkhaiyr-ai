@@ -12,6 +12,10 @@ import sympy
 from llm.reasoning.tools import evaluate_expression
 
 NUMBER = r"-?\d+(?:\.\d+)?"
+CONTRADICTION = "contradiction"
+UNDERDETERMINED = "underdetermined"
+NO_SOLUTION = "no solution"
+ANY_VALUE = "any value"
 TRAILING = " .?!:;,"
 RELATIONS = (">=", "<=", "≥", "≤", ">", "<")
 EQUATION_CHARS = r"[\dxyz+\-*/^(). ]"
@@ -37,6 +41,7 @@ class ToolSolution:
     answer: str
     steps: list[str]
     tool: str
+    status: str = "solved"
 
     def text(self) -> str:
         return "\n".join(self.steps + [f"#### {self.answer}"])
@@ -136,7 +141,7 @@ def equation_parts(question: str) -> list[str]:
     return [part.strip(TRAILING) for part in re.findall(pattern, question) if "=" in part]
 
 
-def to_equation(text: str) -> sympy.Eq | None:
+def to_equation(text: str) -> sympy.Eq | sympy.logic.boolalg.BooleanAtom | None:
     left, _, right = text.partition("=")
     lhs, rhs = parse(left), parse(right)
     if lhs is None or rhs is None:
@@ -157,11 +162,29 @@ def pick_root(question: str, roots: list[sympy.Expr]) -> sympy.Expr:
     return real[0]
 
 
+def inconsistent(equation: sympy.Eq, steps: list[str]) -> ToolSolution | None:
+    difference = sympy.simplify(equation.lhs - equation.rhs)
+    if difference == 0:
+        return ToolSolution(
+            ANY_VALUE, [*steps, "the equation is an identity"], "sympy", UNDERDETERMINED
+        )
+    if not difference.free_symbols:
+        return ToolSolution(
+            NO_SOLUTION, [*steps, "the equation has no solution"], "sympy", CONTRADICTION
+        )
+    return None
+
+
 def solve_equation(question: str) -> ToolSolution | None:
     parts = equation_parts(question)
     equations = [equation for part in parts if (equation := to_equation(part)) is not None]
     if not equations:
         return None
+    if any(equation == sympy.false for equation in equations):
+        return ToolSolution(NO_SOLUTION, ["the statement is always false"], "sympy", CONTRADICTION)
+    if all(equation == sympy.true for equation in equations):
+        return ToolSolution(ANY_VALUE, ["the statement is always true"], "sympy", UNDERDETERMINED)
+    equations = [equation for equation in equations if equation != sympy.true]
     symbols = sorted(set().union(*(eq.free_symbols for eq in equations)), key=str)
     if len(symbols) != len(equations) and not (len(equations) == 1 and len(symbols) == 1):
         return None
@@ -170,7 +193,7 @@ def solve_equation(question: str) -> ToolSolution | None:
     if len(equations) == 1:
         solutions = sympy.solve(equations[0], symbols[0])
         if not solutions:
-            return None
+            return inconsistent(equations[0], steps)
         chosen = pick_root(question, solutions) if len(solutions) > 1 else solutions[0]
         if len(solutions) > 1 and not ROOT_CHOICE.search(question):
             answer = ", ".join(format_value(root) for root in sorted(solutions, key=float))
@@ -178,7 +201,9 @@ def solve_equation(question: str) -> ToolSolution | None:
         return ToolSolution(format_value(chosen), [*steps, f"{symbols[0]} = {chosen}"], "sympy")
     solution = sympy.solve(equations, symbols, dict=True)
     if not solution:
-        return None
+        return ToolSolution(
+            NO_SOLUTION, [*steps, "the equations contradict each other"], "sympy", CONTRADICTION
+        )
     wanted = sympy.Symbol(target_match.group(1).lower()) if target_match else symbols[0]
     if wanted not in solution[0]:
         return None
@@ -330,6 +355,12 @@ def solve_ordering(question: str) -> ToolSolution | None:
         people.update((winner, loser))
     if len(people) < 2:
         return None
+    cyclic = sorted(person for person in people if person in closure(beats, person))
+    if cyclic:
+        steps = [
+            f"inconsistent statements: {', '.join(cyclic)} would each be greater than themselves"
+        ]
+        return ToolSolution(CONTRADICTION, steps, "graph", CONTRADICTION)
     ranked = sorted(people, key=lambda person: -len(closure(beats, person)))
     top, bottom = ranked[0], ranked[-1]
     if len(closure(beats, top)) != len(people) - 1:
