@@ -34,7 +34,8 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     results = json.loads(output.read_text()) if output.is_file() else []
     for trial in args.trials:
-        name, rate, budget, replay = trial.split(":")
+        name, rate, budget, replay, *extra = trial.split(":")
+        seed = int(extra[0]) if extra else base.train.seed
         variant = EfficiencyVariant(
             name,
             base.train.mixture,
@@ -42,14 +43,16 @@ def main() -> int:
             learning_rate=float(rate),
             replay_fraction=float(replay),
         )
+        seeded = base.model_copy(update={"train": base.train.model_copy(update={"seed": seed})})
         row = train_candidate(
-            base, variant, int(float(budget)), tokenizer, args.corpus_dir, Path(args.checkpoints)
+            seeded, variant, int(float(budget)), tokenizer, args.corpus_dir, Path(args.checkpoints)
         )
         row.update(
             {
                 "learning_rate": float(rate),
                 "budget_tokens": int(float(budget)),
                 "replay": float(replay),
+                "seed": seed,
             }
         )
         results.append(row)

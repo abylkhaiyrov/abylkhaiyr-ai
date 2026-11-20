@@ -4,18 +4,22 @@ import math
 import tempfile
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 
 import torch
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from llm.core.config import ExperimentConfig, OptimizerConfig
+from llm.model.transformer import CausalLM
 from llm.optimization.benchmark import peak_device_gb, synchronize
 from llm.optimization.grad import clip_grad_norm
 from llm.optimization.memory import release_device_memory, swap_used_gb
+from llm.training.engine import Trainer
 from llm.training.runner import build_trainer
 
 WARMUP_STEPS = 2
@@ -35,6 +39,9 @@ class Variant:
     precision: str = "fp32"
     checkpointing: bool = False
     pad_multiple: int = 64
+    tf32: bool = False
+    compile: bool = False
+    sdpa: str = ""
 
 
 @dataclass(frozen=True)
@@ -73,6 +80,29 @@ def apply_variant(config: ExperimentConfig, variant: Variant, workdir: Path) -> 
     return config.model_copy(update={"train": train})
 
 
+SDPA_BACKENDS = {"math": "MATH", "efficient": "EFFICIENT_ATTENTION", "flash": "FLASH_ATTENTION"}
+
+
+def build_variant_trainer(config: ExperimentConfig, variant: Variant, workdir: Path) -> Trainer:
+    trainer = build_trainer(apply_variant(config, variant, workdir), resume=False)
+    if variant.compile:
+        trainer.model = cast(CausalLM, torch.compile(trainer.model))
+    return trainer
+
+
+@contextmanager
+def runtime(variant: Variant, device: torch.device) -> Iterator[None]:
+    with ExitStack() as stack:
+        if device.type == "cuda":
+            previous = torch.backends.cuda.matmul.allow_tf32
+            torch.backends.cuda.matmul.allow_tf32 = variant.tf32
+            stack.callback(setattr, torch.backends.cuda.matmul, "allow_tf32", previous)
+            if variant.sdpa:
+                backend = getattr(SDPBackend, SDPA_BACKENDS[variant.sdpa])
+                stack.enter_context(sdpa_kernel([backend]))
+        yield
+
+
 def count_slots(source) -> dict[str, int]:
     counter = {"slots": 0}
     original = source.next_batch
@@ -88,7 +118,9 @@ def count_slots(source) -> dict[str, int]:
 
 def measure_throughput(config: ExperimentConfig, variant: Variant, steps: int) -> Throughput:
     with tempfile.TemporaryDirectory() as workdir:
-        trainer = build_trainer(apply_variant(config, variant, Path(workdir)), resume=False)
+        trainer = build_variant_trainer(config, variant, Path(workdir))
+        runtime_stack = ExitStack()
+        runtime_stack.enter_context(runtime(variant, trainer.device))
         device = trainer.device
         release_device_memory(device)
         if device.type == "cuda":
@@ -106,6 +138,7 @@ def measure_throughput(config: ExperimentConfig, variant: Variant, steps: int) -
         slots = counter["slots"]
         peak = peak_device_gb(device)
         swap = swap_used_gb()
+        runtime_stack.close()
         del trainer
     return Throughput(
         variant.name,
@@ -155,7 +188,9 @@ def profile_step(trainer, timer: PhaseTimer, accumulation: int, max_norm: float)
 
 def profile_phases(config: ExperimentConfig, variant: Variant, steps: int) -> dict[str, float]:
     with tempfile.TemporaryDirectory() as workdir:
-        trainer = build_trainer(apply_variant(config, variant, Path(workdir)), resume=False)
+        trainer = build_variant_trainer(config, variant, Path(workdir))
+        runtime_stack = ExitStack()
+        runtime_stack.enter_context(runtime(variant, trainer.device))
         timer = PhaseTimer(trainer.device)
         max_norm = config.train.optimizer.max_grad_norm
         for _ in range(WARMUP_STEPS):
@@ -167,6 +202,7 @@ def profile_phases(config: ExperimentConfig, variant: Variant, steps: int) -> di
         started = time.perf_counter()
         trainer.save_checkpoint()
         result["checkpoint_save"] = time.perf_counter() - started
+        runtime_stack.close()
         del trainer
     return result
 
@@ -177,8 +213,11 @@ def with_overrides(variant: Variant, **changes) -> Variant:
 
 def loss_trajectory(config: ExperimentConfig, variant: Variant, steps: int) -> list[float]:
     with tempfile.TemporaryDirectory() as workdir:
-        trainer = build_trainer(apply_variant(config, variant, Path(workdir)), resume=False)
+        trainer = build_variant_trainer(config, variant, Path(workdir))
+        runtime_stack = ExitStack()
+        runtime_stack.enter_context(runtime(variant, trainer.device))
         losses = [trainer.run_step()[0] for _ in range(steps)]
+        runtime_stack.close()
         del trainer
     return losses
 
