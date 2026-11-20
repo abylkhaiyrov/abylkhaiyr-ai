@@ -34,6 +34,7 @@ class Variant:
     foreach: bool = True
     precision: str = "fp32"
     checkpointing: bool = False
+    pad_multiple: int = 64
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ def apply_variant(config: ExperimentConfig, variant: Variant, workdir: Path) -> 
             "micro_batch_size": variant.micro_batch,
             "gradient_accumulation_steps": variant.accumulation,
             "pack_sequences": variant.pack,
+            "pad_multiple": variant.pad_multiple,
             "native_gqa": variant.native_gqa,
             "fast_causal": variant.fast_causal,
             "precision": variant.precision,
@@ -71,11 +73,17 @@ def apply_variant(config: ExperimentConfig, variant: Variant, workdir: Path) -> 
     return config.model_copy(update={"train": train})
 
 
-def slots_per_step(trainer, steps: int) -> int:
-    source = trainer.train_source
-    sample = source.next_batch()
-    source.load_state_dict({"epoch": 0, "cursor": 0})
-    return int(sample[0].numel()) * trainer.state.gradient_accumulation_steps
+def count_slots(source) -> dict[str, int]:
+    counter = {"slots": 0}
+    original = source.next_batch
+
+    def counting():
+        batch = original()
+        counter["slots"] += int(batch[0].numel())
+        return batch
+
+    source.next_batch = counting
+    return counter
 
 
 def measure_throughput(config: ExperimentConfig, variant: Variant, steps: int) -> Throughput:
@@ -85,6 +93,7 @@ def measure_throughput(config: ExperimentConfig, variant: Variant, steps: int) -
         release_device_memory(device)
         for _ in range(WARMUP_STEPS):
             trainer.run_step()
+        counter = count_slots(trainer.train_source)
         synchronize(device)
         started = time.perf_counter()
         useful = 0
@@ -92,7 +101,7 @@ def measure_throughput(config: ExperimentConfig, variant: Variant, steps: int) -
             useful += trainer.run_step()[1]
         synchronize(device)
         elapsed = time.perf_counter() - started
-        slots = slots_per_step(trainer, steps) * steps
+        slots = counter["slots"]
         peak = peak_device_gb(device)
         swap = psutil.swap_memory().used / BYTES_PER_GB
         del trainer

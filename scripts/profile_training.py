@@ -21,6 +21,7 @@ VARIANTS = {
     "native_gqa": Variant("native_gqa", native_gqa=True),
     "fast_causal": Variant("fast_causal", fast_causal=True),
     "gqa_causal": Variant("gqa_causal", native_gqa=True, fast_causal=True),
+    "exact_pad": Variant("exact_pad", pad_multiple=1),
     "packed": Variant("packed", pack=True),
     "packed_gqa_causal": Variant("packed_gqa_causal", pack=True, native_gqa=True),
     "bf16": Variant("bf16", precision="bf16"),

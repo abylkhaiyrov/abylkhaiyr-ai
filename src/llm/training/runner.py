@@ -12,6 +12,7 @@ from llm.core.profiles import (
     suggest_micro_batch,
 )
 from llm.data.binary import (
+    PAD_MULTIPLE,
     ConversationLoader,
     MixtureLoader,
     PackedConversationLoader,
@@ -79,6 +80,7 @@ def _conversation_mixture(
                 tokenizer.pad_id,
                 seed,
                 shuffle,
+                pad_multiple=train.pad_multiple if train is not None else PAD_MULTIPLE,
                 bucket_window=window,
             )
     start = None

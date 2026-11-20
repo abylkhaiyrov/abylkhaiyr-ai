@@ -118,7 +118,7 @@ class OptimizerConfig(StrictModel):
     eps: float = Field(default=1e-8, gt=0)
     max_grad_norm: float = Field(default=1.0, gt=0)
     warmup_steps: int = Field(default=100, ge=0)
-    foreach: bool = True
+    foreach: bool = False
 
 
 class TrainConfig(StrictModel):
@@ -144,6 +144,7 @@ class TrainConfig(StrictModel):
     device: DeviceName = "auto"
     activation_checkpointing: bool = False
     pack_sequences: bool = False
+    pad_multiple: int = Field(default=64, gt=0)
     bucket_window: int = Field(default=0, ge=0)
     curriculum_start: dict[str, float] = Field(default_factory=dict)
     curriculum_batches: int = Field(default=0, ge=0)
