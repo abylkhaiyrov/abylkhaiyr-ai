@@ -96,7 +96,9 @@ def tokenize_sft_split(sft_file: Path, prefix: Path, tokenizer: BPETokenizer) ->
     )
     with ids_path.open("wb") as ids_handle, labels_path.open("wb") as labels_handle:
         for row in read_jsonl(sft_file):
-            messages = [Message(m["role"], m["content"]) for m in row["messages"]]
+            messages = [
+                Message(m["role"], m["content"], m.get("supervised", True)) for m in row["messages"]
+            ]
             ids, labels = tokenizer.encode_conversation_with_labels(messages, IGNORE_INDEX)
             np.asarray(ids, dtype=dtype).tofile(ids_handle)
             np.asarray(labels, dtype=np.int32).tofile(labels_handle)

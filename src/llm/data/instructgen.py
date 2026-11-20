@@ -6,10 +6,18 @@ import re
 from collections.abc import Callable, Sequence
 
 from llm.data import lexicon as lx
+from llm.data.dialoguegen import (
+    continue_sequence,
+    fix_mistake,
+    get_acquainted,
+    negation_fruit,
+    recall_question,
+    typo_fact,
+)
 from llm.data.identity import QUESTIONS, IdentityFacts, identity_conversation
 
 Row = dict
-Generator = Callable[[random.Random, IdentityFacts], Row]
+Generator = Callable[[random.Random, IdentityFacts], Row | None]
 
 GREETINGS = {
     "en": ["Hi!", "Hello!", "Hey there!", "Good morning!", "Good evening!", "Hello, how are you?"],
@@ -770,6 +778,12 @@ CATEGORIES: dict[str, tuple[float, str, Generator]] = {
     "translation": (0.14, "skills", translation),
     "multi_turn_math": (0.06, "skills", multi_turn_math),
     "multi_turn_translation": (0.05, "skills", multi_turn_translation),
+    "recall_question": (0.03, "dialog", recall_question),
+    "continue_sequence": (0.03, "dialog", continue_sequence),
+    "fix_mistake": (0.04, "dialog", fix_mistake),
+    "typo_fact": (0.05, "dialog", typo_fact),
+    "negation_fruit": (0.02, "dialog", negation_fruit),
+    "get_acquainted": (0.02, "dialog", get_acquainted),
 }
 ATTEMPT_FACTOR = 40
 
@@ -785,6 +799,8 @@ def build_instruction_dataset(facts: IdentityFacts, count: int, seed: int) -> li
             if produced >= target:
                 break
             row = generator(rng, facts)
+            if row is None:
+                continue
             key = json.dumps(row["messages"], ensure_ascii=False)
             if key in seen:
                 continue

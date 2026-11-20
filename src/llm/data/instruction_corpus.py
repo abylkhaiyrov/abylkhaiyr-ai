@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from llm.core.config import ModelConfig
+from llm.data.agentgen import build_agent_dataset
 from llm.data.binary import read_jsonl, tokenize_sft_split
 from llm.data.cleaning import detect_language
 from llm.data.codegen import build_code_dataset
@@ -36,6 +37,7 @@ OUTPUT_GROUPS = (
     "math",
     "word_math",
     "code",
+    "agent",
 )
 KEEP_ORDER = {"math"}
 GSM8K_SOURCE = "gsm8k_sft"
@@ -56,6 +58,7 @@ class InstructionBuildConfig:
     sql_cap: int = 400
     reading_per_language: int = 3500
     code_count: int = 6000
+    agent_count: int = 480
     oasst_cap: int = 6000
     dolly_cap: int = 8000
     aya_cap: int = 6000
@@ -116,6 +119,7 @@ def synthetic_rows(config: InstructionBuildConfig, model: ModelConfig) -> list[d
     rows = build_instruction_dataset(facts, config.synthetic_count, config.seed)
     rows.extend(build_identity_dataset(facts, config.identity_count, config.seed))
     rows.extend(build_code_dataset(config.code_count, config.seed))
+    rows.extend(build_agent_dataset(config.agent_count, config.seed))
     rows.extend(
         build_reading_dataset(Path(config.corpus_file), config.reading_per_language, config.seed)
     )

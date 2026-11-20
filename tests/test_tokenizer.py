@@ -70,3 +70,21 @@ def test_conversation_labels_mask_everything_except_assistant(tokenizer):
 def test_generation_prompt_ends_with_assistant_token(tokenizer):
     ids = tokenizer.encode_conversation([Message("user", "hi")], add_generation_prompt=True)
     assert ids[-1] == tokenizer.role_ids["assistant"]
+
+
+def test_unsupervised_assistant_turns_are_context_only(tokenizer):
+    from llm.data.binary import IGNORE_INDEX
+    from llm.tokenizer.bpe import Message
+
+    messages = [
+        Message("user", "What is 17 + 25?"),
+        Message("assistant", "It is 41.", supervised=False),
+        Message("user", "That is wrong, please correct it."),
+        Message("assistant", "You are right, it is 42."),
+    ]
+    ids, labels = tokenizer.encode_conversation_with_labels(messages, IGNORE_INDEX)
+    supervised = [label for label in labels if label != IGNORE_INDEX]
+    assert supervised == tokenizer.encode("You are right, it is 42.") + [tokenizer.eos_id]
+    wrong = tokenizer.encode("It is 41.")
+    assert all(label == IGNORE_INDEX for label in labels[: len(ids) - len(supervised) - 1])
+    assert wrong[0] in ids

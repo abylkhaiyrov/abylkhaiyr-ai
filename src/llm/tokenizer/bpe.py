@@ -23,6 +23,7 @@ SPECIAL_PATTERN = re.compile("(" + "|".join(re.escape(t) for t in SPECIAL_TOKENS
 class Message:
     role: str
     content: str
+    supervised: bool = True
 
 
 class BPETokenizer:
@@ -132,7 +133,7 @@ class BPETokenizer:
         for message in messages:
             piece = self.encode_message(message)
             ids.extend(piece)
-            if message.role == "assistant":
+            if message.role == "assistant" and message.supervised:
                 labels.extend([ignore_index] + piece[1:])
             else:
                 labels.extend([ignore_index] * len(piece))
