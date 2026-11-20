@@ -191,3 +191,48 @@ def run_program(language: str, code: str, limits: SandboxLimits | None = None) -
 
 def run_python(code: str, limits: SandboxLimits | None = None) -> SandboxResult:
     return run_program("python", code, limits)
+
+
+def run_trusted_cpp(code: str, limits: SandboxLimits | None = None) -> SandboxResult:
+    limits = limits or SandboxLimits()
+    compiler = shutil.which("clang++") or shutil.which("g++")
+    if compiler is None or resource is None:
+        return SandboxResult(False, "", "C++ toolchain or Unix limits unavailable.", False)
+    with tempfile.TemporaryDirectory(prefix="llm-cpp-") as workdir:
+        source, binary = Path(workdir) / "main.cpp", Path(workdir) / "main"
+        source.write_text(code, encoding="utf-8")
+        try:
+            built = subprocess.run(
+                [compiler, "-std=c++17", "-O1", "-o", str(binary), str(source)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+                cwd=workdir,
+            )
+        except subprocess.TimeoutExpired as error:
+            return SandboxResult(False, "", str(error), True)
+        if built.returncode != 0:
+            return SandboxResult(False, "", built.stderr[:MAX_OUTPUT_CHARS], False)
+        confinement = os_confinement(workdir, binary)
+        if not confinement:
+            return SandboxResult(False, "", "OS isolation unavailable.", False)
+        try:
+            completed = subprocess.run(
+                [*confinement, str(binary)],
+                capture_output=True,
+                cwd=workdir,
+                env={**RESTRICTED_ENV, "TMPDIR": workdir, "HOME": workdir},
+                timeout=limits.timeout_seconds,
+                preexec_fn=_apply_limits(limits, "cpp"),
+                stdin=subprocess.DEVNULL,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            return SandboxResult(False, "", str(error), True)
+    return SandboxResult(
+        completed.returncode == 0,
+        completed.stdout[:MAX_OUTPUT_CHARS].decode(errors="replace"),
+        completed.stderr[:MAX_OUTPUT_CHARS].decode(errors="replace"),
+        False,
+    )

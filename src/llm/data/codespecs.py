@@ -24,6 +24,7 @@ class Spec:
     mutant: tuple[str, str] | None = None
     slow: str | None = None
     complexity: tuple[str, str] | None = None
+    cpp: str = ""
 
 
 HEADER = re.compile(r"function (\w+)\(([^)]*)\)")

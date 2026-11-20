@@ -8,13 +8,15 @@ from functools import lru_cache, partial
 from pathlib import Path
 
 from llm.data.codespecs import NEW_SPECS, Spec
-from llm.reasoning.sandbox import SandboxLimits, run_program
+from llm.data.cppspecs import with_cpp
+from llm.reasoning.sandbox import SandboxLimits, run_program, run_trusted_cpp
 
 LANGUAGE_NAMES = {
     "python": "Python",
     "javascript": "JavaScript",
     "typescript": "TypeScript",
     "java": "Java",
+    "cpp": "C++",
 }
 WRITE_PROMPTS = (
     "Write a {lang} function {name} that {description}.",
@@ -241,13 +243,25 @@ SPECS = [
         ("max(lo, min(x, hi))", "min(lo, max(x, hi))"),
     ),
 ]
-ALL_SPECS = [*SPECS, *NEW_SPECS]
+ALL_SPECS = with_cpp([*SPECS, *NEW_SPECS])
 SPEC_BY_NAME = {spec.name: spec for spec in ALL_SPECS}
+
+
+def cpp_literal(value: object) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, int):
+        return f"{value}LL"
+    if isinstance(value, list):
+        return "std::vector<long long>{" + ", ".join(f"{item}LL" for item in value) + "}"
+    return json.dumps(value)
 
 
 def literal(value: object, language: str) -> str:
     if language == "python":
         return repr(value)
+    if language == "cpp":
+        return cpp_literal(value)
     if language == "java":
         if isinstance(value, list):
             return "new int[]{" + ", ".join(map(str, value)) + "}"
@@ -255,6 +269,22 @@ def literal(value: object, language: str) -> str:
             return str(value).lower()
         return json.dumps(value)
     return json.dumps(value)
+
+
+CPP_HEADERS = (
+    "#include <algorithm>\n#include <cmath>\n#include <map>\n#include <string>\n"
+    "#include <unordered_set>\n#include <vector>\n"
+)
+
+
+def cpp_program(spec: Spec, solution: str, cases: list) -> str:
+    checks = [
+        f"    if (!({spec.name}({', '.join(cpp_literal(v) for v in args)}) == {cpp_literal(expected)})) return 1;"
+        for args, expected in cases
+    ]
+    return (
+        CPP_HEADERS + solution + "\n\nint main() {\n" + "\n".join(checks) + "\n    return 0;\n}\n"
+    )
 
 
 def test_program(spec: Spec, language: str, solution: str) -> str:
@@ -271,6 +301,8 @@ def test_program(spec: Spec, language: str, solution: str) -> str:
             for a, e in cases
         ]
         return "const assert = require('assert');\n" + solution + "\n" + "\n".join(checks) + "\n"
+    if language == "cpp":
+        return cpp_program(spec, solution, cases)
     checks = []
     for args, expected in cases:
         call = f"{spec.name}({', '.join(literal(v, language) for v in args)})"
@@ -294,7 +326,8 @@ def test_program(spec: Spec, language: str, solution: str) -> str:
 
 @lru_cache(maxsize=512)
 def _run_cached(language: str, code: str) -> tuple[bool, str]:
-    result = run_program(language, code, SANDBOX)
+    runner = run_trusted_cpp if language == "cpp" else partial(run_program, language)
+    result = runner(code, SANDBOX)
     return result.passed, result.stdout
 
 

@@ -131,3 +131,24 @@ def test_code_dataset_covers_many_task_kinds_without_sql_dominance():
     sql = sum(r["language"] == "sql" for r in rows)
     assert sql / len(rows) < 0.1
     assert {r["language"] for r in rows} >= {"python", "javascript", "typescript", "java"}
+
+
+def test_cpp_reference_solutions_compile_pass_and_wrong_ones_fail():
+    import shutil
+
+    if shutil.which("clang++") is None and shutil.which("g++") is None:
+        import pytest
+
+        pytest.skip("no C++ compiler")
+    with_cpp = [spec for spec in codegen.ALL_SPECS if spec.cpp]
+    assert len(with_cpp) >= 18
+    for spec in with_cpp:
+        assert codegen.passes(spec, "cpp", spec.cpp), spec.name
+    broken = codegen.ALL_SPECS[0].cpp.replace("total += i * i", "total += i")
+    assert not codegen.passes(codegen.ALL_SPECS[0], "cpp", broken)
+
+
+def test_cpp_rows_are_generated_with_the_right_language_label():
+    rows = [r for r in codegen.build_code_dataset(1500, 9) if r["language"] == "cpp"]
+    assert rows
+    assert all("```cpp" in r["messages"][1]["content"] for r in rows)
