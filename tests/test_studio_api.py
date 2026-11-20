@@ -180,7 +180,7 @@ def test_frontend_only_calls_existing_endpoints(model_config, tokenizer, tmp_pat
             continue
         raw = re.sub(r"\$\{(query|category)[^`]*$", "", match.group(1))
         path = re.sub(r"\{[^/}]+\}", "{}", re.sub(r"\$\{[^}]*\}", "{}", "/api" + raw.split("?")[0]))
-        verb = re.search(r"json\(\"(\w+)\"", line)
+        verb = re.search(r"body\(\"(\w+)\"", line)
         key = (verb.group(1) if verb else "GET", path)
         if key not in paths:
             missing.append(key)

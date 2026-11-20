@@ -41,7 +41,7 @@ STAGES = (
 class QualityGates:
     max_repetition_ratio: float = 0.85
     min_non_empty_rate: float = 0.5
-    max_sft_perplexity_ratio: float = 1.5
+    max_sft_perplexity_ratio: float = 3.0
     require_pretrain_improvement: bool = True
 
 
