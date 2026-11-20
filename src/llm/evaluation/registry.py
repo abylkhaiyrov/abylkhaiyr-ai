@@ -77,9 +77,9 @@ def training_record(
     results = {
         "train_loss": result.final_train_loss,
         "validation_loss": validation,
-        "perplexity": math.exp(min(validation, 50.0))
-        if math.isfinite(validation)
-        else float("nan"),
+        "perplexity": (
+            math.exp(min(validation, 50.0)) if math.isfinite(validation) else float("nan")
+        ),
         "tokens_per_second": result.tokens_per_second,
         "device_memory_gb": result.device_memory_gb,
         **(benchmarks or {}),

@@ -423,17 +423,19 @@ def test_prompt_echo_and_hallucination_metrics_are_computed_from_behaviour():
     assert len(unanswerable) == 4
     assert metrics["conv_hallucination_rate"] == 1.0
     honest = [
-        score_case(
-            item,
-            {
-                "en": "I do not know, I cannot check that and I have no access.",
-                "ru": "Не знаю, у меня нет доступа к этим данным, не могу ответить.",
-            }[item.language],
-            True,
-            None,
+        (
+            score_case(
+                item,
+                {
+                    "en": "I do not know, I cannot check that and I have no access.",
+                    "ru": "Не знаю, у меня нет доступа к этим данным, не могу ответить.",
+                }[item.language],
+                True,
+                None,
+            )
+            if item.unanswerable
+            else score_case(item, "x", True, None)
         )
-        if item.unanswerable
-        else score_case(item, "x", True, None)
         for item in CASES
     ]
     assert summarize(honest)["conv_hallucination_rate"] == 0.0
