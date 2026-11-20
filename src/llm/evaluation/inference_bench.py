@@ -12,6 +12,7 @@ from llm.model.cache import KVCache
 from llm.optimization.benchmark import peak_device_gb, synchronize
 
 WARMUP_RUNS = 1
+BYTES_PER_MB = 1024**2
 PROMPT_TOKEN_ID = 5
 
 
@@ -48,12 +49,26 @@ class LatencyResult:
     decode_ms_per_token: float
     tokens_per_second: float
     peak_device_gb: float
+    kv_allocated_mb: float
+    kv_used_mb: float
+
+
+def cache_megabytes(cache: KVCache) -> tuple[float, float]:
+    allocated = used = 0.0
+    for layer in cache.layers:
+        if layer.keys is None or layer.values is None:
+            continue
+        for tensor in (layer.keys, layer.values):
+            allocated += tensor.nelement() * tensor.element_size()
+            row = tensor.shape[0] * tensor.shape[1] * tensor.shape[3] * tensor.element_size()
+            used += row * layer.length
+    return allocated / BYTES_PER_MB, used / BYTES_PER_MB
 
 
 @torch.inference_mode()
 def measure_once(
     engine: InferenceEngine, prompt_tokens: int, new_tokens: int, cache: KVCache
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float, float]:
     model, device = engine.model, engine.device
     prompt = torch.full((1, prompt_tokens), PROMPT_TOKEN_ID, device=device)
     synchronize(device)
@@ -68,7 +83,8 @@ def measure_once(
         logits = model(torch.tensor([[token]], device=device), cache=cache)[0, -1]
         token = int(logits.argmax().item())
     decode = (time.perf_counter() - decode_started) / max(new_tokens - 1, 1)
-    return prefill, first, decode
+    allocated, used = cache_megabytes(cache)
+    return prefill, first, decode, allocated, used
 
 
 def measure_latency(
@@ -87,7 +103,9 @@ def measure_latency(
         measure_once(engine, prompt_tokens, new_tokens, make())
         for _ in range(WARMUP_RUNS + repeats)
     ][WARMUP_RUNS:]
-    prefill, first, decode = (statistics.median(values) for values in zip(*runs, strict=True))
+    prefill, first, decode, allocated, used = (
+        statistics.median(values) for values in zip(*runs, strict=True)
+    )
     return LatencyResult(
         cache_kind,
         prompt_tokens,
@@ -96,4 +114,6 @@ def measure_latency(
         decode * 1000,
         1.0 / decode,
         peak_device_gb(engine.device),
+        allocated,
+        used,
     )

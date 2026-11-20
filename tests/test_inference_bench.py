@@ -19,3 +19,12 @@ def test_both_cache_kinds_give_identical_logits_and_positive_latencies(model, to
         result = measure_latency(engine, 8, 6, 2, kind)
         assert result.prefill_ms > 0 and result.decode_ms_per_token > 0
         assert result.first_token_ms >= result.prefill_ms
+
+
+def test_kv_cache_memory_reports_allocation_and_used_fraction(model, tokenizer):
+    engine = InferenceEngine(CausalLM(model.config), tokenizer, torch.device("cpu"))
+    pre = measure_latency(engine, 8, 4, 1, "preallocated")
+    cat = measure_latency(engine, 8, 4, 1, "concat")
+    assert pre.kv_used_mb > 0 and pre.kv_allocated_mb >= pre.kv_used_mb
+    assert abs(cat.kv_allocated_mb - cat.kv_used_mb) < 1e-9
+    assert pre.kv_allocated_mb > cat.kv_allocated_mb

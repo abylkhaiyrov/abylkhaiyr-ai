@@ -80,6 +80,8 @@ def inference_section(rows: list[dict] | None) -> str:
         "decode_ms_per_token",
         "tokens_per_second",
         "peak_device_gb",
+        "kv_allocated_mb",
+        "kv_used_mb",
     ]
     body = [(r["cache"], r["prompt_tokens"], *[number(r[k], 2) for k in keys]) for r in rows]
     return table(["cache", "prompt tokens", *keys], body)
