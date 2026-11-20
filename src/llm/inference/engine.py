@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, replace
+from typing import Protocol
 
 import torch
 from torch import Tensor
@@ -11,6 +12,11 @@ from llm.model.transformer import CausalLM
 from llm.tokenizer.bpe import BPETokenizer, Message
 
 REPLACEMENT_CHAR = "�"
+
+
+class TokenConstraint(Protocol):
+    def mask(self) -> Tensor: ...
+    def advance(self, token: int) -> None: ...
 
 
 @dataclass
@@ -115,15 +121,27 @@ class InferenceEngine:
         return generator
 
     def _next_token(
-        self, logits: Tensor, history: list[int], params: SamplingParams, generator
+        self,
+        logits: Tensor,
+        history: list[int],
+        params: SamplingParams,
+        generator,
+        allowed: Tensor | None = None,
     ) -> int:
         logits = logits.float().cpu().unsqueeze(0)
+        if allowed is not None:
+            logits = logits.masked_fill(~allowed, float("-inf"))
         history_tensor = torch.tensor([history], dtype=torch.long)
         logits = apply_repetition_penalty(logits, history_tensor, params.repetition_penalty)
         return int(select_token(logits, params, generator).item())
 
     @torch.inference_mode()
-    def stream_ids(self, prompt_ids: list[int], params: SamplingParams) -> Iterator[int]:
+    def stream_ids(
+        self,
+        prompt_ids: list[int],
+        params: SamplingParams,
+        constraint: TokenConstraint | None = None,
+    ) -> Iterator[int]:
         prompt_ids = self.fit_prompt(prompt_ids, params.max_new_tokens)
         generator = self._generator(params)
         history = list(prompt_ids)
@@ -137,7 +155,10 @@ class InferenceEngine:
                 logits = self.model(pending, cache=cache)[0, -1]
             else:
                 logits = self.model(torch.tensor([history], device=self.device))[0, -1]
-            token = self._next_token(logits, history[penalty_start:], params, generator)
+            allowed = constraint.mask() if constraint is not None else None
+            token = self._next_token(logits, history[penalty_start:], params, generator, allowed)
+            if constraint is not None:
+                constraint.advance(token)
             history.append(token)
             yield token
             if token == self.tokenizer.eos_id:
@@ -182,14 +203,18 @@ class InferenceEngine:
         return reason
 
     def generate_ids(
-        self, prompt_ids: list[int], params: SamplingParams, stop_token_ids: set[int] | None = None
+        self,
+        prompt_ids: list[int],
+        params: SamplingParams,
+        stop_token_ids: set[int] | None = None,
+        constraint: TokenConstraint | None = None,
     ) -> Generation:
         if params.beam_width > 1:
             return self.beam_search(prompt_ids, params, stop_token_ids)
         tokens: list[int] = []
         reason = "length"
         stops = stop_token_ids or set()
-        for token in self.stream_ids(prompt_ids, params):
+        for token in self.stream_ids(prompt_ids, params, constraint):
             if token == self.tokenizer.eos_id or token in stops:
                 reason = "stop"
                 break
@@ -225,10 +250,17 @@ class InferenceEngine:
         params = self._chat_params(SamplingParams(max_new_tokens=max_new_tokens))
         return len(self._chat_ids(messages, params.max_new_tokens))
 
-    def chat(self, messages: list[Message], params: SamplingParams) -> Generation:
+    def chat(
+        self,
+        messages: list[Message],
+        params: SamplingParams,
+        constraint: TokenConstraint | None = None,
+    ) -> Generation:
         params = self._chat_params(params)
         ids = self._chat_ids(messages, params.max_new_tokens)
-        return self.generate_ids(ids, params, stop_token_ids=self._chat_stop_tokens())
+        return self.generate_ids(
+            ids, params, stop_token_ids=self._chat_stop_tokens(), constraint=constraint
+        )
 
     def stream_chat(
         self, messages: list[Message], params: SamplingParams

@@ -203,7 +203,9 @@ def test_chat_stops_on_role_special_tokens_and_continuation_streams(engine, monk
     user_token = engine.tokenizer.role_ids["user"]
     hello_ids = engine.tokenizer.encode("hi")
     monkeypatch.setattr(
-        engine, "stream_ids", lambda prompt_ids, params: iter([*hello_ids, user_token, *hello_ids])
+        engine,
+        "stream_ids",
+        lambda prompt_ids, params, constraint=None: iter([*hello_ids, user_token, *hello_ids]),
     )
     reply = engine.chat([Message("user", "hello")], greedy())
     assert "<user>" not in reply.text

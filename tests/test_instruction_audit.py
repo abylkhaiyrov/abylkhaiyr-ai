@@ -81,9 +81,9 @@ def test_repetition_penalty_ignores_prompt_tokens_by_default(engine, monkeypatch
     seen: list[list[int]] = []
     original = engine._next_token
 
-    def spy(logits, history, params, generator):
+    def spy(logits, history, params, generator, allowed=None):
         seen.append(list(history))
-        return original(logits, history, params, generator)
+        return original(logits, history, params, generator, allowed)
 
     monkeypatch.setattr(engine, "_next_token", spy)
     prompt = engine.tokenizer.encode("alpha beta gamma", add_bos=True)
