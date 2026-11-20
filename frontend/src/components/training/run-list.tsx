@@ -19,11 +19,11 @@ export function RunList({ runs, selected, compared, onSelect, onToggleCompare }:
   const format = useFormat();
   const reference = runs.find((run) => run.name === selected);
   return (
-    <ul className="grid gap-1.5">
+    <ul className="grid gap-0.5">
       {runs.map((run) => {
         const blocked = reference !== undefined && run.stage !== reference.stage && run.name !== selected;
         return (
-          <li key={run.name} className={cn("flex items-start gap-2 rounded-lg border p-2.5 transition-colors", run.name === selected ? "border-primary bg-primary/5" : "hover:bg-muted/50")}>
+          <li key={run.name} className={cn("flex items-start gap-2 rounded-lg px-2.5 py-2 transition-colors", run.name === selected ? "bg-muted" : "hover:bg-muted/50")}>
             <Checkbox
               checked={compared.includes(run.name)}
               disabled={blocked}

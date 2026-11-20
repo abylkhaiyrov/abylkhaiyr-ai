@@ -58,7 +58,7 @@ export function ModelsPage() {
               })}
             </div>
             {registry.models.length === 0 ? <EmptyState title={t("models.empty")} /> : (
-              <div className="overflow-x-auto rounded-xl border bg-card">
+              <div className="overflow-x-auto border-y hairline">
                 <table className="data-table">
                   <thead><tr><th>{t("models.model")}</th><th>{t("models.stage")}</th><th>{t("models.roles")}</th><th>{t("models.parameters")}</th><th>{t("models.context")}</th><th>{t("models.size")}</th><th>{t("models.status")}</th><th /></tr></thead>
                   <tbody>
@@ -103,7 +103,7 @@ export function ProcessesPage() {
       <PageHeader title={t("processes.title")} subtitle={t("processes.subtitle")} />
       <Query query={query}>
         {(items) => items.length === 0 ? <EmptyState title={t("processes.empty")} /> : (
-          <div className="overflow-x-auto rounded-xl border bg-card">
+          <div className="overflow-x-auto border-y hairline">
             <table className="data-table">
               <thead><tr><th>{t("processes.kind")}</th><th>PID</th><th>{t("processes.status")}</th><th>{t("processes.started")}</th><th>CPU</th><th>{t("processes.memory")}</th></tr></thead>
               <tbody>
@@ -165,7 +165,7 @@ export function ExperimentsPage() {
       <PageHeader title={t("experiments.title")} subtitle={t("experiments.subtitle")} />
       <Query query={query}>
         {(items) => items.length === 0 ? <EmptyState title={t("experiments.empty")} /> : (
-          <div className="overflow-x-auto rounded-xl border bg-card">
+          <div className="overflow-x-auto border-y hairline">
             <table className="data-table">
               <thead><tr><th>{t("experiments.name")}</th><th>{t("metric.validation_loss")}</th><th>{t("metric.validation_perplexity")}</th><th>{t("metric.generation_tokens_per_second")}</th></tr></thead>
               <tbody>
@@ -216,7 +216,7 @@ export function LogsPage() {
       <PageHeader title={t("logs.title")} subtitle={t("logs.subtitle")} actions={<Tabs value={category} onChange={setCategory} items={(["all", "pipeline", "training"] as const).map((value) => ({ value, label: t(`logs.${value}`) }))} />} />
       <Query query={query}>
         {(data) => data.items.length === 0 ? <EmptyState title={t("logs.empty")} /> : (
-          <ul className="max-h-[70vh] divide-y overflow-auto rounded-xl border bg-card font-mono text-xs">
+          <ul className="max-h-[70vh] divide-y overflow-auto border-y hairline font-mono text-xs">
             {data.items.slice(0, 300).map((item, index) => <li key={index} className="grid gap-0.5 px-3 py-1.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-3"><span className="truncate text-muted-foreground">{item.source.replace("experiments/", "")}</span><span className="break-words">{item.message}</span></li>)}
           </ul>
         )}

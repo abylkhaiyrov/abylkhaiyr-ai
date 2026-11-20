@@ -13,7 +13,7 @@ export function Toaster() {
       {toasts.map((toast) => {
         const Icon = icons[toast.kind];
         return (
-          <button key={toast.id} type="button" onClick={() => dismiss(toast.id)} className="flex items-start gap-2 rounded-lg border bg-card p-3 text-left text-sm shadow-lg animate-rise">
+          <button key={toast.id} type="button" onClick={() => dismiss(toast.id)} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-left text-sm shadow-lg animate-rise">
             <Icon size={16} className={cn("mt-0.5 shrink-0", tones[toast.kind])} />
             <span className="min-w-0 break-words">{toast.message}</span>
           </button>

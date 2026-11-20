@@ -13,7 +13,7 @@ export function CheckpointsTable({ run }: { run: RunDetail }) {
   if (run.checkpoints.length === 0) return <EmptyState title={t("training.noCheckpoints")} />;
   const evaluation = (label: string): Metric | undefined => run.evaluations.find((item) => item.checkpoint === label)?.results;
   return (
-    <div className="overflow-x-auto rounded-xl border">
+    <div className="overflow-x-auto border-y hairline">
       <table className="data-table">
         <thead>
           <tr>

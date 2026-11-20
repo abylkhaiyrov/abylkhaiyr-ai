@@ -8,8 +8,8 @@ export function LoadingState() {
   const { t } = useTranslation();
   return (
     <div role="status" aria-busy="true" aria-label={t("common.loading")} className="grid gap-3">
-      <div className="h-24 animate-pulse rounded-xl bg-muted" />
-      <div className="h-40 animate-pulse rounded-xl bg-muted" />
+      <div className="h-24 animate-pulse rounded-lg bg-muted" />
+      <div className="h-40 animate-pulse rounded-lg bg-muted" />
     </div>
   );
 }

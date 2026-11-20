@@ -37,7 +37,7 @@ export function Dialog({ open, title, description, onClose, children, footer, cl
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={cn("flex max-h-[88vh] w-full max-w-lg flex-col rounded-xl border bg-card shadow-xl outline-none animate-rise", className)}
+        className={cn("flex max-h-[88vh] w-full max-w-lg flex-col rounded-xl border bg-background shadow-xl outline-none animate-rise", className)}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b p-4">

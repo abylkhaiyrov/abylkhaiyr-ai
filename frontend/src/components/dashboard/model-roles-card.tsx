@@ -28,7 +28,7 @@ export function ModelRolesCard({ runtime }: { runtime: RuntimeState }) {
         })}
       </ul>
       {production && !production.ready ? (
-        <div role="note" className="mt-4 flex gap-2 rounded-lg bg-warning/10 p-3 text-xs text-warning">
+        <div role="note" className="mt-4 flex gap-2 text-xs text-warning">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <div>
             <p className="font-medium">{t("roles.notReady")}</p>

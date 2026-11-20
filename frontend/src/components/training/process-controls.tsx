@@ -60,9 +60,9 @@ export function ProcessControls() {
           </select>
           <Button disabled={busy || config === "" || start.isPending} onClick={() => start.mutate()}><Play size={14} />{t("training.launch")}</Button>
         </div>
-        {blockReason ? <p role="status" className="rounded-lg bg-warning/10 p-2.5 text-xs text-warning">{blockReason}</p> : null}
+        {blockReason ? <p role="status" className="text-xs text-warning">{blockReason}</p> : null}
         {activePipeline ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t hairline pt-3">
             <div className="min-w-0">
               <p className="font-medium">{t("training.pipelineRunning", { name: activePipeline.model_name })}</p>
               <p className="text-xs text-muted-foreground">PID {activePipeline.pid} · {t("training.cpu")} {format.number(activePipeline.cpu_percent, 0)}% · {format.bytes(activePipeline.memory_bytes)}</p>
@@ -74,7 +74,7 @@ export function ProcessControls() {
           </div>
         ) : null}
         {managed.map((process) => (
-          <div key={process.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+          <div key={process.id} className="flex flex-wrap items-center justify-between gap-2 border-t hairline pt-3">
             <div className="min-w-0">
               <p className="flex items-center gap-2 font-medium">{t(`modelStage.${process.kind}`, { defaultValue: process.kind })}<StatusBadge value={process.status} /></p>
               <p className="text-xs text-muted-foreground">PID {process.pid ?? "—"} · {process.config_path}</p>
