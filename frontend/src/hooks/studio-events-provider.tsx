@@ -2,61 +2,73 @@ import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isGenerationEvent, type GenerationEvent, type ServerEvent } from "@/lib/events";
 import type { Metric, SystemSnapshot } from "@/lib/api";
-import { API_BASE } from "@/lib/http";
 import { EventContext } from "@/hooks/use-studio-events";
+import { openStudioConnection } from "@/lib/studio-connection";
 import { useUiStore } from "@/store/ui-store";
 
-const HEARTBEAT_MS = 20_000;
-const STALE_MS = 50_000;
 const MAX_HISTORY = 720;
 const MAX_METRIC_ROWS = 3000;
-const ACTIVE_STATUSES = new Set(["queued", "running"]);
+const MAX_RECOVERABLE = 8;
+const MAX_TERMINALS = 64;
 const TERMINAL_TYPES = new Set(["generation.completed", "generation.cancelled", "generation.failed"]);
+const LIVE_QUERY_KEYS = new Set(["me", "runtime", "models", "system"]);
 
-export function StudioEventsProvider({ children }: { children: ReactNode }) {
+function isTerminal(event: GenerationEvent) {
+  return TERMINAL_TYPES.has(event.type) ||
+    (event.type === "generation.snapshot" && event.status !== "queued" && event.status !== "running");
+}
+
+export function StudioEventsProvider({ children, enabled }: { children: ReactNode; enabled: boolean }) {
   const queryClient = useQueryClient();
-  const setConnection = useUiStore((state) => state.setConnection);
-  const socket = useRef<WebSocket | null>(null);
+  const setSocketStatus = useUiStore((state) => state.setSocketStatus);
+  const connection = useRef<ReturnType<typeof openStudioConnection> | null>(null);
   const listeners = useRef(new Set<(event: GenerationEvent) => void>());
   const snapshots = useRef(new Map<string, GenerationEvent>());
-  const lastSequence = useRef(new Map<string, number>());
+  const terminals = useRef(new Set<string>());
 
   const send = useCallback((event: Record<string, unknown>) => {
-    if (socket.current?.readyState !== WebSocket.OPEN) return false;
-    socket.current.send(JSON.stringify(event));
+    if (event.type !== "generation.start") return connection.current?.send(event) ?? false;
+    if (typeof event.request_id !== "string" || typeof event.chat_id !== "string") return false;
+    if (snapshots.current.size >= MAX_RECOVERABLE || terminals.current.has(event.request_id)) return false;
+    for (const pending of snapshots.current.values()) {
+      if (pending.request_id === event.request_id || pending.chat_id === event.chat_id) return false;
+    }
+    if (!connection.current?.send(event)) return false;
+    snapshots.current.set(event.request_id, {
+      type: "generation.snapshot",
+      request_id: event.request_id,
+      chat_id: event.chat_id,
+      status: "queued",
+      sequence_id: 0,
+      seq: 0,
+      ts: 0,
+    });
     return true;
   }, []);
 
   const subscribe = useCallback((listener: (event: GenerationEvent) => void) => {
     listeners.current.add(listener);
-    snapshots.current.forEach((snapshot) => listener(snapshot));
+    snapshots.current.forEach(listener);
     return () => {
       listeners.current.delete(listener);
     };
   }, []);
 
   useEffect(() => {
-    let stopped = false;
-    let retry = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
-    let lastSeen = Date.now();
-    let connectionSeq = 0;
-
     function applyData(event: ServerEvent) {
       if (event.type === "runtime.update") {
         queryClient.setQueryData(["runtime"], event.data);
-      }
-      else if (event.type === "models.update") {
+      } else if (event.type === "models.update") {
         queryClient.setQueryData(["models"], event.data);
-        void queryClient.invalidateQueries({ queryKey: ["evaluation"] });
-        void queryClient.invalidateQueries({ queryKey: ["pipelines"] });
-      }
-      else if (event.type === "system.update") {
+        void queryClient.invalidateQueries({ queryKey: ["evaluation"] }, { cancelRefetch: false });
+        void queryClient.invalidateQueries({ queryKey: ["pipelines"] }, { cancelRefetch: false });
+      } else if (event.type === "system.update") {
         queryClient.setQueryData(["system"], event.data);
-        queryClient.setQueryData<SystemSnapshot[]>(["system-history"], (previous) =>
-          [...(previous ?? []), event.data].slice(-MAX_HISTORY),
-        );
+        queryClient.setQueryData<SystemSnapshot[]>(["system-history"], (previous) => {
+          const history = previous ?? [];
+          if (history.at(-1)?.recorded_at === event.data.recorded_at) return history;
+          return [...history, event.data].slice(-MAX_HISTORY);
+        });
       } else if (event.type === "metrics.append") {
         queryClient.setQueryData<Metric[]>(["metrics", event.run], (previous) => {
           const byStep = new Map((previous ?? []).map((row) => [row.step, row]));
@@ -67,83 +79,78 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
     }
 
     function applyGeneration(event: GenerationEvent) {
-      const previous = lastSequence.current.get(event.request_id) ?? 0;
-      if (event.type !== "generation.snapshot" && event.sequence_id <= previous) return;
-      lastSequence.current.set(event.request_id, event.sequence_id);
-      if (event.type === "generation.snapshot") {
-        if (event.status && ACTIVE_STATUSES.has(event.status)) snapshots.current.set(event.request_id, event);
-        else snapshots.current.delete(event.request_id);
-      }
-      if (TERMINAL_TYPES.has(event.type)) {
+      if (terminals.current.has(event.request_id)) return;
+      const previous = snapshots.current.get(event.request_id);
+      if (previous && event.sequence_id <= previous.sequence_id && event.type !== "generation.snapshot") return;
+      if (previous && event.sequence_id < previous.sequence_id && !isTerminal(event)) return;
+      if (isTerminal(event)) {
         snapshots.current.delete(event.request_id);
-        void queryClient.invalidateQueries({ queryKey: ["chats"] });
+        terminals.current.add(event.request_id);
+        if (terminals.current.size > MAX_TERMINALS) {
+          const oldest = terminals.current.values().next().value;
+          if (oldest !== undefined) terminals.current.delete(oldest);
+        }
+        void queryClient.invalidateQueries({ queryKey: ["chats"] }, { cancelRefetch: false });
+      } else {
+        const text = event.type === "generation.delta"
+          ? (previous?.text ?? "") + (event.text ?? "")
+          : event.text ?? previous?.text;
+        snapshots.current.set(event.request_id, {
+          ...previous,
+          ...event,
+          type: "generation.snapshot",
+          text,
+          status: event.status ?? (event.type === "generation.queued" ? "queued" : event.type === "generation.started" || event.type === "generation.delta" ? "running" : previous?.status ?? "running"),
+          message_id: event.message_id ?? previous?.message_id,
+        });
       }
-      if (event.type === "generation.started") void queryClient.invalidateQueries({ queryKey: ["chats"] });
+      if (event.type === "generation.started") {
+        void queryClient.invalidateQueries({ queryKey: ["chats"] }, { cancelRefetch: false });
+      }
       listeners.current.forEach((listener) => listener(event));
     }
 
-    function connect() {
-      const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${protocol}//${location.host}${API_BASE}/ws`);
-      socket.current = ws;
-      connectionSeq = 0;
-      ws.onopen = () => {
-        retry = 0;
-        lastSeen = Date.now();
-        setConnection(true);
-        ws.send(JSON.stringify({ type: "subscribe", channels: ["studio", "chat"] }));
-        void queryClient.invalidateQueries({ queryKey: ["chats"] });
-        void queryClient.invalidateQueries({ queryKey: ["chat"] });
-        heartbeat = setInterval(() => {
-          if (Date.now() - lastSeen > STALE_MS) ws.close();
-          else if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
-        }, HEARTBEAT_MS);
-      };
-      ws.onmessage = (message) => {
-        const event = JSON.parse(String(message.data)) as ServerEvent;
-        if (event.seq <= connectionSeq) return;
-        connectionSeq = event.seq;
-        lastSeen = Date.now();
-        setConnection(true);
-        if (isGenerationEvent(event)) applyGeneration(event);
-        else applyData(event);
-      };
-      ws.onclose = (closeEvent) => {
-        if (heartbeat) clearInterval(heartbeat);
-        setConnection(false);
-        if (closeEvent.code === 1008) void queryClient.invalidateQueries({ queryKey: ["me"] });
-        if (!stopped) {
-          retryTimer = setTimeout(connect, Math.min(15_000, 500 * 2 ** retry) * (0.8 + Math.random() * 0.4));
-          retry += 1;
-        }
-      };
-      ws.onerror = () => ws.close();
-    }
-
-    queueMicrotask(() => {
-      if (!stopped) connect();
-    });
-    return () => {
-      stopped = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      if (heartbeat) clearInterval(heartbeat);
-      const ws = socket.current;
-      socket.current = null;
-      setConnection(false);
-      if (ws) {
-        ws.onmessage = null;
-        ws.onclose = null;
-        ws.onerror = null;
-        if (ws.readyState === WebSocket.CONNECTING) {
-          ws.onopen = () => ws.close();
+    let connectedBefore = false;
+    const current = openStudioConnection({
+      status: setSocketStatus,
+      resume: () => [...snapshots.current.keys()].slice(0, MAX_RECOVERABLE),
+      disconnected: () => {
+        void queryClient.invalidateQueries({ queryKey: ["me"], exact: true }, { cancelRefetch: false });
+      },
+      receive: (event) => {
+        if (event.type === "chat.ready") {
+          const recovered = new Set(event.request_ids);
+          snapshots.current.forEach((pending, id) => {
+            if (!recovered.has(id)) {
+              applyGeneration({ ...pending, type: "generation.failed", code: "server_restarted", sequence_id: pending.sequence_id + 1 });
+            }
+          });
+          if (connectedBefore) {
+            void queryClient.invalidateQueries({
+              predicate: (query) => !LIVE_QUERY_KEYS.has(String(query.queryKey[0])),
+            }, { cancelRefetch: false });
+          }
+          connectedBefore = true;
+        } else if (isGenerationEvent(event)) {
+          applyGeneration(event);
         } else {
-          ws.onopen = null;
-          ws.close();
+          applyData(event);
         }
-      }
+      },
+    });
+    connection.current = current;
+    return () => {
+      current.close();
+      connection.current = null;
+      setSocketStatus("disconnected");
     };
-  }, [queryClient, setConnection]);
+  }, [queryClient, setSocketStatus]);
 
-  const value = useMemo(() => ({ send, subscribe }), [send, subscribe]);
+  useEffect(() => {
+    connection.current?.setEnabled(enabled);
+  }, [enabled]);
+
+  const reconnect = useCallback(() => connection.current?.reconnect(), []);
+  const value = useMemo(() => ({ send, subscribe, reconnect }), [send, subscribe, reconnect]);
   return <EventContext.Provider value={value}>{children}</EventContext.Provider>;
 }

@@ -7,6 +7,7 @@ ServerEventType = Literal[
     "heartbeat",
     "pong",
     "error",
+    "chat.ready",
     "runtime.update",
     "system.update",
     "models.update",

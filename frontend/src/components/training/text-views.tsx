@@ -23,7 +23,7 @@ export function LogView({ name, live }: { name: string; live: boolean }) {
     staleTime: live ? 5_000 : 60_000,
   });
   if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => void query.refetch()} />;
+  if (query.isLoadingError) return <ErrorState error={query.error} retry={() => void query.refetch()} />;
   if (query.data.length === 0) return <EmptyState title={t("training.noLogs")} />;
   return (
     <pre className="max-h-[60vh] overflow-auto bg-muted/40 p-3 font-mono text-xs leading-relaxed">

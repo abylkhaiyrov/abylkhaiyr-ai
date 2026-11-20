@@ -261,7 +261,7 @@ const rows = listOf<Metric>(shape({ step: number }));
 
 export const api = {
   login: (username: string, password: string) => http<{ username: string; requires_password_change: boolean }>("/auth/login", body("POST", { username, password }), me, { session: false }),
-  me: () => http<{ username: string; requires_password_change: boolean }>("/auth/me", {}, me, { session: false }),
+  me: (signal?: AbortSignal) => http<{ username: string; requires_password_change: boolean }>("/auth/me", { signal }, me, { session: false, verifyVersion: true }),
   logout: () => http<void>("/auth/logout", body("POST"), undefined, { session: false }),
   changePassword: (currentPassword: string, newPassword: string) => http<void>("/auth/password", body("PUT", { current_password: currentPassword, new_password: newPassword })),
   runtime: () => http<RuntimeState>("/runtime", {}, runtimeGuard),

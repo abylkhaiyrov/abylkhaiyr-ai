@@ -17,7 +17,7 @@ const ROLES: ModelRole[] = ["production", "best_evaluated", "latest_trained", "l
 
 function Query<T>({ query, children }: { query: { isPending: boolean; isError: boolean; error: Error | null; data: T | undefined; refetch: () => unknown }; children: (data: T) => React.ReactNode }) {
   if (query.isPending) return <LoadingState />;
-  if (query.isError || query.data === undefined) return <ErrorState error={query.error ?? new Error("unknown")} retry={() => void query.refetch()} />;
+  if (query.data === undefined) return <ErrorState error={query.error ?? new Error("unknown")} retry={() => void query.refetch()} />;
   return <>{children(query.data)}</>;
 }
 

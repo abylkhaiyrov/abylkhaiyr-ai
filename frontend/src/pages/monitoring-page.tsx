@@ -33,7 +33,7 @@ export function MonitoringPage() {
     return data.filter((item) => new Date(item.recorded_at).getTime() >= last - range * 60_000);
   }, [history.data, range]);
   if (system.isPending || history.isPending) return <LoadingState />;
-  if (system.isError) return <ErrorState error={system.error} retry={() => void system.refetch()} />;
+  if (system.isLoadingError) return <ErrorState error={system.error} retry={() => void system.refetch()} />;
   const current = system.data;
   const totalGb = current.memory.total_bytes / GIB;
   const swapGb = Math.max(current.memory.swap_total_bytes / GIB, 1);

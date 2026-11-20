@@ -4,6 +4,7 @@ type Mirror<T> = { [K in keyof T]: T[K] extends string ? string : Mirror<T[K]> }
 
 export const en: Mirror<typeof ru> = {
   app: { name: "Abylkhaiyr AI Studio", connected: "Connected", reconnecting: "Reconnecting…", expandSidebar: "Expand sidebar", collapseSidebar: "Collapse sidebar", openMenu: "Open menu", skip: "Skip to content", logout: "Sign out" },
+  connection: { apiReady: "API available", apiUnavailable: "API unavailable", connecting: "Live updates connecting", connected: "Live updates connected", reconnecting: "Live updates reconnecting", disconnected: "Live updates paused", stale: "Showing last received data", retry: "Reconnect", details: "Technical details", noModel: "No model loaded", training: "Training running", idle: "Training idle", unknownTraining: "Training status unknown" },
   nav: { overview: "Overview", chat: "Chat", training: "Training", monitoring: "Resources", models: "Models", datasets: "Datasets", experiments: "Experiments", evaluation: "Evaluation", processes: "Processes", logs: "Logs", settings: "Settings", more: "Management" },
   common: { loading: "Loading data", retry: "Retry", unavailable: "Unavailable", cancel: "Cancel", save: "Save", delete: "Delete", close: "Close", reset: "Reset", copied: "Copied" },
   status: { pending: "Pending", running: "Running", completed: "Completed", skipped: "Skipped", failed: "Failed", interrupted: "Interrupted", stopped: "Stopped", pausing: "Pausing…", paused: "Paused", busy: "Busy", ready: "Ready", active: "Active", idle: "Idle" },
@@ -296,6 +297,7 @@ export const en: Mirror<typeof ru> = {
     switching_model: "Loading the selected checkpoint.",
   },
   chatError: {
+    server_restarted: "The server restarted during generation. Any saved part of the answer is in the chat.",
     model_not_loaded: "No model is loaded. Select a checkpoint.",
     queue_full: "The generation queue is full. Wait or cancel a request.",
     insufficient_memory_during_training: "Training is running and free RAM is too low for safe CPU generation.",
@@ -319,6 +321,9 @@ export const en: Mirror<typeof ru> = {
   settings: { title: "Settings", subtitle: "Appearance and security", appearance: "Appearance", language: "Language", theme: "Theme", light: "Light", dark: "Dark", security: "Administrator password" },
   auth: { title: "Welcome back", subtitle: "Sign in to your local workspace", login: "Username", password: "Password", signIn: "Sign in", signingIn: "Signing in…", initialCredentials: "Initial credentials: admin / admin. Change the password after signing in.", changePassword: "Change password", currentPassword: "Current password", newPassword: "New password", passwordHint: "At least 12 characters.", passwordUpdated: "Password changed. Sign in again.", invalid: "Incorrect username or password.", sessionExpired: "Your session expired. Please sign in again.", passwordRejected: "Could not change the password. Check the current password and the length of the new one." },
   apiError: {
+    offline: "The browser is offline. Check your connection.",
+    incompatible: "This interface uses a different Studio API version. Restart Studio from the same checkout and reload this page.",
+    unavailable: "Studio server is unavailable. Waiting for it to return.",
     network: "Cannot reach the server. Make sure Studio is running.",
     html_response: "The server returned a page instead of data. Studio probably needs a restart after the update.",
     invalid_response: "The server returned data in an unexpected format.",

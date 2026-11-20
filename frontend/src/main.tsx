@@ -5,8 +5,9 @@ import { App } from "@/app";
 import "@/i18n";
 import "@/styles.css";
 
-const savedTheme = localStorage.getItem("abylkhaiyr-theme");
-document.documentElement.classList.toggle("dark", savedTheme !== "light");
+import { useUiStore } from "@/store/ui-store";
+
+document.documentElement.classList.toggle("dark", useUiStore.getState().theme === "dark");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

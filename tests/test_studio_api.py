@@ -101,6 +101,10 @@ def test_unknown_api_routes_return_json_not_the_spa_shell(model_config, tokenize
         assert response.status_code == 404, path
         assert response.headers["content-type"].startswith("application/json")
         assert response.json() == {"detail": "endpoint_not_found"}
+    method = client.post("/api/runtime")
+    assert method.status_code == 405
+    assert method.headers["allow"] == "GET"
+    assert method.json() == {"detail": "method_not_allowed"}
     assert client.get("/api/runtime").status_code == 401
     assert client.get("/missing.js").status_code == 404
     assert client.get("/training", headers={"Accept": "application/json"}).status_code == 404
@@ -188,3 +192,16 @@ def test_frontend_only_calls_existing_endpoints(model_config, tokenizer, tmp_pat
         if key not in paths:
             missing.append(key)
     assert missing == []
+
+
+def test_session_discovery_exposes_api_version(model_config, tokenizer, tmp_path):
+    client = studio_client(model_config, tokenizer, tmp_path)
+    unauthorized = client.get("/api/auth/me")
+    assert unauthorized.status_code == 401
+    assert unauthorized.headers["x-studio-api-version"] == "1"
+
+    login(client)
+    session = client.get("/api/auth/me")
+    assert session.status_code == 200
+    assert session.headers["x-studio-api-version"] == "1"
+    assert session.headers["cache-control"] == "no-store"

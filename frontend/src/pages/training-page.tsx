@@ -44,7 +44,7 @@ export function TrainingPage() {
   });
 
   if (runs.isPending) return <LoadingState />;
-  if (runs.isError) return <ErrorState error={runs.error} retry={() => void runs.refetch()} />;
+  if (runs.isLoadingError) return <ErrorState error={runs.error} retry={() => void runs.refetch()} />;
   const stage = runtime?.pipeline?.stages.find((item) => item.key === activeKey && item.output_dir === summary?.output_dir) ?? null;
   const rows: Metric[] = metrics.data ?? [];
   const toggle = (name: string) => setCompared((previous) => (previous.includes(name) ? previous.filter((item) => item !== name) : [...previous, name]));
@@ -74,7 +74,7 @@ export function TrainingPage() {
                 <Tabs value={tab} onChange={setTab} items={tabs} />
               </div>
               {tab === "overview" ? <RunOverview run={detail.data} rows={rows} stage={stage} /> : null}
-              {tab === "charts" ? <RunCharts runs={[{ name: summary.name, rows }]} stage={summary.stage} markers={detail.data.checkpoints.map((item) => item.step ?? 0)} /> : null}
+              {tab === "charts" ? <RunCharts runs={[{ name: summary.name, rows }]} stage={summary.stage} markers={detail.data.checkpoints.flatMap((item) => item.step === null ? [] : [item.step])} /> : null}
               {tab === "checkpoints" ? <CheckpointsTable run={detail.data} /> : null}
               {tab === "compare" ? (
                 comparedNames.length < 2 ? <EmptyState title={t("training.compareHint")} /> : (

@@ -25,3 +25,5 @@ releases/
 data/v3/
 data/v*/manifest.json.bak
 data/v3_1/
+
+frontend/.vite/

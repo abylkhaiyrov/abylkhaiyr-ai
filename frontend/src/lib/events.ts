@@ -1,3 +1,4 @@
+import { isRecord } from "@/lib/schema";
 import type { ChatMessage, Metric, ModelRegistry, ReasoningStageEvent, RuntimeState, SystemSnapshot } from "@/lib/api";
 
 type Envelope = { seq: number; ts: number };
@@ -49,6 +50,7 @@ export type ServerEvent =
   | (Envelope & { type: "hello"; connection_id: string })
   | (Envelope & { type: "heartbeat" | "pong" })
   | (Envelope & { type: "error"; code: string })
+  | (Envelope & { type: "chat.ready"; request_ids: string[] })
   | (Envelope & { type: "runtime.update"; data: RuntimeState })
   | (Envelope & { type: "system.update"; data: SystemSnapshot })
   | (Envelope & { type: "models.update"; data: ModelRegistry })
@@ -57,4 +59,21 @@ export type ServerEvent =
 
 export function isGenerationEvent(event: ServerEvent): event is GenerationEvent {
   return event.type.startsWith("generation.");
+}
+
+export function parseServerEvent(data: unknown): ServerEvent | null {
+  if (typeof data !== "string") return null;
+  try {
+    const event: unknown = JSON.parse(data);
+    if (!isRecord(event) || typeof event.type !== "string" || !Number.isSafeInteger(event.seq)) return null;
+    if (event.type.startsWith("generation.")) {
+      if (typeof event.request_id !== "string" || typeof event.chat_id !== "string" || !Number.isSafeInteger(event.sequence_id)) return null;
+    }
+    if (event.type === "chat.ready" && (!Array.isArray(event.request_ids) || !event.request_ids.every((id) => typeof id === "string"))) return null;
+    if (event.type === "metrics.append" && (!Array.isArray(event.rows) || !event.rows.every((row) => isRecord(row) && typeof row.step === "number") || typeof event.run !== "string")) return null;
+    if (event.type.endsWith(".update") && !isRecord(event.data)) return null;
+    return event as ServerEvent;
+  } catch {
+    return null;
+  }
 }

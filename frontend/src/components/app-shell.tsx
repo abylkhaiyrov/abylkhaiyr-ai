@@ -19,10 +19,13 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { ConnectionStatus } from "@/components/connection-status";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { LoadingState } from "@/components/data-state";
 import { Toaster } from "@/components/toaster";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -98,13 +101,14 @@ function Brand({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-export function AppShell() {
+export function AppShell({ apiError, retryApi }: { apiError: Error | null; retryApi: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const client = useQueryClient();
   const chatRoute = useMatch("/chat");
+  const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { theme, locale, backendOnline, setTheme, setLocale, sidebarCollapsed, toggleSidebar } = useUiStore();
+  const { theme, locale, setTheme, setLocale, sidebarCollapsed, toggleSidebar } = useUiStore();
   const logout = useMutation({
     mutationFn: api.logout,
     onSettled: () => {
@@ -134,10 +138,6 @@ export function AppShell() {
             <Button className="hidden lg:inline-flex" variant="ghost" size="icon" aria-label={t(sidebarCollapsed ? "app.expandSidebar" : "app.collapseSidebar")} onClick={toggleSidebar}>
               {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </Button>
-            <div role="status" className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-              <span className={cn("h-1.5 w-1.5 rounded-full", backendOnline ? "bg-success" : "animate-pulse bg-destructive")} />
-              <span className="hidden sm:inline">{backendOnline ? t("app.connected") : t("app.reconnecting")}</span>
-            </div>
           </div>
           <div className="flex items-center gap-0.5">
             <select aria-label={t("settings.language")} className="h-8 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:bg-muted" value={locale} onChange={(event) => setLocale(event.target.value as "ru" | "en")}>
@@ -148,8 +148,13 @@ export function AppShell() {
             <Button variant="ghost" size="icon" aria-label={t("app.logout")} onClick={() => logout.mutate()}><LogOut size={16} /></Button>
           </div>
         </header>
+        <ConnectionStatus error={apiError} retry={retryApi} />
         <main id="content" tabIndex={-1} className={cn("min-h-0 flex-1 outline-none", chatRoute ? "overflow-hidden" : "overflow-y-auto")}>
-          {chatRoute ? <Outlet /> : <div className="mx-auto w-full max-w-[1440px] px-4 py-5 lg:px-7"><Outlet /></div>}
+          <ErrorBoundary key={pathname} page>
+            <Suspense fallback={<LoadingState />}>
+              {chatRoute ? <Outlet /> : <div className="mx-auto w-full max-w-[1440px] px-4 py-5 lg:px-7"><Outlet /></div>}
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
       <Toaster />

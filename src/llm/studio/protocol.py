@@ -1,0 +1,2 @@
+API_VERSION = "1"
+API_VERSION_HEADER = "X-Studio-API-Version"

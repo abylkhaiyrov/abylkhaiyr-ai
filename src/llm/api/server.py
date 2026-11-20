@@ -11,8 +11,10 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.routing import Match
 
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
@@ -87,7 +89,8 @@ def create_app(
     studio.attach_model_manager(model_manager)
     app.state.studio = studio
     app.state.model_manager = model_manager
-    app.include_router(create_studio_router(studio, model_manager, lock))
+    studio_router = create_studio_router(studio, model_manager, lock)
+    app.include_router(studio_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -151,7 +154,22 @@ def create_app(
     @app.api_route("/v1", methods=unknown_methods, include_in_schema=False)
     @app.api_route("/api/{rest:path}", methods=unknown_methods, include_in_schema=False)
     @app.api_route("/v1/{rest:path}", methods=unknown_methods, include_in_schema=False)
-    def unknown_endpoint() -> JSONResponse:
+    def unknown_endpoint(request: Request) -> JSONResponse:
+        methods = {
+            method
+            for route in (*studio_router.routes, *app.routes)
+            if isinstance(route, APIRoute)
+            and route.endpoint is not unknown_endpoint
+            and route.matches(request.scope)[0] is Match.PARTIAL
+            and route.path != "/{path:path}"
+            for method in (route.methods or ())
+        }
+        if methods:
+            return JSONResponse(
+                {"detail": "method_not_allowed"},
+                status_code=405,
+                headers={"Allow": ", ".join(sorted(methods))},
+            )
         return JSONResponse({"detail": "endpoint_not_found"}, status_code=404)
 
     @app.exception_handler(Exception)

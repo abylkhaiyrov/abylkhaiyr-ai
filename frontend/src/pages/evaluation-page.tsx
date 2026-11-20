@@ -133,7 +133,7 @@ export function EvaluationPage() {
   return (
     <div className="grid gap-5">
       <PageHeader title={t("evaluation.title")} subtitle={t("evaluation.subtitle")} />
-      {query.isPending ? <LoadingState /> : query.isError ? (
+      {query.isPending ? <LoadingState /> : query.isLoadingError ? (
         <ErrorState error={query.error} retry={() => void query.refetch()} />
       ) : query.data.length === 0 ? (
         <EmptyState title={t("evaluation.empty")} />

@@ -17,7 +17,7 @@ export function DashboardPage() {
   const history = useQuery({ queryKey: ["pipelines"], queryFn: api.pipelines });
   const [selected, setSelected] = useState("");
   if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => void query.refetch()} />;
+  if (query.isLoadingError) return <ErrorState error={query.error} retry={() => void query.refetch()} />;
   const runtime = query.data;
   const pipeline = selected && selected !== runtime.pipeline?.id
     ? history.data?.find((item) => item.id === selected) ?? runtime.pipeline

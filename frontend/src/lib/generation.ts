@@ -63,13 +63,14 @@ export function isActive(generation: ActiveGeneration | null): generation is Act
 
 export function reduceGeneration(previous: ActiveGeneration | null, event: GenerationEvent): ActiveGeneration | null {
   if (event.type === "generation.snapshot") {
+    if (previous?.requestId === event.request_id && event.sequence_id < previous.sequence && (event.status === "queued" || event.status === "running")) return previous;
     const base = previous?.requestId === event.request_id ? previous : initialGeneration(event.request_id, event.chat_id, "send", null, null);
     return {
       ...base,
       messageId: event.message_id ?? base.messageId,
       text: event.text ?? base.text,
       sequence: event.sequence_id,
-      status: (event.status as ActiveGeneration["status"]) ?? base.status,
+      status: event.status === "interrupted" ? "cancelled" : (event.status as ActiveGeneration["status"]) ?? base.status,
       queuePosition: event.queue_position ?? 0,
       queueReason: event.queue_reason ?? null,
       modelId: event.model_id ?? base.modelId,

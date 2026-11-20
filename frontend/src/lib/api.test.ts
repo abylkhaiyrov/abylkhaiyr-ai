@@ -37,3 +37,23 @@ describe("chat responses", () => {
     await expect(api.chats()).rejects.toMatchObject({ code: "invalid_response" });
   });
 });
+
+
+describe("session discovery", () => {
+  it("distinctly reports an incompatible server, including an old SPA response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html></html>", {
+      headers: { "content-type": "text/html" },
+    })));
+
+    await expect(api.me()).rejects.toMatchObject({ code: "incompatible" });
+  });
+
+  it("keeps a proxy outage distinct from session expiry and version mismatch", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "studio_unavailable" }), {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    })));
+
+    await expect(api.me()).rejects.toMatchObject({ code: "unavailable" });
+  });
+});

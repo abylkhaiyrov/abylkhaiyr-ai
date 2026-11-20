@@ -1,19 +1,21 @@
 import { create } from "zustand";
 import i18n from "@/i18n";
 
+export type SocketStatus = "connecting" | "connected" | "reconnecting" | "disconnected";
+
 type Theme = "light" | "dark";
 type Locale = "ru" | "en";
 
 type UiState = {
   theme: Theme;
   locale: Locale;
-  backendOnline: boolean;
+  socketStatus: SocketStatus;
   sidebarCollapsed: boolean;
   historyOpen: boolean;
   toggleHistory: () => void;
   setTheme: (theme: Theme) => void;
   setLocale: (locale: Locale) => void;
-  setConnection: (online: boolean) => void;
+  setSocketStatus: (status: SocketStatus) => void;
   toggleSidebar: () => void;
 };
 
@@ -35,7 +37,7 @@ const write = (key: string, value: string) => {
 export const useUiStore = create<UiState>((set) => ({
   theme: read("abylkhaiyr-theme") === "light" ? "light" : "dark",
   locale: i18n.language === "en" ? "en" : "ru",
-  backendOnline: true,
+  socketStatus: "connecting",
   sidebarCollapsed: read("abylkhaiyr-sidebar") === "collapsed",
   historyOpen: read("abylkhaiyr-history") !== "closed",
   toggleHistory: () =>
@@ -54,7 +56,7 @@ export const useUiStore = create<UiState>((set) => ({
     void i18n.changeLanguage(locale);
     set({ locale });
   },
-  setConnection: (backendOnline) => set((state) => (state.backendOnline === backendOnline ? state : { backendOnline })),
+  setSocketStatus: (socketStatus) => set((state) => (state.socketStatus === socketStatus ? state : { socketStatus })),
   toggleSidebar: () =>
     set((state) => {
       const sidebarCollapsed = !state.sidebarCollapsed;

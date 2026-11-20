@@ -32,7 +32,7 @@ export function ChatPage() {
   const client = useQueryClient();
   const push = useToastStore((state) => state.push);
   const describe = useApiError();
-  const backendOnline = useUiStore((state) => state.backendOnline);
+  const backendOnline = useUiStore((state) => state.socketStatus === "connected");
   const { historyOpen, toggleHistory } = useUiStore();
   const [params, setParams] = useSearchParams();
   const selected = params.get("c");
@@ -112,7 +112,7 @@ export function ChatPage() {
   const modelPayload = (target: Model | null) => (target ? { model_name: target.model_id, checkpoint: target.id } : {});
 
   const send = async (content: string) => {
-    if (!model) return;
+    if (!model || running || createChat.isPending) return;
     let chatId = selected;
     if (chatId === null) {
       try {
@@ -149,7 +149,7 @@ export function ChatPage() {
   const empty = messages.length === 0;
   const blockReason = !backendOnline ? t("chatError.disconnected") : model === null ? t("chat.noModel") : null;
   const composer = (
-    <Composer generating={running} disabled={blockReason !== null} disabledReason={blockReason} onSend={(content) => void send(content)} onStop={cancel} focusKey={selected} large={empty} />
+    <Composer generating={running} disabled={blockReason !== null || createChat.isPending} disabledReason={blockReason} onSend={(content) => void send(content)} onStop={cancel} focusKey={selected} large={empty} />
   );
   const sidebar = (
     <ChatSidebar
@@ -197,7 +197,7 @@ export function ChatPage() {
         <div ref={viewport} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto" data-testid="messages">
           {selected !== null && chat.isPending ? (
             <div className="mx-auto w-full max-w-[44rem] p-4"><LoadingState /></div>
-          ) : selected !== null && chat.isError ? (
+          ) : selected !== null && chat.isLoadingError ? (
             <div className="mx-auto w-full max-w-[44rem] p-4"><ErrorState error={chat.error} retry={() => void chat.refetch()} /></div>
           ) : empty ? (
             <div className="mx-auto flex min-h-full w-full max-w-[44rem] flex-col justify-center gap-6 px-4 pb-10">
@@ -212,7 +212,7 @@ export function ChatPage() {
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 {SUGGESTIONS.map((key) => (
-                  <button key={key} type="button" disabled={running || blockReason !== null} onClick={() => void send(t(`chat.suggestions.${key}`))} className="rounded-full border px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">
+                  <button key={key} type="button" disabled={running || createChat.isPending || blockReason !== null} onClick={() => void send(t(`chat.suggestions.${key}`))} className="rounded-full border px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">
                     {t(`chat.suggestions.${key}`)}
                   </button>
                 ))}

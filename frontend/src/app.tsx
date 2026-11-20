@@ -1,6 +1,6 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { lazy, Suspense, useEffect, useSyncExternalStore } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { onlineManager, QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/app-shell";
 import { ErrorState, LoadingState } from "@/components/data-state";
@@ -25,7 +25,7 @@ const SettingsPage = lazy(() => import("@/pages/settings-page").then((module) =>
 const client = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: (count, error) => count < 1 && error instanceof ApiError && error.status >= 500 && error.code !== "unavailable",
       refetchOnWindowFocus: false,
       staleTime: 15_000,
     },
@@ -36,19 +36,43 @@ setUnauthorizedHandler(() => {
   void client.invalidateQueries({ queryKey: ["me"] });
 });
 
+const watchNetwork = (listener: () => void) => onlineManager.subscribe(listener);
+const isOnline = () => onlineManager.isOnline();
+
 function ProtectedApp() {
-  const auth = useQuery({ queryKey: ["me"], queryFn: api.me, retry: false, staleTime: Infinity });
-  if (auth.isPending) return <LoadingState />;
-  if (auth.isError) {
-    if (auth.error instanceof ApiError && auth.error.code === "unauthorized") {
-      return <Navigate to="/login" replace state={{ sessionExpired: auth.data !== undefined }} />;
+  const location = useLocation();
+  const online = useSyncExternalStore(watchNetwork, isOnline);
+  const auth = useQuery({
+    queryKey: ["me"],
+    queryFn: ({ signal }) => api.me(signal),
+    retry: false,
+    staleTime: 15_000,
+    refetchInterval: (query) => {
+      const error = query.state.error;
+      if (error instanceof ApiError && ["unauthorized", "incompatible"].includes(error.code)) return false;
+      return error ? 10_000 : 30_000;
+    },
+  });
+  const unauthorized = auth.error instanceof ApiError && auth.error.code === "unauthorized";
+  useEffect(() => {
+    if (unauthorized) {
+      client.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
+      client.getMutationCache().clear();
     }
-    return <main className="mx-auto max-w-xl p-6"><ErrorState error={auth.error} retry={() => void auth.refetch()} /></main>;
+  }, [unauthorized]);
+  if (unauthorized) {
+    return <Navigate to="/login" replace state={{ sessionExpired: auth.data !== undefined, returnTo: location.pathname + location.search }} />;
+  }
+  if (online && auth.isPending && !auth.isPaused) return <LoadingState />;
+  const error = auth.error ?? (!online || auth.isPaused ? new ApiError(0, "offline") : null);
+  const retry = () => void auth.refetch();
+  if (!auth.data || (error instanceof ApiError && error.code === "incompatible")) {
+    return <main className="mx-auto max-w-xl p-6"><ErrorState error={error ?? new ApiError(0, "network")} retry={retry} /></main>;
   }
   return (
-    <StudioEventsProvider><Suspense fallback={<LoadingState />}>
+    <StudioEventsProvider enabled={!error}>
       <Routes>
-        <Route element={<AppShell />}>
+        <Route element={<AppShell apiError={error} retryApi={retry} />}>
           <Route index element={<DashboardPage />} />
           <Route path="training" element={<TrainingPage />} />
           <Route path="monitoring" element={<MonitoringPage />} />
@@ -63,7 +87,7 @@ function ProtectedApp() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </Suspense></StudioEventsProvider>
+    </StudioEventsProvider>
   );
 }
 

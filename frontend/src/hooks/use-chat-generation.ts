@@ -26,12 +26,19 @@ export function useChatGeneration() {
       subscribe((event) => {
         setActive((previous) => reduceGeneration(previous, event));
         if (event.type === "generation.failed") setFailure({ chatId: event.chat_id, code: event.code ?? "generation_failed", detail: event.detail ?? null });
-        if (event.type === "generation.completed" || event.type === "generation.cancelled" || event.type === "generation.failed") {
-          void client.invalidateQueries({ queryKey: ["chat", event.chat_id] }).then(() => {
-            setActive((previous) => (previous?.requestId === event.request_id && TERMINAL_STATUSES.has(previous.status) ? null : previous));
+        if (event.type === "generation.snapshot" && event.status === "interrupted") {
+          setFailure({ chatId: event.chat_id, code: "server_restarted", detail: null });
+        }
+        const recoveredTerminal = event.type === "generation.snapshot" && event.status !== "queued" && event.status !== "running";
+        if (recoveredTerminal || event.type === "generation.completed" || event.type === "generation.cancelled" || event.type === "generation.failed") {
+          const queryKey = ["chat", event.chat_id];
+          void client.invalidateQueries({ queryKey }, { cancelRefetch: false }).then(() => {
+            if (client.getQueryState(queryKey)?.status === "success") {
+              setActive((previous) => (previous?.requestId === event.request_id && TERMINAL_STATUSES.has(previous.status) ? null : previous));
+            }
           });
         }
-        if (event.type === "generation.started") void client.invalidateQueries({ queryKey: ["chat", event.chat_id] });
+        if (event.type === "generation.started") void client.invalidateQueries({ queryKey: ["chat", event.chat_id] }, { cancelRefetch: false });
       }),
     [subscribe, client],
   );

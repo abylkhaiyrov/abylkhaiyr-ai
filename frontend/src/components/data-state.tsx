@@ -2,6 +2,7 @@ import { AlertCircle, Inbox } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { ApiError } from "@/lib/http";
 import { useApiError } from "@/hooks/use-api-error";
 
 export function LoadingState() {
@@ -33,6 +34,12 @@ export function ErrorState({ error, retry }: { error: Error; retry: () => void }
       <div>
         <p className="font-medium">{t("errors.load")}</p>
         <p className="mt-1 text-sm text-muted-foreground">{message(error)}</p>
+        {error instanceof ApiError && error.status > 0 ? (
+          <details className="mt-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer">{t("connection.details")}</summary>
+            <span>HTTP {error.status}</span>
+          </details>
+        ) : null}
         <Button variant="outline" size="sm" className="mt-3" onClick={retry}>{t("common.retry")}</Button>
       </div>
     </div>

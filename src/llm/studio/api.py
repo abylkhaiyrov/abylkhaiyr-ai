@@ -11,6 +11,7 @@ from llm.inference.sampling import SamplingParams
 from llm.studio.auth import AuthenticationError
 from llm.studio.model_manager import ModelManager, ModelManagerError
 from llm.studio.processes import ProcessError
+from llm.studio.protocol import API_VERSION, API_VERSION_HEADER
 from llm.studio.service import StudioService
 from llm.tokenizer.bpe import Message
 
@@ -116,7 +117,9 @@ def create_studio_router(
         identity = studio.auth.get_user(session_token)
         if identity is None:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+                headers={API_VERSION_HEADER: API_VERSION},
             )
         return identity
 
@@ -154,7 +157,7 @@ def create_studio_router(
             SESSION_COOKIE,
             token,
             httponly=True,
-            secure=False,
+            secure=request.url.scheme == "https",
             samesite="strict",
             max_age=12 * 60 * 60,
             path="/",
@@ -163,7 +166,7 @@ def create_studio_router(
             CSRF_COOKIE,
             csrf_token,
             httponly=False,
-            secure=False,
+            secure=request.url.scheme == "https",
             samesite="strict",
             max_age=12 * 60 * 60,
             path="/",
@@ -174,7 +177,11 @@ def create_studio_router(
         }
 
     @router.get("/auth/me")
-    def me(identity: Annotated[tuple[Any, str], Depends(current_identity)]) -> dict[str, Any]:
+    def me(
+        response: Response, identity: Annotated[tuple[Any, str], Depends(current_identity)]
+    ) -> dict[str, Any]:
+        response.headers[API_VERSION_HEADER] = API_VERSION
+        response.headers["Cache-Control"] = "no-store"
         user, _ = identity
         return {
             "username": user.username,

@@ -81,15 +81,16 @@ class StudioService:
                     if message is not None and message.status in {"queued", "running"}:
                         message.status = "interrupted"
 
-    def runtime_state(self) -> dict[str, Any]:
+    def runtime_state(self, registry: dict[str, Any] | None = None) -> dict[str, Any]:
         snapshot = self.runtime.snapshot()
         pipeline = snapshot["pipeline"]
         processes = self.processes.list()
-        registry = (
-            self.model_manager.registry()
-            if self.model_manager is not None
-            else {"roles": {}, "models": []}
-        )
+        if registry is None:
+            registry = (
+                self.model_manager.registry()
+                if self.model_manager is not None
+                else {"roles": {}, "models": []}
+            )
         return {
             "generated_at": snapshot["generated_at"],
             "pipeline": pipeline,

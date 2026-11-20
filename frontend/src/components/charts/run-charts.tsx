@@ -21,6 +21,7 @@ export function RunCharts({ runs, stage, markers }: { runs: RunSeries[]; stage: 
     },
     [format, i18n.language],
   );
+  const chartMarkers = runs.length === 1 ? [...new Set(markers)].map((x) => ({ x, label: String(x) })) : [];
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       {RUN_CHARTS.filter((chart) => !chart.stages || chart.stages.includes(stage)).map((chart) => {
@@ -41,7 +42,7 @@ export function RunCharts({ runs, stage, markers }: { runs: RunSeries[]; stage: 
             allowLog={chart.allowLog}
             formatY={formatter(chart.kind)}
             xLabel={t("chart.step")}
-            markers={runs.length === 1 ? (markers ?? []).map((x) => ({ x, label: String(x) })) : []}
+            markers={chartMarkers}
           />
         );
       })}

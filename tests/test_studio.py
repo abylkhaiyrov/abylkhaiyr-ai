@@ -281,6 +281,14 @@ def test_websocket_persistent_idempotency_across_restart(
         assert snapshot["type"] == "generation.snapshot"
         assert snapshot["status"] == "completed"
         assert snapshot["text"] == "hello world"
+    with client_two.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+        assert ws.receive_json()["type"] == "hello"
+        ws.send_json({"type": "subscribe", "channels": ["chat"], "resume": ["persist-req-1"]})
+        snapshot = ws.receive_json()
+        assert snapshot["type"] == "generation.snapshot"
+        assert snapshot["status"] == "completed"
+        assert snapshot["text"] == "hello world"
+        assert ws.receive_json()["request_ids"] == ["persist-req-1"]
     messages = client_two.get(f"/api/chats/{chat['id']}").json()["messages"]
     assert len(messages) == 2
     assert messages[1]["model_id"] == "test-model"

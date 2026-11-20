@@ -2,6 +2,7 @@ import { createContext, useContext } from "react";
 import type { GenerationEvent } from "@/lib/events";
 
 export type EventClient = {
+  reconnect: () => void;
   send: (event: Record<string, unknown>) => boolean;
   subscribe: (listener: (event: GenerationEvent) => void) => () => void;
 };

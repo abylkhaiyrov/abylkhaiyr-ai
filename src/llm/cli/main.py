@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
-import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -189,9 +187,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
         history.append(Message("assistant", "".join(reply)))
 
 
-def cmd_serve(args: argparse.Namespace) -> int:
-    import uvicorn
-
+def _serving_app(args: argparse.Namespace):
     from llm.api.server import create_app
     from llm.training.checkpoint import CheckpointManager
 
@@ -206,58 +202,54 @@ def cmd_serve(args: argparse.Namespace) -> int:
         else args.model_name
     )
     engine = _tokenizer_and_engine(str(resolved), args.tokenizer, args.device)
-    uvicorn.run(
-        create_app(
-            engine,
-            model_name,
-            studio_root=root,
-            checkpoint_id=checkpoint_id,
-            tokenizer_path=Path(args.tokenizer),
-        ),
-        host=args.host,
-        port=args.port,
-        log_level="info",
+    return create_app(
+        engine,
+        model_name,
+        studio_root=root,
+        checkpoint_id=checkpoint_id,
+        tokenizer_path=Path(args.tokenizer),
     )
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    uvicorn.run(_serving_app(args), host=args.host, port=args.port, log_level="info")
     return 0
 
 
 def cmd_studio(args: argparse.Namespace) -> int:
-    root = Path.cwd()
+    from llm.api.server import create_app
+    from llm.core.errors import ConfigError
+    from llm.studio.launcher import DEV_HOST, check_port, prepare_frontend, run_studio
+    from llm.studio.runtime import RuntimeState
+
+    root = Path.cwd().resolve()
     frontend = root / "frontend"
+    check_port(args.host, args.port)
+    if args.dev:
+        if args.host != DEV_HOST or args.port == args.frontend_port:
+            raise ConfigError(
+                "Studio --dev requires backend host 127.0.0.1 and distinct frontend and backend ports"
+            )
+        check_port(DEV_HOST, args.frontend_port)
     if args.checkpoint is None:
         checkpoint = _latest_checkpoint_root(root)
-        if checkpoint is None:
-            print("error: no checkpoint found; pass --checkpoint", file=sys.stderr)
-            return 2
-        args.checkpoint = str(checkpoint)
-    frontend_process: subprocess.Popen[bytes] | None = None
-    if shutil.which("npm") is None:
-        print("error: npm is required for Abylkhaiyr AI Studio", file=sys.stderr)
-        return 2
-    if not (frontend / "node_modules").is_dir():
-        install = subprocess.run(
-            ["npm", "ci", "--no-audit", "--no-fund"], cwd=frontend, check=False
+        args.checkpoint = str(checkpoint) if checkpoint else None
+    if args.device == "auto" and RuntimeState(root).training_active():
+        args.device = "cpu"
+    prepare_frontend(frontend, args.dev)
+    if args.checkpoint is None:
+        print(
+            "Studio started without a model. Load a checkpoint from Models when available.",
+            file=sys.stderr,
         )
-        if install.returncode != 0:
-            return install.returncode
-    if args.dev:
-        frontend_process = subprocess.Popen(
-            ["npm", "run", "dev", "--", "--host", "127.0.0.1"],
-            cwd=frontend,
+        app = create_app(
+            None, args.model_name, studio_root=root, tokenizer_path=Path(args.tokenizer)
         )
-    elif not (frontend / "dist" / "index.html").is_file():
-        build = subprocess.run(["npm", "run", "build"], cwd=frontend, check=False)
-        if build.returncode != 0:
-            return build.returncode
-    try:
-        return cmd_serve(args)
-    finally:
-        if frontend_process is not None and frontend_process.poll() is None:
-            frontend_process.terminate()
-            try:
-                frontend_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                frontend_process.kill()
+    else:
+        app = _serving_app(args)
+    return run_studio(app, frontend, args.host, args.port, args.frontend_port if args.dev else None)
 
 
 def cmd_benchmark(args: argparse.Namespace) -> int:
@@ -374,6 +366,7 @@ def build_parser() -> argparse.ArgumentParser:
     studio.add_argument("--port", type=int, default=8000)
     studio.add_argument("--model-name", default="llm-local")
     studio.add_argument("--dev", action="store_true")
+    studio.add_argument("--frontend-port", type=int, default=5173)
 
     benchmark = add("benchmark", cmd_benchmark)
     add_model_arguments(benchmark)

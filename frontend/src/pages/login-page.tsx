@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -13,11 +13,16 @@ export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const client = useQueryClient();
   const { locale, setLocale } = useUiStore();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const describe = useApiError();
-  const login = useMutation({ mutationFn: () => api.login(username, password), onSuccess: () => navigate("/") });
+  const login = useMutation({ mutationFn: () => api.login(username, password), onSuccess: () => {
+    client.removeQueries({ queryKey: ["me"], exact: true });
+    const target: unknown = location.state?.returnTo;
+    navigate(typeof target === "string" && /^\/(?![/\\])/.test(target) ? target : "/", { replace: true });
+  } });
   const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); login.mutate(); };
   return (
     <main className="grid min-h-dvh place-items-center p-4">

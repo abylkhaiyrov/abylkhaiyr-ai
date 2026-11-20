@@ -1,5 +1,6 @@
 export const ru = {
   app: { name: "Abylkhaiyr AI Studio", connected: "Подключено", reconnecting: "Переподключение…", expandSidebar: "Развернуть меню", collapseSidebar: "Свернуть меню", openMenu: "Открыть меню", skip: "К основному содержимому", logout: "Выйти" },
+  connection: { apiReady: "API доступен", apiUnavailable: "API недоступен", connecting: "Подключение к обновлениям", connected: "Обновления подключены", reconnecting: "Переподключение к обновлениям", disconnected: "Обновления приостановлены", stale: "Показаны последние полученные данные", retry: "Переподключить", details: "Технические подробности", noModel: "Модель не загружена", training: "Идёт обучение", idle: "Обучение не запущено", unknownTraining: "Состояние обучения неизвестно" },
   nav: { overview: "Обзор", chat: "Чат", training: "Обучение", monitoring: "Ресурсы", models: "Модели", datasets: "Датасеты", experiments: "Эксперименты", evaluation: "Оценка", processes: "Процессы", logs: "Логи", settings: "Настройки", more: "Управление" },
   common: { loading: "Загрузка данных", retry: "Повторить", unavailable: "Недоступно", cancel: "Отмена", save: "Сохранить", delete: "Удалить", close: "Закрыть", reset: "Сбросить", copied: "Скопировано" },
   status: { pending: "Ожидает", running: "Выполняется", completed: "Завершено", skipped: "Пропущено", failed: "Ошибка", interrupted: "Прервано", stopped: "Остановлено", pausing: "Пауза…", paused: "Пауза", busy: "Занято", ready: "Готово", active: "Активна", idle: "Простой" },
@@ -292,6 +293,7 @@ export const ru = {
     switching_model: "Загружается выбранный checkpoint.",
   },
   chatError: {
+    server_restarted: "Сервер перезапустился во время генерации. Сохранённая часть ответа доступна в чате.",
     model_not_loaded: "Модель не загружена. Выберите checkpoint.",
     queue_full: "Очередь генерации заполнена. Подождите или отмените запрос.",
     insufficient_memory_during_training: "Идёт обучение, и свободной RAM недостаточно для безопасной генерации на CPU.",
@@ -315,6 +317,9 @@ export const ru = {
   settings: { title: "Настройки", subtitle: "Внешний вид и безопасность", appearance: "Внешний вид", language: "Язык", theme: "Тема", light: "Светлая", dark: "Тёмная", security: "Пароль администратора" },
   auth: { title: "С возвращением", subtitle: "Войдите в локальное рабочее пространство", login: "Логин", password: "Пароль", signIn: "Войти", signingIn: "Вход…", initialCredentials: "Начальные данные: admin / admin. После входа смените пароль.", changePassword: "Сменить пароль", currentPassword: "Текущий пароль", newPassword: "Новый пароль", passwordHint: "Не менее 12 символов.", passwordUpdated: "Пароль изменён. Войдите снова.", invalid: "Неверный логин или пароль.", sessionExpired: "Сессия истекла. Войдите снова.", passwordRejected: "Не удалось изменить пароль. Проверьте текущий пароль и длину нового." },
   apiError: {
+    offline: "Браузер вне сети. Проверьте подключение.",
+    incompatible: "Версии интерфейса и API различаются. Запустите Studio из одной версии проекта и обновите страницу.",
+    unavailable: "Сервер Studio недоступен. Ожидаем восстановления связи.",
     network: "Нет связи с сервером. Проверьте, что Studio запущен.",
     html_response: "Сервер вернул страницу вместо данных. Вероятно, Studio нужно перезапустить после обновления.",
     invalid_response: "Сервер вернул данные в неожиданном формате.",

@@ -41,6 +41,7 @@ class ClientEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["subscribe", "ping", "generation.start", "generation.cancel"]
     channels: list[Literal["studio", "chat"]] = Field(default_factory=list, max_length=2)
+    resume: list[str] = Field(default_factory=list, max_length=8)
     request_id: str | None = Field(default=None, min_length=1, max_length=64)
     chat_id: str | None = Field(default=None, min_length=1, max_length=64)
     content: str | None = Field(default=None, max_length=10000)
@@ -111,8 +112,8 @@ class WebSocketManager:
 
     @staticmethod
     async def _close_quietly(socket: WebSocket, code: int) -> None:
-        with contextlib.suppress(RuntimeError, WebSocketDisconnect):
-            await socket.close(code=code)
+        with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError, TimeoutError):
+            await asyncio.wait_for(socket.close(code=code), timeout=SEND_TIMEOUT_SECONDS)
 
     async def writer(self, connection: Connection) -> None:
         try:
@@ -144,24 +145,28 @@ class WebSocketManager:
         return [item for item in self.connections if channel in item.channels]
 
     async def send_studio_state(self, targets: list[Connection], force: bool = False) -> None:
-        runtime, registry = await asyncio.gather(
-            asyncio.to_thread(self.studio.runtime_state),
-            asyncio.to_thread(self.model_manager.registry),
-        )
+        def collect() -> tuple[dict[str, Any], dict[str, Any]]:
+            registry = self.model_manager.registry()
+            return self.studio.runtime_state(registry), registry
+
+        runtime, registry = await asyncio.to_thread(collect)
         runtime_print, models_print = (
             fingerprint(runtime | {"generated_at": 0}),
             fingerprint(registry),
         )
         if force or runtime_print != self.last_runtime:
-            self.last_runtime = runtime_print
+            if not force:
+                self.last_runtime = runtime_print
             for item in targets:
                 self.enqueue(item, make_event("runtime.update", data=runtime))
         if force or models_print != self.last_models:
-            self.last_models = models_print
+            if not force:
+                self.last_models = models_print
             for item in targets:
                 self.enqueue(item, make_event("models.update", data=registry))
         if force or time.monotonic() - self.last_system >= SYSTEM_SECONDS:
-            self.last_system = time.monotonic()
+            if not force:
+                self.last_system = time.monotonic()
             system = await asyncio.to_thread(self.studio.record_system_metric)
             for item in targets:
                 self.enqueue(item, make_event("system.update", data=system))
@@ -178,7 +183,8 @@ class WebSocketManager:
             return
         start = cursor if run == previous_run and not reset else -1
         fresh = [row for row in rows if row["step"] >= start][-ROW_BATCH_LIMIT:]
-        self.metric_cursor = (run, int(rows[-1]["step"]), signature)
+        if not reset:
+            self.metric_cursor = (run, int(rows[-1]["step"]), signature)
         for item in targets:
             self.enqueue(item, make_event("metrics.append", run=run, rows=fresh, reset=reset))
 
@@ -194,6 +200,8 @@ class WebSocketManager:
             raise
         except Exception:
             logger.exception("Studio broadcaster stopped")
+            for target in self.subscribers("studio"):
+                self.drop(target, 1011)
         finally:
             self.broadcaster = None
 
@@ -260,13 +268,16 @@ class WebSocketManager:
                         await self.dispatch(connection, event)
                 except (ValidationError, ValueError):
                     self.enqueue(connection, make_event("error", code="invalid_event"))
-        except (WebSocketDisconnect, TimeoutError, RuntimeError):
+        except TimeoutError:
+            await self._close_quietly(socket, 1001)
+        except (WebSocketDisconnect, RuntimeError, OSError):
             pass
         finally:
             connection.closed = True
             self.connections.discard(connection)
             guard.cancel()
             writer.cancel()
+            await asyncio.gather(guard, writer, return_exceptions=True)
 
     async def heartbeat(self, connection: Connection, token: str | None) -> None:
         try:
@@ -284,13 +295,27 @@ class WebSocketManager:
             self.enqueue(connection, make_event("pong"))
         elif event.type == "subscribe":
             connection.channels = set(event.channels)
+            recovered: set[str] = set()
             if "chat" in connection.channels:
-                for state in self.scheduler.active_states_for_user(connection.user_id):
+                active = self.scheduler.active_states_for_user(connection.user_id)
+                recovered = {state.request_id for state in active}
+                for state in active:
                     self.enqueue(connection, self.scheduler._state_snapshot(state))
+                for request_id in dict.fromkeys(event.resume):
+                    if request_id in recovered or not 1 <= len(request_id) <= 64:
+                        continue
+                    job = await asyncio.to_thread(
+                        self.studio.get_generation_job, connection.user_id, request_id
+                    )
+                    if job is not None:
+                        self.enqueue(connection, self.scheduler._job_snapshot(job))
+                        recovered.add(request_id)
             if "studio" in connection.channels:
                 await self.send_studio_state([connection], force=True)
                 await self.send_metric_rows([connection], reset=True)
                 self.ensure_broadcaster()
+            if "chat" in connection.channels:
+                self.enqueue(connection, make_event("chat.ready", request_ids=sorted(recovered)))
         elif event.type == "generation.cancel":
             if event.request_id:
                 await self.scheduler.cancel(connection.user_id, event.request_id, self.publish)
