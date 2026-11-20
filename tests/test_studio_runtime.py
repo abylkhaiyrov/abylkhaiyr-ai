@@ -37,6 +37,18 @@ def fake_process(root: Path) -> Mock:
     return process
 
 
+def test_gpu_training_is_detected_outside_pipeline(tmp_path, monkeypatch):
+    process = fake_process(tmp_path)
+    process.info["cmdline"] = [
+        "python",
+        "scripts/train_gpu.py",
+        "--config",
+        "configs/tiny_gpu_sft.yaml",
+    ]
+    monkeypatch.setattr("llm.studio.runtime.psutil.process_iter", lambda *args: [process])
+    assert RuntimeState(tmp_path).training_active()
+
+
 def test_snapshot_links_state_configuration_and_metrics(tmp_path, monkeypatch):
     write_project(
         tmp_path,

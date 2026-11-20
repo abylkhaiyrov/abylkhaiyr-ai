@@ -1,5 +1,7 @@
 .venv/
 .runtime/
+data/gpu_chat/
+data/gpu_chat_source/
 frontend/node_modules/
 frontend/dist/
 studio/*.db

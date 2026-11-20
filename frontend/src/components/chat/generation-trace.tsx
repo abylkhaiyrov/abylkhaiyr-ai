@@ -19,7 +19,7 @@ function chips(event: ReasoningStageEvent, t: Translate): string[] {
   if (typeof data.output_tokens === "number") result.push(t("chat.tokens", { count: data.output_tokens }));
   if (data.verified === true) result.push(t("trace.verified"));
   if (typeof data.device === "string") result.push(data.device.toUpperCase());
-  if (typeof data.checkpoint_id === "string") result.push(data.checkpoint_id.split("/").slice(-1)[0]);
+  if (typeof data.checkpoint_id === "string") result.push(data.checkpoint_id.replace(/\\/g, "/").split("/").slice(-1)[0]);
   return result;
 }
 

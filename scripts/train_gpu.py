@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import signal
 import threading
@@ -14,7 +15,9 @@ from llm.training.session import run_training
 
 
 def main() -> int:
-    config = load_experiment_config("configs/tiny_gpu.yaml")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="configs/tiny_gpu.yaml")
+    config = load_experiment_config(parser.parse_args().config)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is unavailable; refusing to run this GPU session on CPU")
     torch.set_float32_matmul_precision("high")

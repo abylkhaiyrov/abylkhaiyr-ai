@@ -262,10 +262,25 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 
 
 def _latest_checkpoint_root(root: Path) -> Path | None:
-    metadata = list((root / "checkpoints").glob("*/step-*/meta.json"))
+    metadata = [
+        path
+        for path in (root / "checkpoints").glob("*/step-*/meta.json")
+        if not path.parent.name.endswith(".tmp")
+    ]
     if not metadata:
         return None
-    return max(metadata, key=lambda item: item.stat().st_mtime).parent.parent
+    dialogue = [
+        path
+        for path in metadata
+        if any(stage in path.parent.parent.name.split("_") for stage in ("sft", "dpo"))
+    ]
+    selected = max(dialogue or metadata, key=lambda item: item.stat().st_mtime).parent.parent
+    if dialogue:
+        for label in ("best", f"{selected.name}_best"):
+            best = selected / label
+            if (best / "meta.json").is_file():
+                return best
+    return selected
 
 
 def add_sampling_arguments(parser: argparse.ArgumentParser) -> None:

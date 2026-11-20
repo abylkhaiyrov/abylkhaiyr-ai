@@ -220,11 +220,14 @@ class RuntimeState:
             return found
 
     def _scan_processes(self) -> dict[str, Any] | None:
-        script = (self.root / "scripts" / "run_pipeline.py").resolve()
+        scripts = {
+            (self.root / "scripts" / name).resolve()
+            for name in ("run_pipeline.py", "train_gpu.py")
+        }
         for process in psutil.process_iter(["pid", "cmdline", "create_time"]):
             try:
                 command = process.info["cmdline"] or []
-                if not any((self.root / arg).resolve() == script for arg in command[1:]):
+                if not any((self.root / arg).resolve() in scripts for arg in command[1:]):
                     continue
                 if Path(process.cwd()).resolve() != self.root:
                     continue
