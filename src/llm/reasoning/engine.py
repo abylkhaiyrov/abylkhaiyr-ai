@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import threading
 import time
 from collections.abc import Callable
@@ -10,6 +9,7 @@ from typing import Any, Protocol
 from llm.evaluation.metrics import repeated_ngram_ratio
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
+from llm.reasoning.intent import classify_intent, classify_task
 from llm.reasoning.tools import (
     answers_match,
     extract_code,
@@ -64,29 +64,8 @@ class Solution:
     stopped_by_budget: bool = False
 
 
-MATH_HINTS = re.compile(
-    r"\d\s*[-+*/^=]\s*\d|\b(solve|compute|integral|derivative|probability|mean|determinant|equation|percent|сколько|вычисли|реши|есеп|тап)\b",
-    re.IGNORECASE,
-)
-CODE_HINTS = re.compile(
-    r"```|\b(function|def |class |SQL|query|python|java|javascript|typescript|функци|код)\b",
-    re.IGNORECASE,
-)
-LOGIC_HINTS = re.compile(
-    r"\b(taller|shorter|older|younger|heavier|faster|выше|ниже|старше)\b", re.IGNORECASE
-)
 GENERAL_MIN_QUALITY = 0.7
 GENERAL_MIN_TOKENS = 3
-
-
-def classify_task(question: str) -> str:
-    if LOGIC_HINTS.search(question):
-        return "logic"
-    if CODE_HINTS.search(question):
-        return "code"
-    if MATH_HINTS.search(question):
-        return "math"
-    return "general"
 
 
 class Verifier(Protocol):
@@ -187,7 +166,13 @@ class ReasoningEngine:
         repetition_penalty: float = 1.0,
     ) -> Solution:
         kind = classify_task(question)
-        self._emit(on_event, "task_classification", "completed", kind=kind)
+        self._emit(
+            on_event,
+            "task_classification",
+            "completed",
+            kind=kind,
+            intent=classify_intent(question),
+        )
         budget = budget or Budget()
         if kind == "general":
             budget = replace(budget, max_candidates=GENERAL_CANDIDATES, max_retries=1)
@@ -295,7 +280,9 @@ class ReasoningEngine:
                 )
                 text = repaired
             elif problem.kind == "code":
-                self._emit(on_event, "tool_execution", "running", attempt=attempt + 1, tool="python")
+                self._emit(
+                    on_event, "tool_execution", "running", attempt=attempt + 1, tool="python"
+                )
                 code = extract_code(text)
                 valid_code = is_valid_python(code)
                 self._emit(

@@ -147,5 +147,7 @@ def test_chat_stops_on_role_special_tokens_and_continuation_streams(engine, monk
     assert "<user>" not in reply.text
     assert reply.text == "hi"
     assert reply.finish_reason == "stop"
-    continued = "".join(engine.stream_chat_continuation([Message("user", "hello")], "part ", greedy()))
+    continued = "".join(
+        engine.stream_chat_continuation([Message("user", "hello")], "part ", greedy())
+    )
     assert continued == "hi"

@@ -15,6 +15,7 @@ class SamplingParams:
     top_k: int = 0
     top_p: float = 1.0
     repetition_penalty: float = 1.0
+    penalize_prompt: bool = False
     greedy: bool = False
     beam_width: int = 1
     length_penalty: float = 1.0

@@ -90,7 +90,7 @@ class WebSocketManager:
         self.last_runtime = ""
         self.last_models = ""
         self.last_system = 0.0
-        self.metric_cursor: tuple[str | None, int] = (None, -1)
+        self.metric_cursor: tuple[str | None, int, str] = (None, -1, "")
 
     def enqueue(self, connection: Connection, payload: dict[str, Any]) -> None:
         if connection.closed:
@@ -169,16 +169,18 @@ class WebSocketManager:
     async def send_metric_rows(self, targets: list[Connection], reset: bool) -> None:
         rows = await asyncio.to_thread(self.studio.metrics, None, 3000)
         run = self.studio.active_run_name()
-        previous_run, cursor = (None, -1) if reset else self.metric_cursor
-        if run != previous_run:
-            cursor = -1
-        fresh = [row for row in rows if row["step"] > cursor][-ROW_BATCH_LIMIT:]
-        if run is not None and (fresh or reset):
-            self.metric_cursor = (run, max((int(row["step"]) for row in fresh), default=cursor))
-            for item in targets:
-                self.enqueue(item, make_event("metrics.append", run=run, rows=fresh, reset=reset))
-        else:
-            self.metric_cursor = (run, cursor)
+        if run is None or not rows:
+            self.metric_cursor = (run, -1, "")
+            return
+        signature = fingerprint(rows[-2:])
+        previous_run, cursor, previous_signature = self.metric_cursor
+        if not reset and run == previous_run and signature == previous_signature:
+            return
+        start = cursor if run == previous_run and not reset else -1
+        fresh = [row for row in rows if row["step"] >= start][-ROW_BATCH_LIMIT:]
+        self.metric_cursor = (run, int(rows[-1]["step"]), signature)
+        for item in targets:
+            self.enqueue(item, make_event("metrics.append", run=run, rows=fresh, reset=reset))
 
     async def broadcast_loop(self) -> None:
         try:

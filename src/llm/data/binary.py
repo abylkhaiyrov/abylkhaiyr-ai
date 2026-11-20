@@ -16,6 +16,7 @@ UINT16_LIMIT = 1 << 16
 FLUSH_TOKENS = 1 << 20
 IGNORE_INDEX = -100
 TOKENIZE_BATCH = 1000
+PAD_MULTIPLE = 64
 
 
 def with_extension(prefix: Path, extension: str) -> Path:
@@ -89,8 +90,9 @@ def tokenize_corpus_groups(
 def tokenize_sft_split(sft_file: Path, prefix: Path, tokenizer: BPETokenizer) -> int:
     dtype = token_dtype(tokenizer.vocab_size)
     lengths: list[int] = []
-    ids_path, labels_path = with_extension(prefix, ".ids.bin"), with_extension(
-        prefix, ".labels.bin"
+    ids_path, labels_path = (
+        with_extension(prefix, ".ids.bin"),
+        with_extension(prefix, ".labels.bin"),
     )
     with ids_path.open("wb") as ids_handle, labels_path.open("wb") as labels_handle:
         for row in read_jsonl(sft_file):
@@ -167,6 +169,7 @@ class ConversationLoader:
         pad_id: int,
         seed: int,
         shuffle: bool = True,
+        pad_multiple: int = PAD_MULTIPLE,
     ) -> None:
         prefix = Path(prefix)
         self.ids = np.memmap(with_extension(prefix, ".ids.bin"), dtype=dtype, mode="r")
@@ -179,6 +182,7 @@ class ConversationLoader:
         self.max_length = max_length
         self.batch_size = batch_size
         self.pad_id = pad_id
+        self.pad_multiple = pad_multiple
         self.seed = seed
         self.shuffle = shuffle
         self.epoch = 0
@@ -209,7 +213,9 @@ class ConversationLoader:
             rows.append(
                 (self.ids[start:end].astype(np.int64), self.labels[start:end].astype(np.int64))
             )
-        width = max(len(ids) for ids, _ in rows)
+        longest = max(len(ids) for ids, _ in rows)
+        multiple = self.pad_multiple
+        width = min(-(-longest // multiple) * multiple, self.max_length)
         inputs = torch.full((len(rows), width), self.pad_id, dtype=torch.long)
         targets = torch.full((len(rows), width), IGNORE_INDEX, dtype=torch.long)
         for row, (ids, labels) in enumerate(rows):

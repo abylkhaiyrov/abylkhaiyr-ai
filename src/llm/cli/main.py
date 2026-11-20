@@ -199,9 +199,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     latest = CheckpointManager(path, keep=1).latest_valid() if path.is_dir() else None
     resolved = (latest or path).resolve()
     root = Path.cwd().resolve()
-    checkpoint_id = (
-        str(resolved.relative_to(root)) if root in resolved.parents else str(resolved)
-    )
+    checkpoint_id = str(resolved.relative_to(root)) if root in resolved.parents else str(resolved)
     model_name = (
         resolved.parent.name
         if args.model_name == "llm-local" and resolved.parent.name
@@ -237,7 +235,9 @@ def cmd_studio(args: argparse.Namespace) -> int:
         print("error: npm is required for Abylkhaiyr AI Studio", file=sys.stderr)
         return 2
     if not (frontend / "node_modules").is_dir():
-        install = subprocess.run(["npm", "ci", "--no-audit", "--no-fund"], cwd=frontend, check=False)
+        install = subprocess.run(
+            ["npm", "ci", "--no-audit", "--no-fund"], cwd=frontend, check=False
+        )
         if install.returncode != 0:
             return install.returncode
     if args.dev:

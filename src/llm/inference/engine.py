@@ -89,6 +89,7 @@ class InferenceEngine:
         prompt_ids = self.fit_prompt(prompt_ids, params.max_new_tokens)
         generator = self._generator(params)
         history = list(prompt_ids)
+        penalty_start = 0 if params.penalize_prompt else len(prompt_ids)
         cache = self.model.new_cache() if params.use_cache else None
         pending = torch.tensor([prompt_ids], device=self.device)
         for _ in range(params.max_new_tokens):
@@ -98,7 +99,7 @@ class InferenceEngine:
                 logits = self.model(pending, cache=cache)[0, -1]
             else:
                 logits = self.model(torch.tensor([history], device=self.device))[0, -1]
-            token = self._next_token(logits, history, params, generator)
+            token = self._next_token(logits, history[penalty_start:], params, generator)
             history.append(token)
             yield token
             if token == self.tokenizer.eos_id:
@@ -216,7 +217,8 @@ class InferenceEngine:
                 if finished[row]:
                     next_tokens.append(pad)
                     continue
-                token = self._next_token(logits[row], histories[row], params, generator)
+                scope = histories[row] if params.penalize_prompt else outputs[row]
+                token = self._next_token(logits[row], scope, params, generator)
                 histories[row].append(token)
                 if token == self.tokenizer.eos_id:
                     finished[row], reasons[row] = True, "stop"

@@ -94,7 +94,14 @@ def case(
 
 
 CASES: tuple[ConversationCase, ...] = (
-    case("greet_en", "greeting", "en", "Hello!", any_of("hello", "hi", "help"), script("en")),
+    case(
+        "greet_en",
+        "greeting",
+        "en",
+        "Hi there, nice to meet you!",
+        any_of("hello", "hi", "help", "nice"),
+        script("en"),
+    ),
     case(
         "greet_ru",
         "greeting",
@@ -111,9 +118,30 @@ CASES: tuple[ConversationCase, ...] = (
         any_of("сәлем", "сәлеметсіз", "көмектес", "жақсы"),
         script("kk"),
     ),
-    case("id_who_en", "identity", "en", "Who are you?", any_of("abylkhaiyr"), script("en")),
-    case("id_name_ru", "identity", "ru", "Как тебя зовут?", any_of("abylkhaiyr"), script("ru")),
-    case("id_who_kk", "identity", "kk", "Сен кімсің?", any_of("abylkhaiyr"), script("kk")),
+    case(
+        "id_who_en",
+        "identity",
+        "en",
+        "Could you tell me who you are?",
+        any_of("abylkhaiyr"),
+        script("en"),
+    ),
+    case(
+        "id_name_ru",
+        "identity",
+        "ru",
+        "Как к тебе можно обращаться?",
+        any_of("abylkhaiyr"),
+        script("ru"),
+    ),
+    case(
+        "id_who_kk",
+        "identity",
+        "kk",
+        "Өзің кімсің, таныстырып жіберші?",
+        any_of("abylkhaiyr"),
+        script("kk"),
+    ),
     case(
         "id_abilities_en",
         "identity",

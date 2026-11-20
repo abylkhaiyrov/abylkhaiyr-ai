@@ -252,3 +252,105 @@ def test_export_release_creates_bundle(tmp_path: Path, model_config: ModelConfig
     )
     assert (out / "model.safetensors").is_file()
     assert "v0.1.0" in (out / "MODEL_CARD.md").read_text(encoding="utf-8")
+
+
+def _pipeline_fixture(tmp_path: Path, model_config: ModelConfig, tokenizer, with_preference: bool):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    if with_preference:
+        (data_dir / "preference").mkdir()
+        (data_dir / "preference" / "train.jsonl").write_text('{"chosen":[],"rejected":[]}\n')
+    tok_dir = tmp_path / "tok"
+    tokenizer.save(tok_dir)
+    base_ckpt = _make_fake_ckpt(tmp_path / "base", model_config, 10)
+    paths = {}
+    for stage in ("pretrain", "sft", "dpo"):
+        paths[stage] = tmp_path / f"{stage}.yaml"
+        _write_yaml_config(paths[stage], stage, tmp_path / f"ckpt_{stage}", data_dir)
+    config = PipelineConfig(
+        pretrain_config=str(paths["pretrain"]),
+        sft_config=str(paths["sft"]),
+        dpo_config=str(paths["dpo"]),
+        baseline_checkpoint=str(base_ckpt),
+        tokenizer_path=str(tok_dir),
+        data_dir=str(data_dir),
+        state_dir=str(tmp_path / "state"),
+        release_dir=str(tmp_path / "releases"),
+        device="cpu",
+    )
+    return config, data_dir
+
+
+def test_interrupted_training_is_not_reported_as_completed(
+    tmp_path: Path, model_config: ModelConfig, tokenizer
+):
+    config, _ = _pipeline_fixture(tmp_path, model_config, tokenizer, False)
+
+    def interrupted(cfg: ExperimentConfig, resume: bool) -> dict:
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10)
+        return {"final_step": 5, "interrupted": True}
+
+    pipeline = TrainingPipeline(config, train_fn=interrupted, eval_fn=lambda *a: ({}, []))
+    with pytest.raises(TrainingError, match="interrupted"):
+        pipeline.run()
+    assert pipeline.state["stages"]["pretrain"]["status"] == "failed"
+
+
+def _scripted_eval(sft_conv: float, pre_conv: float):
+    def fake_eval(ckpt: str, tok: str, data: str, dev: str, off: bool, name: str):
+        conv = sft_conv if name.startswith(("sft", "dpo")) else pre_conv
+        ppl = 80.0 if name == "baseline_tiny_session" else 40.0
+        return {
+            "test_perplexity": ppl,
+            "repeated_trigram_ratio_greedy": 0.1,
+            "non_empty_response_rate": 1.0,
+            "conv_pass_rate": conv,
+        }, []
+
+    return fake_eval
+
+
+def test_dpo_is_skipped_when_sft_does_not_improve_conversations(
+    tmp_path: Path, model_config: ModelConfig, tokenizer
+):
+    config, _ = _pipeline_fixture(tmp_path, model_config, tokenizer, True)
+
+    def train(cfg: ExperimentConfig, resume: bool) -> dict:
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10)
+        return {"final_step": 10}
+
+    state = TrainingPipeline(config, train_fn=train, eval_fn=_scripted_eval(0.1, 0.2)).run()
+    assert state["stages"]["dpo"]["status"] == "skipped"
+    assert "conversational" in state["stages"]["dpo"]["reason"]
+    assert state["artifacts"]["final_checkpoint"] == state["artifacts"]["sft_checkpoint"]
+
+
+def test_dpo_stage_builds_preference_corpus_from_sft_policy(
+    tmp_path: Path, model_config: ModelConfig, tokenizer
+):
+    config, data_dir = _pipeline_fixture(tmp_path, model_config, tokenizer, False)
+    config.build_preference = True
+    built: list[str] = []
+
+    def train(cfg: ExperimentConfig, resume: bool) -> dict:
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10)
+        return {"final_step": 10}
+
+    def preference(cfg: ExperimentConfig, policy: str, tokenizer_path: str, device: str) -> dict:
+        built.append(policy)
+        target = Path(cfg.train.data_dir) / "preference"
+        target.mkdir(exist_ok=True)
+        (target / "train.jsonl").write_text('{"chosen":[],"rejected":[]}\n')
+        return {"pairs": 1}
+
+    pipeline = TrainingPipeline(
+        config,
+        train_fn=train,
+        eval_fn=_scripted_eval(0.5, 0.1),
+        preference_fn=preference,
+    )
+    state = pipeline.run()
+    assert len(built) == 1 and built[0] == state["artifacts"]["sft_checkpoint"]
+    assert state["artifacts"]["preference_corpus"] == {"pairs": 1}
+    assert state["stages"]["dpo"]["status"] == "completed"
+    assert (data_dir / "preference" / "train.jsonl").is_file()

@@ -264,3 +264,33 @@ def test_mixture_loader_weights_resume_and_groups(tmp_path):
     expected = [mixture.next_batch()[0].tolist() for _ in range(5)]
     mixture.load_state_dict(state)
     assert [mixture.next_batch()[0].tolist() for _ in range(5)] == expected
+
+
+def test_conversation_batches_pad_to_fixed_multiples_without_changing_targets(tmp_path, tokenizer):
+    import numpy as np
+
+    from llm.data.binary import IGNORE_INDEX, ConversationLoader, tokenize_sft_split
+    from llm.tokenizer.bpe import Message
+
+    rows = [
+        {"messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}]},
+        {
+            "messages": [
+                {"role": "user", "content": "hello " * 6},
+                {"role": "assistant", "content": "ok"},
+            ]
+        },
+    ]
+    source = tmp_path / "rows.jsonl"
+    source.write_text("\n".join(__import__("json").dumps(r) for r in rows), encoding="utf-8")
+    prefix = tmp_path / "split"
+    tokenize_sft_split(source, prefix, tokenizer)
+    loader = ConversationLoader(prefix, np.dtype(np.uint16), 128, 2, tokenizer.pad_id, 0, False)
+    inputs, targets = loader.next_batch()
+    assert (inputs.shape[1] + 1) % 64 == 0 or inputs.shape[1] + 1 == 128
+    ids, labels = tokenizer.encode_conversation_with_labels(
+        [Message("user", "hi"), Message("assistant", "yo")], IGNORE_INDEX
+    )
+    supervised = [int(t) for t in targets[0] if t != IGNORE_INDEX]
+    assert supervised == [t for t in labels[1:] if t != IGNORE_INDEX]
+    assert (inputs[0, len(ids) :] == tokenizer.pad_id).all()

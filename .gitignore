@@ -22,3 +22,5 @@ data/v2/tokens/
 data/v2/preference/
 releases/
 *.log
+data/v3/
+data/v*/manifest.json.bak

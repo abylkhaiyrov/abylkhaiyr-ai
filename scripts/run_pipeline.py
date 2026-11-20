@@ -19,6 +19,7 @@ def main() -> int:
     parser.add_argument("--version", default="v0.1.0")
     parser.add_argument("--device", default="mps")
     parser.add_argument("--online-eval", action="store_true")
+    parser.add_argument("--build-preference", action="store_true")
     args = parser.parse_args()
     config = PipelineConfig(
         pretrain_config=args.pretrain,
@@ -32,6 +33,7 @@ def main() -> int:
         release_version=args.version,
         device=args.device,
         offline_eval=not args.online_eval,
+        build_preference=args.build_preference,
     )
     state = TrainingPipeline(config).run()
     print(json.dumps(state, indent=2, ensure_ascii=False))

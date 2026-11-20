@@ -13,12 +13,14 @@ from typing import Any
 from llm.core.config import ExperimentConfig, load_experiment_config
 from llm.core.errors import TrainingError
 from llm.core.hardware import resolve_device
+from llm.data.preference_builder import PreferenceBuildConfig, build_preference_corpus
 from llm.evaluation.engine import EvaluationConfig, Evaluator, suite_count
 from llm.evaluation.hooks import EvaluationHooks, StageEvaluationHooks
 from llm.evaluation.registry import record_experiment
 from llm.inference.engine import InferenceEngine
+from llm.inference.sampling import SamplingParams
 from llm.progress import ProgressTracker
-from llm.tokenizer.bpe import BPETokenizer
+from llm.tokenizer.bpe import BPETokenizer, Message
 from llm.training.checkpoint import CheckpointManager, load_model_for_inference
 from llm.training.release import export_release
 from llm.training.session import run_training
@@ -56,6 +58,7 @@ class PipelineConfig:
     release_version: str = "v0.1.0"
     device: str = "mps"
     offline_eval: bool = True
+    build_preference: bool = False
     gates: QualityGates = field(default_factory=QualityGates)
 
 
@@ -66,6 +69,24 @@ def _now() -> str:
 def _default_train(config: ExperimentConfig, resume: bool) -> dict[str, Any]:
     result = run_training(config, resume=resume, max_restarts=2)
     return dict(result.__dict__)
+
+
+def _default_preference(
+    config: ExperimentConfig, policy_checkpoint: str, tokenizer_path: str, device: str
+) -> dict[str, object]:
+    tokenizer = BPETokenizer.load(tokenizer_path)
+    resolved = CheckpointManager(policy_checkpoint, keep=1).latest_valid() or Path(
+        policy_checkpoint
+    )
+    model, _, _ = load_model_for_inference(resolved)
+    engine = InferenceEngine(model, tokenizer, resolve_device(device))
+    params = SamplingParams(max_new_tokens=96, temperature=0.8, top_p=0.95, seed=config.train.seed)
+
+    def sampler(messages: list[dict[str, str]]) -> str:
+        return engine.chat([Message(m["role"], m["content"]) for m in messages], params).text
+
+    build = PreferenceBuildConfig(data_dir=config.train.data_dir, seed=config.train.seed)
+    return build_preference_corpus(build, tokenizer, sampler)
 
 
 def _default_eval(
@@ -124,8 +145,10 @@ class TrainingPipeline:
             [str, str, str, str, bool, str], tuple[dict[str, float], list[dict[str, str]]]
         ] = _default_eval,
         export_fn: Callable[..., Path] = export_release,
+        preference_fn: Callable[..., dict[str, object]] = _default_preference,
     ) -> None:
         self.config = config
+        self.preference_fn = preference_fn
         self.train_fn = train_fn
         self.eval_fn = eval_fn
         self.export_fn = export_fn
@@ -219,9 +242,15 @@ class TrainingPipeline:
         handle.finish(checkpoints=len(jobs))
         return outcomes
 
+    def _train(self, cfg: ExperimentConfig) -> dict[str, Any]:
+        result = self.train_fn(cfg, True)
+        if result.get("interrupted"):
+            raise TrainingError(f"training of {cfg.name} was interrupted before completion")
+        return result
+
     def _stage_pretrain(self) -> dict[str, Any]:
         cfg = load_experiment_config(self.config.pretrain_config)
-        result = self.train_fn(cfg, True)
+        result = self._train(cfg)
         self.state["artifacts"]["pretrain_dir"] = cfg.train.checkpoint_dir
         self.state["artifacts"]["pretrain_alias"] = cfg.train.checkpoint_alias
         return {"metrics": result}
@@ -276,7 +305,7 @@ class TrainingPipeline:
     def _stage_sft(self) -> dict[str, Any]:
         cfg = load_experiment_config(self.config.sft_config)
         cfg.train.init_from = self.state["artifacts"]["best_pretrain_checkpoint"]
-        result = self.train_fn(cfg, True)
+        result = self._train(cfg)
         best = _resolve_best_checkpoint(Path(cfg.train.checkpoint_dir), cfg.train.checkpoint_alias)
         self.state["artifacts"]["sft_checkpoint"] = str(best)
         return {"metrics": result, "checkpoint": str(best)}
@@ -310,18 +339,30 @@ class TrainingPipeline:
                 False,
                 f"SFT non_empty_response_rate {non_empty:.2f} < {gates.min_non_empty_rate:.2f}",
             )
+        pre_conv = float(pre_metrics.get("conv_pass_rate", 0.0))
+        sft_conv = float(sft_metrics.get("conv_pass_rate", 0.0))
+        if "conv_pass_rate" in sft_metrics and sft_conv <= pre_conv:
+            return (
+                False,
+                f"SFT conversational pass rate {sft_conv:.3f} did not improve on {pre_conv:.3f}",
+            )
         return True, "ok"
 
     def _stage_dpo(self) -> dict[str, Any]:
         ok, reason = self._sft_quality_ok()
         if not ok:
             return {"_status": "skipped", "reason": reason}
-        pref_file = Path(self.config.data_dir) / "preference" / "train.jsonl"
-        if not pref_file.is_file():
-            return {"_status": "skipped", "reason": f"missing preference data: {pref_file}"}
         cfg = load_experiment_config(self.config.dpo_config)
         cfg.train.init_from = self.state["artifacts"]["sft_checkpoint"]
-        result = self.train_fn(cfg, True)
+        if self.config.build_preference:
+            self.state["artifacts"]["preference_corpus"] = self.preference_fn(
+                cfg, cfg.train.init_from, self.config.tokenizer_path, self.config.device
+            )
+            self._save_state()
+        pref_file = Path(cfg.train.data_dir) / "preference" / "train.jsonl"
+        if not pref_file.is_file():
+            return {"_status": "skipped", "reason": f"missing preference data: {pref_file}"}
+        result = self._train(cfg)
         best = _resolve_best_checkpoint(Path(cfg.train.checkpoint_dir), cfg.train.checkpoint_alias)
         self.state["artifacts"]["dpo_checkpoint"] = str(best)
         return {"metrics": result, "checkpoint": str(best)}
@@ -342,6 +383,8 @@ class TrainingPipeline:
                 <= self.config.gates.max_repetition_ratio
                 and float(dpo_metrics.get("instruction_following_accuracy", 0.0))
                 >= float(sft_metrics.get("instruction_following_accuracy", 0.0))
+                and float(dpo_metrics.get("conv_pass_rate", 1.0))
+                >= float(sft_metrics.get("conv_pass_rate", 0.0))
             )
             if dpo_ok:
                 self.state["artifacts"]["final_checkpoint"] = dpo_ckpt

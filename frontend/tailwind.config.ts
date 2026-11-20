@@ -1,21 +1,42 @@
 import type { Config } from "tailwindcss";
 
+const token = (name: string) => `hsl(var(--${name}) / <alpha-value>)`;
+
 export default {
   darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        card: "hsl(var(--card))",
-        "card-foreground": "hsl(var(--card-foreground))",
-        muted: "hsl(var(--muted))",
-        "muted-foreground": "hsl(var(--muted-foreground))",
-        border: "hsl(var(--border))",
-        primary: "hsl(var(--primary))",
-        "primary-foreground": "hsl(var(--primary-foreground))",
-        destructive: "hsl(var(--destructive))"
+        background: token("background"),
+        foreground: token("foreground"),
+        card: token("card"),
+        "card-foreground": token("card-foreground"),
+        muted: token("muted"),
+        "muted-foreground": token("muted-foreground"),
+        border: token("border"),
+        primary: token("primary"),
+        "primary-foreground": token("primary-foreground"),
+        destructive: token("destructive"),
+        success: token("success"),
+        warning: token("warning"),
+        info: token("info"),
+      },
+      borderRadius: { lg: "0.625rem", xl: "0.875rem" },
+      keyframes: {
+        indeterminate: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(350%)" },
+        },
+        caret: { "0%,100%": { opacity: "1" }, "50%": { opacity: "0" } },
+        rise: { from: { opacity: "0", transform: "translateY(4px)" }, to: { opacity: "1", transform: "none" } },
+        fade: { from: { opacity: "0" }, to: { opacity: "1" } },
+      },
+      animation: {
+        indeterminate: "indeterminate 1.4s ease-in-out infinite",
+        caret: "caret 1s steps(1) infinite",
+        rise: "rise 160ms ease-out",
+        fade: "fade 220ms ease-out",
       },
     },
   },
