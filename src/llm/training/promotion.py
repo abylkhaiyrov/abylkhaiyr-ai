@@ -53,12 +53,20 @@ def read_manifest(root: Path) -> dict[str, Any]:
 
 
 def production_checkpoint(root: Path) -> str | None:
-    production = read_manifest(root).get("production") or {}
+    return _checkpoint_from_record(root, read_manifest(root).get("production"))
+
+
+def _checkpoint_from_record(root: Path, production: object) -> str | None:
     if not isinstance(production, dict) or production.get("ready") is not True:
         return None
     checkpoint = production.get("checkpoint")
-    if isinstance(checkpoint, str) and (root / checkpoint / "model.safetensors").is_file():
-        return checkpoint
+    if isinstance(checkpoint, str):
+        path = (root / checkpoint).resolve()
+        if (
+            path.is_relative_to((root / "checkpoints").resolve())
+            and (path / "model.safetensors").is_file()
+        ):
+            return checkpoint
     return None
 
 
@@ -87,6 +95,8 @@ def quality_failures(candidate: Candidate, reference: Mapping[str, float]) -> li
         failures.append("conversational_improvement_or_repetition_gate_failed")
     if candidate.pass_rate < READY_PASS_RATE:
         failures.append("conversational_pass_rate_below_0.5")
+    if "dialogue_v4_cases" in candidate.metrics:
+        failures.extend(dialogue_v4_failures(candidate.metrics, reference))
     for key in ("test_perplexity", "perplexity_en", "perplexity_ru", "perplexity_kk"):
         baseline = reference.get(key, float("nan"))
         value = candidate.metrics.get(key, float("nan"))
@@ -94,6 +104,34 @@ def quality_failures(candidate: Candidate, reference: Mapping[str, float]) -> li
             failures.append(f"missing_comparable_{key}")
         elif value > baseline * MAX_CORPUS_PERPLEXITY_RATIO:
             failures.append(f"regression_{key}")
+    return failures
+
+
+def dialogue_v4_failures(
+    candidate: Mapping[str, float], reference: Mapping[str, float]
+) -> list[str]:
+    minimums = {
+        "dialogue_v4_cases": 500,
+        "basic_dialogue_manual": 0.90,
+        "instruction_exact": 0.85,
+        "multi_turn_exact": 0.80,
+    }
+    maximums = {"incoherent_manual": 0.05, "prompt_echo": 0.02}
+    failures = [
+        f"missing_or_below_target_{key}"
+        for key, threshold in minimums.items()
+        if not math.isfinite(candidate.get(key, math.nan)) or candidate[key] < threshold
+    ]
+    failures.extend(
+        f"missing_or_above_target_{key}"
+        for key, threshold in maximums.items()
+        if not math.isfinite(candidate.get(key, math.nan)) or candidate[key] >= threshold
+    )
+    for name in ("ru", "en", "kk"):
+        key = f"dialogue_v4_{name}"
+        before, after = reference.get(key, math.nan), candidate.get(key, math.nan)
+        if not (math.isfinite(before) and math.isfinite(after)) or after < before:
+            failures.append(f"missing_or_regressed_{key}")
     return failures
 
 
@@ -115,9 +153,17 @@ def promote(
     baseline_rate = reference.get("conv_pass_rate", reference_pass_rate)
     checks = {item.checkpoint: quality_failures(item, reference) for item in candidates}
     available = [
-        item for item in candidates if (root / item.checkpoint / "model.safetensors").is_file()
+        item
+        for item in candidates
+        if _checkpoint_from_record(root, {"checkpoint": item.checkpoint, "ready": True})
     ]
     chosen = select_production(available, reference)
+    existing = read_manifest(root)
+    current = existing.get("production")
+    current_path = _checkpoint_from_record(root, current)
+    previous = existing.get("previous_production")
+    if chosen is not None and current_path and chosen.checkpoint != current_path:
+        previous = current
     experimental = select_experimental(
         [
             item
@@ -147,18 +193,35 @@ def promote(
                 "limitations": list(KNOWN_LIMITATIONS),
             }
         ),
-        "production": (
-            None
-            if chosen is None
-            else {
-                "checkpoint": chosen.checkpoint,
-                "stage": chosen.stage,
-                "conv_pass_rate": chosen.pass_rate,
-                "ready": True,
-                "limitations": list(KNOWN_LIMITATIONS),
-            }
-        ),
+        "production": current if current_path else None,
+        "previous_production": previous,
     }
+    if chosen is not None:
+        manifest["production"] = {
+            "checkpoint": chosen.checkpoint,
+            "stage": chosen.stage,
+            "conv_pass_rate": chosen.pass_rate,
+            "ready": True,
+            "limitations": list(KNOWN_LIMITATIONS),
+        }
+    _write_manifest(root, manifest)
+    return manifest
+
+
+def rollback(root: Path) -> str:
+    manifest = read_manifest(root)
+    previous = manifest.get("previous_production")
+    checkpoint = _checkpoint_from_record(root, previous)
+    if checkpoint is None:
+        raise ValueError("no available previous production checkpoint")
+    manifest["previous_production"] = manifest.get("production")
+    manifest["production"] = previous
+    manifest["updated_at"] = datetime.now(UTC).isoformat()
+    _write_manifest(root, manifest)
+    return checkpoint
+
+
+def _write_manifest(root: Path, manifest: Mapping[str, Any]) -> None:
     path = manifest_file(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
@@ -166,4 +229,3 @@ def promote(
         json.dumps(manifest, indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8"
     )
     os.replace(temporary, path)
-    return manifest

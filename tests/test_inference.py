@@ -62,6 +62,32 @@ def test_generation_with_and_without_cache_is_identical(engine):
     assert with_cache.token_ids == without.token_ids and len(with_cache.token_ids) > 0
 
 
+def test_chat_context_truncation_preserves_role_markers(engine):
+    messages = [
+        Message("system", "Rules. " * 100),
+        Message("user", "older"),
+        Message("assistant", "history"),
+        Message("user", "Қазақша сұрақ. " * 200 + "Не істеу керек?"),
+    ]
+    fitted, dropped = engine.fit_messages(messages, 12)
+    assert dropped == 2 and [m.role for m in fitted] == ["system", "user"]
+    assert fitted[-1].content.endswith("Не істеу керек?")
+    ids = engine.tokenizer.encode_conversation(fitted, True)
+    assert len(ids) <= engine.max_positions - 12
+    assert ids[0] == engine.tokenizer.bos_id
+    assert ids[-3:].count(engine.tokenizer.eos_id) == 1
+    assert ids[-1] == engine.tokenizer.role_ids["assistant"]
+
+
+def test_chat_batch_agrees_with_serial_chat(engine):
+    prompts = [[Message("user", "Hello")], [Message("user", "Привет, как дела?")]]
+    results = engine.chat_batch(prompts, greedy())
+    assert [result.token_ids for result in results] == [
+        engine.chat(prompt, greedy()).token_ids for prompt in prompts
+    ]
+    assert engine.chat_batch([], greedy()) == []
+
+
 def test_seeded_sampling_reproducible(engine):
     params = SamplingParams(max_new_tokens=10, temperature=0.9, top_p=0.9, seed=7)
     assert (
@@ -99,6 +125,18 @@ def test_stream_text_equals_generate(engine):
     prompt = engine.tokenizer.encode("Hello world", add_bos=True)
     streamed = "".join(engine.stream_text(prompt, greedy()))
     assert streamed == engine.generate_ids(prompt, greedy()).text
+
+
+def test_stream_reports_actual_end_reason(engine):
+    from dataclasses import replace
+
+    messages = [Message("user", "Short prompt")]
+    params = replace(greedy(), max_new_tokens=1)
+    stream = engine.stream_chat(messages, params)
+    with pytest.raises(StopIteration) as ended:
+        while True:
+            next(stream)
+    assert ended.value.value == engine.chat(messages, params).finish_reason
 
 
 def test_batch_generation_matches_single(engine):

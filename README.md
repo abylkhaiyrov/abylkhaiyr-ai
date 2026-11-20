@@ -149,6 +149,8 @@ Studio при запуске предпочитает диалоговые ве�
 
 [Архитектура цикла, измерения и ограничения](docs/local-learning.md).
 
+[Dialogue v4. Аудит, CUDA SFT и проверка диалога](docs/dialogue-v4.md).
+
 `scripts/check.sh` запускает ruff, black, mypy и pytest.
 
 Документация: `docs/mathematics.md`, `docs/architecture.md`, `docs/data.md`, `docs/instruction_tuning.md`.

@@ -27,6 +27,15 @@ def exact_match(prediction: str, reference: str) -> bool:
     return normalize_answer(prediction) == normalize_answer(reference)
 
 
+def normalize_words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.casefold())
+
+
+def prompt_echo(prompt: str, response: str) -> bool:
+    words = normalize_words(prompt)
+    return len(words) >= 2 and normalize_words(response)[: len(words)] == words
+
+
 def repeated_ngram_ratio(token_ids: Sequence[Hashable], size: int = NGRAM_SIZE) -> float:
     grams = [tuple(token_ids[i : i + size]) for i in range(len(token_ids) - size + 1)]
     return 0.0 if not grams else 1.0 - len(set(grams)) / len(grams)

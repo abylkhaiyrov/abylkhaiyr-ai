@@ -4,18 +4,26 @@ import argparse
 import json
 from pathlib import Path
 
-from llm.training.promotion import Candidate, promote
+from llm.training.promotion import Candidate, promote, rollback
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="promote_model")
-    parser.add_argument("results", help="JSON containing checkpoint-level test results")
-    parser.add_argument("candidates", nargs="+", help="name=checkpoint_dir=stage")
+    parser.add_argument("results", nargs="?", help="JSON containing checkpoint-level test results")
+    parser.add_argument("candidates", nargs="*", help="name=checkpoint_dir=stage")
     parser.add_argument("--reference", default="", help="name of the pretrained reference model")
     parser.add_argument("--root", default=".")
+    parser.add_argument("--rollback", action="store_true")
     args = parser.parse_args()
-    results = json.loads(Path(args.results).read_text(encoding="utf-8"))
     root = Path(args.root)
+    if args.rollback:
+        if args.results or args.candidates:
+            parser.error("--rollback does not take results or candidates")
+        print(rollback(root))
+        return 0
+    if not args.results or not args.candidates:
+        parser.error("results and at least one candidate are required")
+    results = json.loads(Path(args.results).read_text(encoding="utf-8"))
     candidates = []
     for item in args.candidates:
         name, checkpoint, stage = item.split("=", 2)

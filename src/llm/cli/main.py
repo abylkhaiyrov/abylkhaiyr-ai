@@ -12,6 +12,7 @@ DEFAULT_CONFIG = "configs/debug.yaml"
 
 
 def _tokenizer_and_engine(checkpoint: str, tokenizer_path: str, device_name: str):
+    from llm.core.errors import TokenizerError
     from llm.core.hardware import resolve_device
     from llm.inference.engine import InferenceEngine
     from llm.tokenizer.bpe import BPETokenizer
@@ -19,8 +20,12 @@ def _tokenizer_and_engine(checkpoint: str, tokenizer_path: str, device_name: str
 
     path = Path(checkpoint)
     latest = CheckpointManager(path, keep=1).latest_valid()
-    model, _, _ = load_model_for_inference(latest or path)
+    model, _, metadata = load_model_for_inference(latest or path)
     tokenizer = BPETokenizer.load(tokenizer_path)
+    if model.config.vocab_size != tokenizer.vocab_size:
+        raise TokenizerError("checkpoint and tokenizer vocabulary sizes differ")
+    if metadata.get("tokenizer_version") not in (None, tokenizer.version):
+        raise TokenizerError("checkpoint tokenizer fingerprint differs")
     return InferenceEngine(model, tokenizer, resolve_device(device_name))
 
 
@@ -263,7 +268,13 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 
 def _latest_checkpoint_root(root: Path) -> Path | None:
     from llm.training.continuous import active_checkpoint
+    from llm.training.promotion import production_checkpoint
 
+    approved = production_checkpoint(root)
+    if approved is not None:
+        checkpoint = (root / approved).resolve()
+        if checkpoint.is_relative_to((root / "checkpoints").resolve()):
+            return checkpoint
     promoted = active_checkpoint(root / "experiments" / "continuous")
     if promoted is not None:
         checkpoint = (root / promoted.checkpoint).resolve()

@@ -3,6 +3,7 @@ from llm.training.promotion import (
     production_checkpoint,
     promote,
     read_manifest,
+    rollback,
     select_experimental,
 )
 
@@ -64,4 +65,17 @@ def test_promotion_requires_held_out_language_metrics(tmp_path):
 
     improved = Candidate(path, "sft", {**reference, **missing.metrics})
     assert promote(tmp_path, [improved], reference_metrics=reference)["production"]["ready"] is True
+    assert production_checkpoint(tmp_path) == path
+    assert (
+        promote(tmp_path, [degraded], reference_metrics=reference)["production"]["checkpoint"]
+        == path
+    )
+
+    another = checkpoint.with_name("step-2")
+    another.mkdir()
+    (another / "model.safetensors").touch()
+    second = str(another.relative_to(tmp_path))
+    promote(tmp_path, [Candidate(second, "sft", improved.metrics)], reference_metrics=reference)
+    assert production_checkpoint(tmp_path) == second
+    assert rollback(tmp_path) == path
     assert production_checkpoint(tmp_path) == path

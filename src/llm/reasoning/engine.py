@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
-from llm.evaluation.metrics import repeated_ngram_ratio
+from llm.evaluation.metrics import prompt_echo, repeated_ngram_ratio
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.reasoning.intent import classify_intent, classify_task
@@ -112,8 +112,12 @@ class CodeVerifier:
 class GeneralVerifier:
     def verify(self, problem: Problem, text: str) -> Candidate:
         quality = 1.0 - repeated_ngram_ratio(text.split(), 2)
-        usable = len(text.split()) >= GENERAL_MIN_TOKENS and quality >= GENERAL_MIN_QUALITY
-        return Candidate(text, text if usable else None, quality, usable)
+        usable = (
+            len(text.split()) >= GENERAL_MIN_TOKENS
+            and quality >= GENERAL_MIN_QUALITY
+            and not prompt_echo(problem.question, text)
+        )
+        return Candidate(text, text if usable else None, quality if usable else 0.0, False)
 
 
 class ReasoningEngine:
@@ -172,10 +176,10 @@ class ReasoningEngine:
         params: SamplingParams,
         tokens_used: int,
         history: list[Message] | None = None,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int, bool]:
         messages = list(history) if history else [Message("user", problem.question)]
         reply = self.engine.chat(messages, params)
-        return reply.text, tokens_used + len(reply.token_ids)
+        return reply.text, tokens_used + len(reply.token_ids), reply.finish_reason == "stop"
 
     @staticmethod
     def _emit(
@@ -210,7 +214,11 @@ class ReasoningEngine:
         )
         budget = budget or Budget()
         if kind == "general":
-            budget = replace(budget, max_candidates=GENERAL_CANDIDATES, max_retries=1)
+            budget = replace(
+                budget,
+                max_candidates=min(budget.max_candidates, GENERAL_CANDIDATES),
+                max_retries=min(budget.max_retries, 1),
+            )
         long_math = kind == "math" and len(question) > LONG_QUESTION_CHARS
         return self.solve(
             Problem(question, kind, tests),
@@ -295,7 +303,10 @@ class ReasoningEngine:
                 greedy=attempt == 0,
             )
             params = SamplingParams(
-                max_new_tokens=budget.max_new_tokens_per_candidate,
+                max_new_tokens=min(
+                    budget.max_new_tokens_per_candidate,
+                    budget.max_new_tokens_total - solution.tokens_used,
+                ),
                 greedy=attempt == 0,
                 temperature=temperature,
                 top_p=top_p,
@@ -303,7 +314,7 @@ class ReasoningEngine:
                 repetition_penalty=repetition_penalty,
                 seed=attempt,
             )
-            text, solution.tokens_used = self._sample(
+            text, solution.tokens_used, finished = self._sample(
                 problem, params, solution.tokens_used, prompt_messages
             )
             self._emit(
@@ -345,6 +356,8 @@ class ReasoningEngine:
                 )
             self._emit(on_event, "verification", "running", attempt=attempt + 1, kind=problem.kind)
             candidate = verifier.verify(problem, text)
+            if problem.kind == "general" and not finished:
+                candidate = replace(candidate, score=candidate.score * 0.5)
             solution.candidates.append(candidate)
             self._emit(
                 on_event,
@@ -373,7 +386,7 @@ class ReasoningEngine:
             solution.text = solution.candidates[0].text if solution.candidates else ""
             return
         verified = [c for c in answered if c.verified] or answered
-        if problem.kind == "code":
+        if problem.kind in {"code", "general"}:
             best = max(verified, key=lambda c: c.score)
         else:
             votes: dict[str, float] = {}

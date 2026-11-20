@@ -118,8 +118,7 @@ def create_app(
         params = to_params(request)
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         created = int(time.time())
-        prompt_ids = active_engine.tokenizer.encode_conversation(messages, True)
-        prompt_tokens = len(active_engine.fit_prompt(prompt_ids, params.max_new_tokens))
+        prompt_tokens = active_engine.chat_prompt_tokens(messages, params.max_new_tokens)
         if request.stream:
             return StreamingResponse(
                 stream_chunks(
@@ -219,7 +218,12 @@ def stream_chunks(
 
     with lock:
         yield chunk({"role": "assistant"})
-        for piece in engine.stream_chat(messages, params):
+        stream = engine.stream_chat(messages, params)
+        while True:
+            try:
+                piece = next(stream)
+            except StopIteration as completed:
+                yield chunk({}, completed.value)
+                break
             yield chunk({"content": piece})
-        yield chunk({}, "stop")
     yield sse("[DONE]")
