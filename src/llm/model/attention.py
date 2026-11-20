@@ -35,9 +35,13 @@ def build_attention_mask(
 def reference_attention(q: Tensor, k: Tensor, v: Tensor, mask: Tensor | None) -> Tensor:
     compute = torch.promote_types(q.dtype, torch.float32)
     scores = (q.to(compute) @ k.to(compute).transpose(-2, -1)) / math.sqrt(q.shape[-1])
-    if mask is not None:
-        scores = scores.masked_fill(~mask, float("-inf"))
-    return (stable_softmax(scores) @ v.to(compute)).to(q.dtype)
+    if mask is None:
+        weights = stable_softmax(scores)
+    else:
+        visible = mask.any(dim=-1, keepdim=True)
+        scores = scores.masked_fill(~mask, float("-inf")).masked_fill(~visible, 0.0)
+        weights = stable_softmax(scores).masked_fill(~visible, 0.0)
+    return (weights @ v.to(compute)).to(q.dtype)
 
 
 def sdpa_attention(

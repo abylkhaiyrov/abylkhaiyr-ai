@@ -60,6 +60,16 @@ def test_sequence_log_probs_ignores_masked_targets():
     assert sequence_log_probs(logits, targets).item() == pytest.approx(2 * math.log(0.25))
 
 
+def test_sequence_log_probs_ignore_impossible_token_at_masked_target():
+    logits = torch.tensor([[[float("-inf"), 0.0], [0.0, 0.0]]], requires_grad=True)
+    targets = torch.tensor([[-100, 1]])
+    score = sequence_log_probs(logits, targets)
+    assert score.item() == pytest.approx(-math.log(2))
+    score.backward()
+    assert logits.grad.isfinite().all()
+    assert logits.grad[0, 0].count_nonzero() == 0
+
+
 @pytest.fixture()
 def client(model_config, tokenizer):
     torch.manual_seed(0)

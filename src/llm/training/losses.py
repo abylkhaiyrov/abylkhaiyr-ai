@@ -22,7 +22,7 @@ def sequence_log_probs(logits: Tensor, targets: Tensor) -> Tensor:
     log_probs = torch.log_softmax(logits.to(compute_dtype(logits)), dim=-1)
     mask = targets != IGNORE_INDEX
     gathered = log_probs.gather(-1, targets.clamp(min=0).unsqueeze(-1)).squeeze(-1)
-    return (gathered * mask).sum(dim=-1)
+    return gathered.masked_fill(~mask, 0).sum(dim=-1)
 
 
 def dpo_loss(

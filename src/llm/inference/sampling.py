@@ -43,8 +43,8 @@ def top_p_filter(logits: Tensor, p: float) -> Tensor:
     if p >= 1.0:
         return logits
     sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
-    cumulative = torch.softmax(sorted_logits, dim=-1).cumsum(dim=-1)
-    remove_sorted = cumulative - torch.softmax(sorted_logits, dim=-1) >= p
+    probabilities = torch.softmax(sorted_logits, dim=-1)
+    remove_sorted = probabilities.cumsum(dim=-1) - probabilities >= p
     remove = torch.zeros_like(remove_sorted).scatter(-1, sorted_indices, remove_sorted)
     return logits.masked_fill(remove, float("-inf"))
 

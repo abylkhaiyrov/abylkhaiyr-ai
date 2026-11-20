@@ -164,6 +164,30 @@ def test_beam_search_not_worse_than_greedy(engine):
     ) != len(greedy_ids)
 
 
+def test_beam_cache_and_stream_match_normal_generation(engine):
+    prompt = engine.tokenizer.encode("Hello", add_bos=True)
+    cached = SamplingParams(max_new_tokens=7, beam_width=3, repetition_penalty=1.1)
+    uncached = SamplingParams(
+        max_new_tokens=7, beam_width=3, repetition_penalty=1.1, use_cache=False
+    )
+    expected = engine.generate_ids(prompt, cached)
+    assert engine.generate_ids(prompt, uncached) == expected
+    assert "".join(engine.stream_text(prompt, cached)) == expected.text
+
+
+def test_beam_immediate_stop_reports_stop_even_without_visible_tokens(engine):
+    prompt = engine.tokenizer.encode("Hello", add_bos=True)
+    params = SamplingParams(max_new_tokens=4, beam_width=2)
+    stop_ids = set(range(engine.tokenizer.vocab_size))
+    result = engine.generate_ids(prompt, params, stop_ids)
+    assert result.finish_reason == "stop"
+    assert result.token_ids == []
+    stream = engine.stream_text(prompt, params, stop_ids)
+    with pytest.raises(StopIteration) as stopped:
+        next(stream)
+    assert stopped.value.value == "stop"
+
+
 def test_chat_uses_generation_prompt(engine):
     result = engine.chat([Message("user", "hi")], greedy())
     assert isinstance(result.text, str)
@@ -189,3 +213,12 @@ def test_chat_stops_on_role_special_tokens_and_continuation_streams(engine, monk
         engine.stream_chat_continuation([Message("user", "hello")], "part ", greedy())
     )
     assert continued == "hi"
+
+
+def test_prompt_usage_matches_chat_after_completion_budget_clamp(engine):
+    messages = [Message("user", "Hello " * 100)]
+    params = SamplingParams(max_new_tokens=2 * engine.max_positions)
+    fitted = engine.fit_messages(messages, engine._chat_params(params).max_new_tokens)[0]
+    encoded = engine.tokenizer.encode_conversation(fitted, add_generation_prompt=True)
+    assert len(encoded) > 4
+    assert engine.chat_prompt_tokens(messages, params.max_new_tokens) == len(encoded)

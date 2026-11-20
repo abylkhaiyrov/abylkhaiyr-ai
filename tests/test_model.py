@@ -219,3 +219,34 @@ def test_packed_segments_equal_separate_sequences_in_loss_and_isolation(model_co
     changed = packed.clone()
     changed[0, :9] = torch.randint(1, model_config.vocab_size, (9,))
     assert torch.allclose(model(changed, segment_ids=segments)[:, 9:16], logits[:, 9:16], atol=1e-5)
+
+
+def test_fully_masked_attention_rows_match_sdpa_outputs_and_gradients():
+    q, k, v = [torch.randn(1, 2, 3, 4, dtype=torch.float64, requires_grad=True) for _ in range(3)]
+    mask = torch.tensor([[False, False, False], [True, False, False], [True, True, False]])
+    actual = reference_attention(q, k, v, mask)
+    expected = sdpa_attention(q, k, v, mask)
+    torch.testing.assert_close(actual, expected)
+    actual_grads = torch.autograd.grad(actual.square().sum(), (q, k, v))
+    expected_grads = torch.autograd.grad(expected.square().sum(), (q, k, v))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad)
+
+
+@pytest.mark.parametrize("device", ["mps", "cuda"])
+def test_packed_decoder_forward_and_backward_agree_with_cpu(model_config, device):
+    available = torch.backends.mps.is_available() if device == "mps" else torch.cuda.is_available()
+    if not available:
+        pytest.skip(f"{device} is unavailable")
+    cpu = CausalLM(model_config)
+    accelerated = CausalLM(model_config).to(device)
+    accelerated.load_state_dict(cpu.state_dict())
+    ids = torch.tensor([[7, 8, 9, 10, 11], [12, 13, 14, 15, 16]])
+    segments = torch.tensor([[0, 0, 0, 1, 1], [0, 1, 1, 2, 2]])
+    reference = cpu(ids, segment_ids=segments)
+    actual = accelerated(ids.to(device), segment_ids=segments.to(device))
+    torch.testing.assert_close(actual.cpu(), reference, rtol=5e-4, atol=2e-5)
+    reference.square().mean().backward()
+    actual.square().mean().backward()
+    for expected, observed in zip(cpu.parameters(), accelerated.parameters(), strict=True):
+        torch.testing.assert_close(observed.grad.cpu(), expected.grad, rtol=2e-3, atol=2e-5)

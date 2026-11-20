@@ -7,7 +7,6 @@ import torch
 from torch import Tensor
 
 from llm.inference.sampling import SamplingParams, apply_repetition_penalty, select_token
-from llm.model.cache import KVCache
 from llm.model.transformer import CausalLM
 from llm.tokenizer.bpe import BPETokenizer, Message
 
@@ -148,6 +147,11 @@ class InferenceEngine:
     def stream_text(
         self, prompt_ids: list[int], params: SamplingParams, stop_token_ids: set[int] | None = None
     ) -> Generator[str, None, str]:
+        if params.beam_width > 1:
+            result = self.beam_search(prompt_ids, params, stop_token_ids)
+            if result.text:
+                yield result.text
+            return result.finish_reason
         generated: list[int] = []
         emitted = 0
         stops = stop_token_ids or set()
@@ -218,7 +222,8 @@ class InferenceEngine:
         return self.tokenizer.encode_conversation(fitted, add_generation_prompt=True)
 
     def chat_prompt_tokens(self, messages: list[Message], max_new_tokens: int) -> int:
-        return len(self._chat_ids(messages, max_new_tokens))
+        params = self._chat_params(SamplingParams(max_new_tokens=max_new_tokens))
+        return len(self._chat_ids(messages, params.max_new_tokens))
 
     def chat(self, messages: list[Message], params: SamplingParams) -> Generation:
         params = self._chat_params(params)
@@ -328,46 +333,67 @@ class InferenceEngine:
     ) -> Generation:
         width = params.beam_width
         prompt_ids = self.fit_prompt(prompt_ids, params.max_new_tokens)
-        cache: KVCache = self.model.new_cache()
-        logits = self.model(torch.tensor([prompt_ids], device=self.device), cache=cache)[:, -1]
-        cache.reorder(torch.zeros(width, dtype=torch.long, device=self.device))
-        log_probs = torch.log_softmax(logits.float(), dim=-1).expand(width, -1).clone()
-        scores = torch.zeros(width, device=self.device)
-        scores[1:] = float("-inf")
-        sequences: list[list[int]] = [[] for _ in range(width)]
-        finished: list[tuple[float, list[int]]] = []
-        for step in range(params.max_new_tokens):
-            if len(prompt_ids) + step >= self.max_positions:
-                break
+        budget = min(params.max_new_tokens, self.max_positions - len(prompt_ids))
+        cache = self.model.new_cache() if params.use_cache else None
+        scores = torch.zeros(1, device=self.device)
+        sequences: list[list[int]] = [[]]
+        finished: list[tuple[float, list[int], str]] = []
+        stops = {self.tokenizer.eos_id, *(stop_ids or ())}
+        pending = [prompt_ids]
+        for step in range(budget):
+            inputs = torch.tensor(pending, device=self.device)
+            logits = self.model(inputs, cache=cache)[:, -1].float()
+            if params.repetition_penalty != 1.0:
+                history = [prompt_ids + ids if params.penalize_prompt else ids for ids in sequences]
+                logits = apply_repetition_penalty(
+                    logits,
+                    torch.tensor(history, dtype=torch.long, device=self.device),
+                    params.repetition_penalty,
+                )
+            log_probs = torch.log_softmax(logits, dim=-1)
             candidates = (scores.unsqueeze(1) + log_probs).view(-1)
-            top_scores, top_indices = candidates.topk(2 * width)
+            top_scores, top_indices = candidates.topk(min(2 * width, candidates.numel()))
             vocab = log_probs.shape[-1]
             next_scores: list[float] = []
             next_sources: list[int] = []
             next_tokens: list[int] = []
+            next_sequences: list[list[int]] = []
             for score, index in zip(top_scores.tolist(), top_indices.tolist(), strict=True):
                 source, token = divmod(index, vocab)
-                if token == self.tokenizer.eos_id or (stop_ids is not None and token in stop_ids):
-                    length = len(sequences[source]) + 1
-                    finished.append((score / length**params.length_penalty, sequences[source]))
+                sequence = sequences[source]
+                if token in stops:
+                    finished.append((score / (step + 1) ** params.length_penalty, sequence, "stop"))
+                    continue
+                sequence = [*sequence, token]
+                if (
+                    params.stop_sequences
+                    and truncate_at_stop(
+                        self.tokenizer.decode(sequence, skip_special_tokens=True),
+                        params.stop_sequences,
+                    )[1]
+                ):
+                    finished.append((score / (step + 1) ** params.length_penalty, sequence, "stop"))
                 elif len(next_scores) < width:
                     next_scores.append(score)
                     next_sources.append(source)
                     next_tokens.append(token)
-            if not next_scores or len(finished) >= width:
-                break
-            sources = torch.tensor(next_sources, device=self.device)
-            cache.reorder(sources)
-            sequences = [sequences[s] + [t] for s, t in zip(next_sources, next_tokens, strict=True)]
+                    next_sequences.append(sequence)
+            sequences = next_sequences
             scores = torch.tensor(next_scores, device=self.device)
-            step_input = torch.tensor([[t] for t in next_tokens], device=self.device)
-            log_probs = torch.log_softmax(
-                self.model(step_input, cache=cache)[:, -1].float(), dim=-1
-            )
+            if not sequences or step + 1 == budget:
+                break
+            if cache is not None:
+                cache.reorder(torch.tensor(next_sources, device=self.device))
+                pending = [[token] for token in next_tokens]
+            else:
+                pending = [prompt_ids + ids for ids in sequences]
         for score, sequence in zip(scores.tolist(), sequences, strict=True):
-            if score != float("-inf") and sequence:
-                finished.append((score / len(sequence) ** params.length_penalty, sequence))
-        best = max(finished, key=lambda item: item[0])[1] if finished else []
-        reason = "stop" if best and len(best) < params.max_new_tokens else "length"
-        text, _ = truncate_at_stop(self.tokenizer.decode(best), params.stop_sequences)
-        return Generation(text, best, reason)
+            if sequence:
+                finished.append(
+                    (score / len(sequence) ** params.length_penalty, sequence, "length")
+                )
+        _, best, reason = max(finished, key=lambda item: item[0], default=(0.0, [], "length"))
+        text, _ = truncate_at_stop(
+            self.tokenizer.decode(best, skip_special_tokens=True), params.stop_sequences
+        )
+        return Generation(text.rstrip(REPLACEMENT_CHAR), best, reason)
