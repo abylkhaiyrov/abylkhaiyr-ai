@@ -36,6 +36,7 @@ class Example(BaseModel):
 class CycleState(BaseModel):
     status: Literal["running", "paused", "rejected", "promoted", "failed"]
     reference: str
+    evaluation_data: str = "data/processed"
     steps: int = Field(default=120, ge=1, le=5000)
     decision: dict[str, object] = Field(default_factory=dict)
 
@@ -56,6 +57,7 @@ def collect(inbox: Path, tokenizer: BPETokenizer) -> list[Example]:
     blocklist = PromptBlocklist(evaluation_prompts("data/benchmarks"))
     quality = SFTQualityFilter(QualityRules(), tokenizer)
     admitted: dict[str, Example] = {}
+    conflicts: set[str] = set()
     for entry in manifest:
         source = Source.model_validate(entry)
         path = (inbox / source.file).resolve(strict=True)
@@ -72,8 +74,12 @@ def collect(inbox: Path, tokenizer: BPETokenizer) -> list[Example]:
                     continue
                 record = {"source": source.file, "group": "skills", "messages": messages(row)}
                 if not blocklist.blocks(record) and quality.admit(record):
-                    admitted.setdefault(normalize(row.prompt), row)
-    return [admitted[key] for key in sorted(admitted)]
+                    key = normalize(row.prompt)
+                    existing = admitted.get(key)
+                    if existing is not None and normalize(existing.answer) != normalize(row.answer):
+                        conflicts.add(key)
+                    admitted.setdefault(key, row)
+    return [admitted[key] for key in sorted(admitted) if key not in conflicts]
 
 
 def messages(row: Example) -> list[dict[str, str]]:
@@ -89,16 +95,25 @@ def split_rows(rows: list[Example]) -> tuple[list[Example], list[Example]]:
     return train, validation
 
 
-def evaluate(checkpoint: str, tokenizer: str, device: str) -> dict[str, float]:
+def evaluate(
+    checkpoint: str, tokenizer: str, device: str, data_dir: str = "data/processed"
+) -> dict[str, float]:
     engine = load_engine(checkpoint, tokenizer, device)
-    evaluator = Evaluator(engine, EvaluationConfig("data/processed", max_windows=48))
+    evaluator = Evaluator(engine, EvaluationConfig(data_dir, max_windows=48))
     return {**evaluator.language_modeling(), **evaluator.conversation(), **evaluator.arithmetic()}
 
 
 def decide(before: dict[str, float], after: dict[str, float]) -> list[str]:
     required = ("conv_pass_rate", "conv_repetition_ratio", "test_loss", "arithmetic_exact_match")
-    if any(not math.isfinite(scores[key]) for scores in (before, after) for key in required):
-        return ["non-finite quality metrics"]
+    languages = {
+        key for scores in (before, after) for key in scores if key.startswith("conv_lang_")
+    }
+    if any(
+        not math.isfinite(scores.get(key, float("nan")))
+        for scores in (before, after)
+        for key in (*required, *languages)
+    ):
+        return ["missing or non-finite quality metrics"]
     failures = []
     if after["conv_pass_rate"] <= before["conv_pass_rate"]:
         failures.append("conversation pass rate did not improve")
@@ -141,7 +156,15 @@ def rollback(work: Path) -> str:
         return current.previous
 
 
-def run_cycle(inbox: Path, work: Path, steps: int, device: str = "cuda") -> str:
+def run_cycle(
+    inbox: Path,
+    work: Path,
+    steps: int,
+    device: str = "cuda",
+    *,
+    reference: str = "checkpoints/tiny_gpu_sft/best",
+    evaluation_data: str = "data/processed",
+) -> str:
     if not 1 <= steps <= 5000:
         raise ValueError("steps must be in 1..5000")
     with exclusive_session(work / ".cycle.lock"):
@@ -166,10 +189,11 @@ def run_cycle(inbox: Path, work: Path, steps: int, device: str = "cuda") -> str:
         state = CycleState(
             status="running",
             steps=steps,
+            evaluation_data=evaluation_data,
             reference=(
                 ActiveCheckpoint.model_validate_json(pointer.read_bytes()).checkpoint
                 if pointer.exists()
-                else "checkpoints/tiny_gpu_sft/best"
+                else reference
             ),
         )
         if state_file.exists():
@@ -221,8 +245,12 @@ def run_cycle(inbox: Path, work: Path, steps: int, device: str = "cuda") -> str:
             candidate = str(Path(config.train.checkpoint_dir) / manager.best_label())
             with exclusive_session():
                 scores = {
-                    "before": evaluate(state.reference, config.tokenizer.path, device),
-                    "after": evaluate(candidate, config.tokenizer.path, device),
+                    "before": evaluate(
+                        state.reference, config.tokenizer.path, device, state.evaluation_data
+                    ),
+                    "after": evaluate(
+                        candidate, config.tokenizer.path, device, state.evaluation_data
+                    ),
                 }
             failures = decide(scores["before"], scores["after"])
             state.status = "rejected" if failures else "promoted"

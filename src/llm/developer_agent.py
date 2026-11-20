@@ -90,10 +90,11 @@ def solve(
                 if result.status == "unavailable":
                     attempt.failure = result.stderr
                     return DeveloperResult(status="unavailable", attempts=attempts)
-                if result.status != "passed" or result.stdout.strip() != case.stdout.strip():
+                wrong_output = result.stdout.strip() != case.stdout.strip()
+                if result.status != "passed" or wrong_output:
+                    reason = "unexpected stdout" if result.status == "passed" else result.status
                     attempt.failure = (
-                        f"Acceptance case {attempt.passed_cases + 1} failed ({result.status}). "
-                        f"{result.stderr[:180]}"
+                        f"Acceptance case {attempt.passed_cases + 1} failed ({reason})."
                     )
                     break
                 attempt.passed_cases += 1

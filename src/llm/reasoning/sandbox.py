@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -42,9 +43,11 @@ for _name in ("system", "popen", "execv", "execve", "fork", "forkpty", "spawnv",
 
 
 SANDBOX_EXEC = "sandbox-exec"
-PROFILE_TEMPLATE = (
-    "(version 1)(allow default)(deny network*)(deny file-write*)"
-    '(allow file-write* (subpath "{workdir}") (literal "/dev/null"))'
+PRIVATE_READ_ROOTS = (
+    "/Users",
+    "/Volumes",
+    "/private/var/folders",
+    "/private/tmp",
 )
 HEAP_MB = 256
 LANGUAGES = {
@@ -90,10 +93,37 @@ def _apply_limits(limits: SandboxLimits, language: str = "python"):
     return apply
 
 
-def os_confinement(workdir: str) -> list[str]:
-    if sys.platform == "darwin" and shutil.which(SANDBOX_EXEC):
-        return [SANDBOX_EXEC, "-p", PROFILE_TEMPLATE.format(workdir=os.path.realpath(workdir))]
-    return []
+def os_confinement(workdir: str, runtime: Path) -> list[str]:
+    if sys.platform != "darwin" or not shutil.which(SANDBOX_EXEC):
+        return []
+    directory = json.dumps(os.path.realpath(workdir))
+    private_paths = " ".join(f"(subpath {json.dumps(path)})" for path in PRIVATE_READ_ROOTS)
+    runtime_path = json.dumps(str(runtime.resolve()))
+    profile = (
+        "(version 1)(allow default)(deny network*)(deny process-fork)"
+        f"(deny file-read-data {private_paths})(deny file-write*)"
+        f"(allow file-read-data (subpath {runtime_path}) (subpath {directory}))"
+        f'(allow file-write* (subpath {directory}) (literal "/dev/null"))'
+    )
+    return [SANDBOX_EXEC, "-p", profile]
+
+
+def interpreter(language: str) -> tuple[str, Path] | None:
+    if language == "python":
+        return os.path.realpath(sys.executable), Path(sys.base_prefix)
+    if language == "java" and sys.platform == "darwin":
+        discovered = subprocess.run(
+            ["/usr/libexec/java_home"], capture_output=True, text=True, check=False, timeout=2
+        )
+        if discovered.returncode != 0:
+            return None
+        runtime = Path(discovered.stdout.strip()).resolve()
+        return str(runtime / "bin" / "java"), runtime
+    found = shutil.which(LANGUAGES[language][1][0])
+    if found is None:
+        return None
+    command = Path(found).resolve()
+    return str(command), command
 
 
 def run_program(language: str, code: str, limits: SandboxLimits | None = None) -> SandboxResult:
@@ -114,33 +144,47 @@ def run_program(language: str, code: str, limits: SandboxLimits | None = None) -
             False,
         )
     filename, template = LANGUAGES[language]
-    command = [part.format(python=sys.executable) for part in template]
+    resolved = interpreter(language)
+    if resolved is None:
+        return SandboxResult(False, "", f"Runtime unavailable for {language}.", False)
+    executable, runtime = resolved
+    command = [executable, *template[1:]]
     source = PREAMBLE + "\n" + code if language == "python" else code
     with tempfile.TemporaryDirectory(prefix="llm-sandbox-") as workdir:
         (Path(workdir) / filename).write_text(source, encoding="utf-8")
         env = {**RESTRICTED_ENV, "TMPDIR": workdir, "HOME": workdir}
         if language != "python":
             env["PATH"] = os.environ.get("PATH", RESTRICTED_ENV["PATH"])
-        try:
-            completed = subprocess.run(
-                [*os_confinement(workdir), *command],
-                cwd=workdir,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=limits.timeout_seconds,
-                preexec_fn=_apply_limits(limits, language),
-                stdin=subprocess.DEVNULL,
-                check=False,
+        confinement = os_confinement(workdir, runtime)
+        if not confinement:
+            return SandboxResult(
+                False, "", "OS isolation unavailable; configure a sandbox image.", False
             )
+        try:
+            with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+                completed = subprocess.run(
+                    [*confinement, *command],
+                    cwd=workdir,
+                    env=env,
+                    stdout=output,
+                    stderr=errors,
+                    timeout=limits.timeout_seconds,
+                    preexec_fn=_apply_limits(limits, language),
+                    stdin=subprocess.DEVNULL,
+                    check=False,
+                )
+                output.seek(0)
+                errors.seek(0)
+                stdout = output.read(MAX_OUTPUT_CHARS).decode(errors="replace")
+                stderr = errors.read(MAX_OUTPUT_CHARS).decode(errors="replace")
         except subprocess.TimeoutExpired as error:
             return SandboxResult(False, "", str(error), True)
         except OSError as error:
             raise SandboxError(f"cannot start sandbox: {error}") from error
     return SandboxResult(
         completed.returncode == 0,
-        completed.stdout[:MAX_OUTPUT_CHARS],
-        completed.stderr[:MAX_OUTPUT_CHARS],
+        stdout,
+        stderr,
         False,
     )
 

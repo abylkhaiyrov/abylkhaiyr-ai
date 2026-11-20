@@ -37,6 +37,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--inbox", type=Path, default=Path("experiments/learning_inbox"))
     parser.add_argument("--work", type=Path, default=Path("experiments/continuous"))
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    parser.add_argument("--reference", default="checkpoints/tiny_gpu_sft/best")
+    parser.add_argument("--evaluation-data", default="data/processed")
     parser.add_argument("--steps", type=int, default=120)
     parser.add_argument("--polls", type=int, choices=range(1, 25), default=1)
     parser.add_argument("--interval", type=int, default=600)
@@ -56,7 +59,15 @@ def main() -> None:
             if (args.work / "STOP").exists():
                 break
             try:
-                print(run_cycle(args.inbox, args.work, args.steps), flush=True)
+                status = run_cycle(
+                    args.inbox,
+                    args.work,
+                    args.steps,
+                    args.device,
+                    reference=args.reference,
+                    evaluation_data=args.evaluation_data,
+                )
+                print(status, flush=True)
             except ResourceError as error:
                 print(f"deferred: {error}", flush=True)
             if index + 1 < args.polls:

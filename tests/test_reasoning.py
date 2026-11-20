@@ -200,3 +200,21 @@ def test_solve_auto_picks_strategy():
     engine = ReasoningEngine(ScriptedEngine(["<<2+2=5>> #### 5"]), use_solvers=False)
     solution = engine.solve_auto("Compute 2 + 2.")
     assert solution.answer == "4" and solution.verified
+
+
+def test_local_sandbox_refuses_unconfined_execution(monkeypatch):
+    from llm.reasoning import sandbox
+
+    monkeypatch.delenv("ABYLKHAIYR_SANDBOX_IMAGE", raising=False)
+    monkeypatch.setattr(sandbox, "os_confinement", lambda *_: [])
+    result = sandbox.run_python("print(42)")
+    assert not result.passed
+    assert "isolation unavailable" in result.stderr or "resource limits" in result.stderr
+
+
+def test_sandbox_cannot_read_an_unshared_file(tmp_path):
+    private = tmp_path / "outside.txt"
+    private.write_text("private test data", encoding="utf-8")
+    result = run_python(f"from pathlib import Path; print(Path({str(private)!r}).read_text())")
+    assert not result.passed
+    assert "private test data" not in result.stdout
