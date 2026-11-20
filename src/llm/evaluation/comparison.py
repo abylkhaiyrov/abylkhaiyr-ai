@@ -47,8 +47,10 @@ SUMMARY_KEYS = (
 
 def load_engine(checkpoint: str, tokenizer_path: str, device: str) -> InferenceEngine:
     resolved = CheckpointManager(checkpoint, keep=1).latest_valid() or Path(checkpoint)
-    model, _, _ = load_model_for_inference(resolved)
-    return InferenceEngine(model, BPETokenizer.load(tokenizer_path), resolve_device(device))
+    model, config, metadata = load_model_for_inference(resolved)
+    tokenizer = BPETokenizer.load(tokenizer_path)
+    tokenizer.validate_checkpoint(config.vocab_size, metadata.get("tokenizer_version"))
+    return InferenceEngine(model, tokenizer, resolve_device(device))
 
 
 def word_list(data_dir: str) -> WordList | None:

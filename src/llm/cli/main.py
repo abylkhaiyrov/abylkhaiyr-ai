@@ -12,7 +12,6 @@ DEFAULT_CONFIG = "configs/debug.yaml"
 
 
 def _tokenizer_and_engine(checkpoint: str, tokenizer_path: str, device_name: str):
-    from llm.core.errors import TokenizerError
     from llm.core.hardware import resolve_device
     from llm.inference.engine import InferenceEngine
     from llm.tokenizer.bpe import BPETokenizer
@@ -22,10 +21,7 @@ def _tokenizer_and_engine(checkpoint: str, tokenizer_path: str, device_name: str
     latest = CheckpointManager(path, keep=1).latest_valid()
     model, _, metadata = load_model_for_inference(latest or path)
     tokenizer = BPETokenizer.load(tokenizer_path)
-    if model.config.vocab_size != tokenizer.vocab_size:
-        raise TokenizerError("checkpoint and tokenizer vocabulary sizes differ")
-    if metadata.get("tokenizer_version") not in (None, tokenizer.version):
-        raise TokenizerError("checkpoint tokenizer fingerprint differs")
+    tokenizer.validate_checkpoint(model.config.vocab_size, metadata.get("tokenizer_version"))
     return InferenceEngine(model, tokenizer, resolve_device(device_name))
 
 

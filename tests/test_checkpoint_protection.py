@@ -49,3 +49,13 @@ def test_labeled_checkpoint_is_not_rotated(tmp_path):
         _save(manager, step)
     assert (tmp_path / "tiny_best").is_dir()
     assert [p.name for p in manager.list_steps()] == ["step-00000003"]
+
+
+def test_rotation_ignores_non_checkpoint_directories(tmp_path):
+    manager = CheckpointManager(tmp_path, keep=1)
+    unrelated = tmp_path / "step-not-a-checkpoint"
+    unrelated.mkdir()
+    _save(manager, 1)
+    _save(manager, 2)
+    assert unrelated.is_dir()
+    assert manager.latest_valid() == manager.step_dir(2)

@@ -123,7 +123,12 @@ class Trainer:
         if path is None:
             return False
         self.state, loader_state = self.checkpoints.restore(
-            path, self.model, self.optimizer, self.scaler, self.device
+            path,
+            self.model,
+            self.optimizer,
+            self.scaler,
+            self.device,
+            tokenizer_version=self.tokenizer_version,
         )
         self.train_source.set_batch_size(self.state.micro_batch_size)
         self.train_source.load_state_dict(loader_state)

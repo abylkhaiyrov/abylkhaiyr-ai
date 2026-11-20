@@ -214,6 +214,7 @@ def build_trainer_for_runner(tmp_path, model_config):
     )
     tokenizer.save(tmp_path / "tok")
     trainer = build_trainer(tmp_path, model_config, steps=6, name="runner")
+    trainer.tokenizer_version = tokenizer.version
     return trainer
 
 
@@ -261,3 +262,16 @@ def test_trainer_reports_real_progress_phases(tmp_path, model_config):
     assert stage["total"] == 10
     assert stage["done"] == 10
     assert stage["results"]["final_step"] == 10
+
+
+def test_recovery_skips_malformed_or_incomplete_checkpoint_metadata(tmp_path, model_config):
+    trainer = build_trainer(tmp_path, model_config, steps=15)
+    trainer.train()
+    manager = trainer.checkpoints
+    newest = manager.latest_valid()
+    metadata = newest / "meta.json"
+    metadata.write_text('{"step":', encoding="utf-8")
+    fallback = manager.latest_valid()
+    assert fallback is not None and fallback != newest
+    metadata.write_text('{"step":15,"model_config":{},"files":{}}', encoding="utf-8")
+    assert manager.latest_valid() == fallback

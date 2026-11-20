@@ -48,6 +48,12 @@ class BPETokenizer:
     def vocab_size(self) -> int:
         return self.backend.get_vocab_size()
 
+    def validate_checkpoint(self, vocab_size: int, version: object) -> None:
+        if self.vocab_size != vocab_size:
+            raise TokenizerError("checkpoint and tokenizer vocabulary sizes differ")
+        if version is not None and version != self.version:
+            raise TokenizerError("checkpoint tokenizer fingerprint differs")
+
     @property
     def version(self) -> str:
         return hashlib.sha256(self.backend.to_str().encode("utf-8")).hexdigest()[:16]

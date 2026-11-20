@@ -31,10 +31,11 @@ from llm.training.objectives import DPOObjective, Objective
 MEMORY_BUDGET_FRACTION = 0.7
 
 
-def _load_init_weights(model: CausalLM, init_from: str) -> None:
+def _load_init_weights(model: CausalLM, init_from: str, tokenizer: BPETokenizer) -> None:
     checkpoint = CheckpointManager(init_from, keep=1).latest_valid()
     path = checkpoint if checkpoint is not None else Path(init_from)
-    CheckpointManager.verify(path)
+    meta = CheckpointManager.verify(path, require_training_state=False)
+    tokenizer.validate_checkpoint(model.config.vocab_size, meta.get("tokenizer_version"))
     load_model_weights(model, path / "model.safetensors")
 
 
@@ -187,7 +188,7 @@ def build_trainer(config: ExperimentConfig, resume: bool) -> Trainer:
         train.checkpoint_dir, train.keep_checkpoints, train.protected_steps, train.checkpoint_alias
     )
     if train.init_from:
-        _load_init_weights(model, train.init_from)
+        _load_init_weights(model, train.init_from, tokenizer)
     objective: Objective | None = None
     if train.stage == "dpo":
         reference = copy.deepcopy(model).to(device)

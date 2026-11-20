@@ -7,7 +7,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from llm.training.checkpoint import MODEL_FILE, CheckpointManager
+from llm.core.config import ModelConfig
+from llm.core.profiles import count_parameters
+from llm.tokenizer.bpe import BPETokenizer
+from llm.training.checkpoint import META_FILE, MODEL_FILE, CheckpointManager
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -23,8 +26,7 @@ def _format_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join([head, sep, *body])
 
 
-def _model_card(version: str, meta: dict[str, Any], manifest: dict[str, Any]) -> str:
-    cfg = meta.get("model_config", {})
+def _model_card(version: str, config: ModelConfig, manifest: dict[str, Any]) -> str:
     licenses = sorted(
         {info.get("license", "unknown") for info in manifest.get("sources", {}).values()}
     )
@@ -35,26 +37,23 @@ def _model_card(version: str, meta: dict[str, Any], manifest: dict[str, Any]) ->
             "## Overview",
             "",
             "- Architecture: Decoder-only Transformer (RMSNorm, RoPE, SwiGLU, GQA, tied embeddings)",
-            f"- Vocabulary size: {cfg.get('vocab_size', 8192)}",
-            f"- Hidden size: {cfg.get('hidden_size', 384)}",
-            f"- Layers: {cfg.get('num_hidden_layers', 8)}",
-            f"- Attention heads / KV heads: {cfg.get('num_attention_heads', 6)} / {cfg.get('num_key_value_heads', 2)}",
-            f"- Context length: {cfg.get('max_position_embeddings', 512)}",
-            "- Languages: Russian (ru), Kazakh (kk), English (en), plus math and code",
-            "- Training origin: Trained from scratch on local Apple Silicon (MPS, FP32) without external LLM weights or external LLM APIs.",
+            f"- Parameters: {count_parameters(config):,}",
+            f"- Vocabulary size: {config.vocab_size}",
+            f"- Hidden size: {config.hidden_size}",
+            f"- Layers: {config.num_hidden_layers}",
+            f"- Attention heads / KV heads: {config.num_attention_heads} / {config.num_key_value_heads}",
+            f"- Context length: {config.max_position_embeddings} tokens",
             "",
             "## Data Provenance",
             "",
-            f"- Dataset version: v2 ({manifest.get('tokenized', {}).get('train', {}).get('tokens', 0)} train tokens)",
+            f"- Dataset version: {manifest.get('version') or 'unrecorded'}",
+            f"- Pretraining tokens in this manifest: {manifest.get('tokenized', {}).get('train', {}).get('tokens', 'unrecorded')}",
             f"- Source licenses: {', '.join(licenses) if licenses else 'see DATASET_MANIFEST.json'}",
-            "- Decontamination and split deduplication applied across pretraining and SFT splits.",
             "",
             "## Limitations",
             "",
-            "- Small parameter count (~15.7M) limits factual recall, complex multi-step reasoning, and long-horizon code synthesis.",
-            "- Context window is limited to 512 tokens.",
-            "- May hallucinate facts or repeat phrases on out-of-distribution prompts.",
-            "- This is an experimental local model and does not match frontier models such as GPT or Claude.",
+            "- Outputs may be factually wrong, repetitive, or irrelevant. See EVALUATION_REPORT.md for measured results.",
+            "- This bundle is experimental. Production promotion requires an independent quality decision.",
             "",
         ]
     )
@@ -191,9 +190,18 @@ def export_release(
     ckpt = Path(checkpoint_path)
     resolved = CheckpointManager(ckpt, keep=1).latest_valid() or ckpt
     meta = CheckpointManager.verify(resolved)
+    model_config = ModelConfig.model_validate(meta["model_config"])
+    tok_dir = Path(tokenizer_path)
+    BPETokenizer.load(tok_dir).validate_checkpoint(
+        model_config.vocab_size, meta.get("tokenizer_version")
+    )
     target = Path(output_dir) / f"abylkhaiyr-ai-tiny-{version}"
     target.mkdir(parents=True, exist_ok=True)
     shutil.copy2(resolved / MODEL_FILE, target / MODEL_FILE)
+    inference_meta = {**meta, "kind": "inference", "files": {MODEL_FILE: meta["files"][MODEL_FILE]}}
+    (target / META_FILE).write_text(
+        json.dumps(inference_meta, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     config_payload = {
         "model_name": "abylkhaiyr-ai-tiny",
         "version": version,
@@ -207,9 +215,8 @@ def export_release(
     (target / "config.json").write_text(
         json.dumps(config_payload, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    tok_dir = Path(tokenizer_path)
     for item in tok_dir.iterdir():
-        if item.is_file():
+        if item.is_file() and item.name != META_FILE:
             shutil.copy2(item, target / item.name)
     data_root = Path(data_dir)
     manifest = _read_json(data_root / "manifest.json")
@@ -222,7 +229,9 @@ def export_release(
         json.dumps(dataset_bundle, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     sweep_summary = _read_json(Path(sweep_summary_path))
-    (target / "MODEL_CARD.md").write_text(_model_card(version, meta, manifest), encoding="utf-8")
+    (target / "MODEL_CARD.md").write_text(
+        _model_card(version, model_config, manifest), encoding="utf-8"
+    )
     (target / "TRAINING_REPORT.md").write_text(
         _training_report(version, sweep_summary, stage_metrics or {}), encoding="utf-8"
     )

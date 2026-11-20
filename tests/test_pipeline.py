@@ -7,10 +7,10 @@ import pytest
 import torch
 
 from llm.core.config import ExperimentConfig, ModelConfig, TokenizerConfig, TrainConfig
-from llm.core.errors import TrainingError
+from llm.core.errors import CheckpointError, TrainingError
 from llm.data.sft_builder import deduplicate_sft_splits
 from llm.model.transformer import CausalLM
-from llm.training.checkpoint import CheckpointManager, TrainingState
+from llm.training.checkpoint import CheckpointManager, TrainingState, load_model_for_inference
 from llm.training.pipeline import STAGES, PipelineConfig, QualityGates, TrainingPipeline
 from llm.training.release import export_release
 
@@ -47,7 +47,9 @@ def _write_yaml_config(path: Path, stage: str, ckpt_dir: Path, data_dir: Path) -
     path.write_text(yaml.safe_dump(cfg.model_dump()), encoding="utf-8")
 
 
-def _make_fake_ckpt(directory: Path, model_config: ModelConfig, step: int) -> Path:
+def _make_fake_ckpt(
+    directory: Path, model_config: ModelConfig, step: int, tokenizer_version: str
+) -> Path:
     model = CausalLM(model_config)
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     manager = CheckpointManager(directory, keep=2, alias_prefix="test")
@@ -58,7 +60,7 @@ def _make_fake_ckpt(directory: Path, model_config: ModelConfig, step: int) -> Pa
         None,
         TrainingState(step=step, tokens_seen=step * 10),
         {"epoch": 0, "cursor": 0},
-        "v1",
+        tokenizer_version,
         torch.device("cpu"),
     )
 
@@ -69,7 +71,7 @@ def test_pipeline_runs_all_stages_and_resumes(tmp_path: Path, model_config: Mode
     (data_dir / "preference" / "train.jsonl").write_text('{"chosen":[],"rejected":[]}\n')
     tok_dir = tmp_path / "tok"
     tokenizer.save(tok_dir)
-    base_ckpt = _make_fake_ckpt(tmp_path / "base", model_config, 10)
+    base_ckpt = _make_fake_ckpt(tmp_path / "base", model_config, 10, tokenizer.version)
     pre_dir = tmp_path / "pre"
     sft_dir = tmp_path / "sft"
     dpo_dir = tmp_path / "dpo"
@@ -84,7 +86,7 @@ def test_pipeline_runs_all_stages_and_resumes(tmp_path: Path, model_config: Mode
 
     def fake_train(cfg: ExperimentConfig, resume: bool) -> dict:
         calls.append(f"train:{cfg.train.stage}")
-        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 100)
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 100, tokenizer.version)
         return {"final_step": 100, "best_validation_loss": 2.5}
 
     def fake_eval(ckpt: str, tok: str, data: str, dev: str, off: bool, name: str):
@@ -156,7 +158,7 @@ def test_pipeline_stops_when_pretrain_fails_quality_gate(
     data_dir.mkdir()
     tok_dir = tmp_path / "tok"
     tokenizer.save(tok_dir)
-    base_ckpt = _make_fake_ckpt(tmp_path / "base", model_config, 10)
+    base_ckpt = _make_fake_ckpt(tmp_path / "base", model_config, 10, tokenizer.version)
     pre_cfg = tmp_path / "pre.yaml"
     sft_cfg = tmp_path / "sft.yaml"
     dpo_cfg = tmp_path / "dpo.yaml"
@@ -165,7 +167,7 @@ def test_pipeline_stops_when_pretrain_fails_quality_gate(
     _write_yaml_config(dpo_cfg, "dpo", tmp_path / "dpo", data_dir)
 
     def fake_train(cfg: ExperimentConfig, resume: bool) -> dict:
-        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10)
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10, tokenizer.version)
         return {"final_step": 10}
 
     def fake_eval(ckpt: str, tok: str, data: str, dev: str, off: bool, name: str):
@@ -238,11 +240,12 @@ def test_deduplicate_sft_splits_preserves_test_and_removes_overlaps(tmp_path: Pa
 def test_export_release_creates_bundle(tmp_path: Path, model_config: ModelConfig, tokenizer):
     tok_dir = tmp_path / "tok"
     tokenizer.save(tok_dir)
-    ckpt = _make_fake_ckpt(tmp_path / "ckpt", model_config, 50)
+    ckpt = _make_fake_ckpt(tmp_path / "ckpt", model_config, 50, tokenizer.version)
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     (data_dir / "manifest.json").write_text(
-        json.dumps({"sources": {"s": {"license": "MIT"}}}), encoding="utf-8"
+        json.dumps({"version": "audit-data", "sources": {"s": {"license": "MIT"}}}),
+        encoding="utf-8",
     )
     out = export_release(
         ckpt,
@@ -254,7 +257,15 @@ def test_export_release_creates_bundle(tmp_path: Path, model_config: ModelConfig
         baseline_metrics={"test_perplexity": 65.0},
     )
     assert (out / "model.safetensors").is_file()
-    assert "v0.1.0" in (out / "MODEL_CARD.md").read_text(encoding="utf-8")
+    card = (out / "MODEL_CARD.md").read_text(encoding="utf-8")
+    assert "v0.1.0" in card
+    assert "audit-data" in card
+    assert f"{model_config.max_position_embeddings} tokens" in card
+    model, loaded_config, metadata = load_model_for_inference(out)
+    assert model.config == loaded_config == model_config
+    assert metadata["tokenizer_version"] == tokenizer.version
+    with pytest.raises(CheckpointError, match="no training state"):
+        CheckpointManager.verify(out)
 
 
 def _pipeline_fixture(tmp_path: Path, model_config: ModelConfig, tokenizer, with_preference: bool):
@@ -265,7 +276,7 @@ def _pipeline_fixture(tmp_path: Path, model_config: ModelConfig, tokenizer, with
         (data_dir / "preference" / "train.jsonl").write_text('{"chosen":[],"rejected":[]}\n')
     tok_dir = tmp_path / "tok"
     tokenizer.save(tok_dir)
-    base_ckpt = _make_fake_ckpt(tmp_path / "base", model_config, 10)
+    base_ckpt = _make_fake_ckpt(tmp_path / "base", model_config, 10, tokenizer.version)
     paths = {}
     for stage in ("pretrain", "sft", "dpo"):
         paths[stage] = tmp_path / f"{stage}.yaml"
@@ -290,7 +301,7 @@ def test_interrupted_training_is_not_reported_as_completed(
     config, _ = _pipeline_fixture(tmp_path, model_config, tokenizer, False)
 
     def interrupted(cfg: ExperimentConfig, resume: bool) -> dict:
-        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10)
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10, tokenizer.version)
         return {"final_step": 5, "interrupted": True}
 
     pipeline = TrainingPipeline(config, train_fn=interrupted, eval_fn=lambda *a: ({}, []))
@@ -319,7 +330,7 @@ def test_dpo_is_skipped_when_sft_does_not_improve_conversations(
     config, _ = _pipeline_fixture(tmp_path, model_config, tokenizer, True)
 
     def train(cfg: ExperimentConfig, resume: bool) -> dict:
-        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10)
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10, tokenizer.version)
         return {"final_step": 10}
 
     state = TrainingPipeline(config, train_fn=train, eval_fn=_scripted_eval(0.1, 0.2)).run()
@@ -336,7 +347,7 @@ def test_dpo_stage_builds_preference_corpus_from_sft_policy(
     built: list[str] = []
 
     def train(cfg: ExperimentConfig, resume: bool) -> dict:
-        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10)
+        _make_fake_ckpt(Path(cfg.train.checkpoint_dir), model_config, 10, tokenizer.version)
         return {"final_step": 10}
 
     def preference(cfg: ExperimentConfig, policy: str, tokenizer_path: str, device: str) -> dict:
