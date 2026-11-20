@@ -6,9 +6,13 @@ import time
 import pytest
 
 from llm.reasoning.container import run_isolated
+from tests.conftest import docker_ready
 
 IMAGE = os.environ.get("ABYLKHAIYR_TEST_IMAGE")
-pytestmark = pytest.mark.skipif(IMAGE is None, reason="set ABYLKHAIYR_TEST_IMAGE to test Docker")
+pytestmark = [
+    pytest.mark.skipif(IMAGE is None, reason="set ABYLKHAIYR_TEST_IMAGE to test Docker"),
+    pytest.mark.skipif(not docker_ready(), reason="Docker daemon is not running"),
+]
 
 
 def run(code: str, stdin: str = "", timeout: float = 25):

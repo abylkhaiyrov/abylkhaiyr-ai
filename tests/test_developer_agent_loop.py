@@ -3,9 +3,13 @@ import os
 import pytest
 
 from llm.developer_agent import AcceptanceCase, DeveloperTask, solve
+from tests.conftest import docker_ready
 
 IMAGE = os.environ.get("ABYLKHAIYR_TEST_IMAGE")
-pytestmark = pytest.mark.skipif(IMAGE is None, reason="set ABYLKHAIYR_TEST_IMAGE to test Docker")
+pytestmark = [
+    pytest.mark.skipif(IMAGE is None, reason="set ABYLKHAIYR_TEST_IMAGE to test Docker"),
+    pytest.mark.skipif(not docker_ready(), reason="Docker daemon is not running"),
+]
 
 CORRECT = "```python\na, b = map(int, input().split())\nprint(a + b)\n```"
 WRONG = "```python\na, b = map(int, input().split())\nprint(a - b)\n```"

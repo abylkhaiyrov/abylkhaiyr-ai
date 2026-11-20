@@ -10,6 +10,12 @@ from typing import BinaryIO, Literal
 
 from pydantic import BaseModel
 
+DAEMON_MARKERS = (
+    "cannot connect to the docker daemon",
+    "failed to connect to the docker api",
+    "is the docker daemon running",
+)
+
 
 class ToolResult(BaseModel):
     status: Literal["passed", "failed", "timeout", "unavailable"]
@@ -94,14 +100,16 @@ def _run_container(
         finally:
             for reader in readers:
                 reader.join()
+        message = errors.decode(errors="replace")
+        daemon_down = any(marker in message.lower() for marker in DAEMON_MARKERS)
         status: Literal["passed", "failed", "unavailable"] = (
             "passed"
             if process.returncode == 0
-            else "unavailable" if process.returncode == 125 else "failed"
+            else "unavailable" if process.returncode == 125 or daemon_down else "failed"
         )
         return ToolResult(
             status=status,
             exit_code=process.returncode,
             stdout=output.decode(errors="replace"),
-            stderr=errors.decode(errors="replace"),
+            stderr=message,
         )

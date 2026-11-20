@@ -1,3 +1,6 @@
+import shutil
+import subprocess
+
 import pytest
 import torch
 
@@ -36,3 +39,14 @@ def model_config(tokenizer: BPETokenizer) -> ModelConfig:
 def model(model_config: ModelConfig) -> CausalLM:
     torch.manual_seed(0)
     return CausalLM(model_config).eval()
+
+
+def docker_ready() -> bool:
+    docker = shutil.which("docker")
+    if docker is None:
+        return False
+    try:
+        probe = subprocess.run([docker, "info"], capture_output=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return probe.returncode == 0
