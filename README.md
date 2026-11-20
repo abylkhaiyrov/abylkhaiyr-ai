@@ -147,7 +147,8 @@ Studio при запуске предпочитает диалоговые ве�
 ## Этап 11: SFT и сохранение языковых способностей
 
 [Результаты MPS, подбор SFT и выбор checkpoint](docs/stage11_sft.md) ·
-[Model Card](docs/model_card_stage11.md).
+[Model Card](docs/model_card_stage11.md) ·
+[Диагностика: почему модель повторяет вопрос](docs/diagnosis_stage12.md).
 
 ## Проверка качества кода
 
