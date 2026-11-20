@@ -275,3 +275,38 @@ def test_recovery_skips_malformed_or_incomplete_checkpoint_metadata(tmp_path, mo
     assert fallback is not None and fallback != newest
     metadata.write_text('{"step":15,"model_config":{},"files":{}}', encoding="utf-8")
     assert manager.latest_valid() == fallback
+
+
+def test_replacing_a_labelled_checkpoint_never_leaves_a_window_without_valid_weights(
+    tmp_path, model_config, monkeypatch
+):
+    import os as os_module
+
+    from llm.training.checkpoint import CheckpointManager
+
+    trainer = build_trainer(tmp_path, model_config, steps=2)
+    trainer.train()
+    manager = trainer.checkpoints
+    trainer.save_checkpoint("best")
+    best = manager.directory / "best"
+    first = CheckpointManager.verify(best)
+    real_replace = os_module.replace
+    calls = {"count": 0}
+
+    def crash_on_publish(source, destination):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise OSError("simulated crash between the two renames")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(os_module, "replace", crash_on_publish)
+    with pytest.raises(OSError):
+        trainer.save_checkpoint("best")
+    monkeypatch.setattr(os_module, "replace", real_replace)
+    assert not best.exists() and (manager.directory / "best.old").exists()
+    recovered = CheckpointManager(manager.directory, keep=2)
+    assert recovered.directory == manager.directory
+    assert CheckpointManager.verify(best)["step"] == first["step"]
+    assert not (manager.directory / "best.old").exists()
+    trainer.save_checkpoint("best")
+    assert CheckpointManager.verify(best)["files"]

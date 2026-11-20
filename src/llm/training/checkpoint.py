@@ -28,6 +28,7 @@ META_FILE = "meta.json"
 STEP_PREFIX = "step-"
 STEP_DIGITS = 8
 TEMP_SUFFIX = ".tmp"
+BACKUP_SUFFIX = ".old"
 HASH_CHUNK = 1 << 20
 TIED_HEAD_KEY = "lm_head.weight"
 
@@ -146,6 +147,15 @@ class CheckpointManager:
         self.protected_steps = frozenset(protected_steps)
         self.alias_prefix = alias_prefix
         self.directory.mkdir(parents=True, exist_ok=True)
+        self._recover_interrupted_replacements()
+
+    def _recover_interrupted_replacements(self) -> None:
+        for backup in self.directory.glob(f"*{BACKUP_SUFFIX}"):
+            target = backup.with_name(backup.name.removesuffix(BACKUP_SUFFIX))
+            if target.exists():
+                shutil.rmtree(backup, ignore_errors=True)
+            else:
+                os.replace(backup, target)
 
     def step_dir(self, step: int) -> Path:
         return self.directory / f"{STEP_PREFIX}{step:0{STEP_DIGITS}d}"
@@ -196,13 +206,20 @@ class CheckpointManager:
             "files": {name: file_sha256(temporary / name) for name in (MODEL_FILE, STATE_FILE)},
         }
         (temporary / META_FILE).write_text(json.dumps(meta, indent=2), encoding="utf-8")
-        if target.exists():
-            shutil.rmtree(target)
-        os.replace(temporary, target)
+        self._publish(temporary, target)
         if not label:
             self._publish_aliases(target, state.step)
             self._prune()
         return target
+
+    @staticmethod
+    def _publish(temporary: Path, target: Path) -> None:
+        backup = target.with_name(target.name + BACKUP_SUFFIX)
+        if target.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+            os.replace(target, backup)
+        os.replace(temporary, target)
+        shutil.rmtree(backup, ignore_errors=True)
 
     def best_label(self) -> str:
         return f"{self.alias_prefix}_best" if self.alias_prefix else "best"
