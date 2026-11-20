@@ -1,29 +1,30 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowDown, PanelLeft } from "lucide-react";
+import { AlertTriangle, ArrowDown, PanelLeft, SlidersHorizontal } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { Composer } from "@/components/chat/composer";
+import { ContextPanel } from "@/components/chat/context-panel";
 import { MessageItem } from "@/components/chat/message-item";
+import { ModelPicker } from "@/components/chat/model-picker";
 import { SettingsDialog } from "@/components/chat/settings-dialog";
-import { DEFAULT_SETTINGS } from "@/lib/chat-settings";
 import { Button } from "@/components/ui/button";
 import { useApiError } from "@/hooks/use-api-error";
 import { useChatGeneration } from "@/hooks/use-chat-generation";
 import { useModelRegistry, useRuntime } from "@/hooks/use-runtime";
 import { api, type ChatMessage, type ChatSummary, type GenerationSettings, type Model } from "@/lib/api";
+import { DEFAULT_SETTINGS } from "@/lib/chat-settings";
 import { isActive } from "@/lib/generation";
 import { defaultModel, modelById } from "@/lib/models";
+import { cn } from "@/lib/utils";
 import { useToastStore } from "@/store/toast-store";
 import { useUiStore } from "@/store/ui-store";
 
 const SUGGESTIONS = ["math", "code", "explain", "kazakh"] as const;
 const STICK_THRESHOLD = 96;
 
-function resolveSettings(saved: GenerationSettings | undefined): Required<GenerationSettings> {
-  return { ...DEFAULT_SETTINGS, ...(saved ?? {}) } as Required<GenerationSettings>;
-}
+const resolveSettings = (saved: GenerationSettings | undefined): Required<GenerationSettings> => ({ ...DEFAULT_SETTINGS, ...(saved ?? {}) }) as Required<GenerationSettings>;
 
 export function ChatPage() {
   const { t } = useTranslation();
@@ -31,11 +32,12 @@ export function ChatPage() {
   const push = useToastStore((state) => state.push);
   const describe = useApiError();
   const backendOnline = useUiStore((state) => state.backendOnline);
+  const { historyOpen, toggleHistory } = useUiStore();
   const [params, setParams] = useSearchParams();
   const selected = params.get("c");
   const [query, setQuery] = useState("");
   const search = useDeferredValue(query);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [drawer, setDrawer] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [draftModel, setDraftModel] = useState<string | null>(null);
   const [pinned, setPinned] = useState(true);
@@ -57,11 +59,12 @@ export function ChatPage() {
 
   const setSelected = useCallback((id: string | null) => setParams(id ? { c: id } : {}, { replace: true }), [setParams]);
   const refreshChats = () => void client.invalidateQueries({ queryKey: ["chats"] });
+  const refreshChat = (id: string) => void client.invalidateQueries({ queryKey: ["chat", id] });
   const updateChat = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof api.updateChat>[1] }) => api.updateChat(id, payload),
     onSuccess: (_, { id }) => {
       refreshChats();
-      void client.invalidateQueries({ queryKey: ["chat", id] });
+      refreshChat(id);
     },
     onError: (error: Error) => push("error", describe(error)),
   });
@@ -71,6 +74,12 @@ export function ChatPage() {
       if (id === selected) setSelected(null);
       refreshChats();
     },
+    onError: (error: Error) => push("error", describe(error)),
+  });
+  const useVariant = useMutation({
+    mutationFn: ({ message, index }: { message: ChatMessage; index: number }) => api.selectVariant(selected ?? "", message.id, index),
+    onSuccess: () => selected && refreshChat(selected),
+    onError: (error: Error) => push("error", describe(error)),
   });
   const createChat = useMutation({ mutationFn: api.createChat });
 
@@ -78,16 +87,11 @@ export function ChatPage() {
     const base = chat.data?.messages ?? [];
     if (!visibleActive) return base;
     let list = base;
-    if (visibleActive.action === "edit" && visibleActive.targetId) {
-      const index = list.findIndex((item) => item.id === visibleActive.targetId);
-      if (index >= 0) list = [...list.slice(0, index), { ...list[index], content: visibleActive.pendingContent ?? list[index].content }];
-    }
-    if (visibleActive.action === "regenerate" && visibleActive.targetId) {
-      const index = list.findIndex((item) => item.id === visibleActive.targetId);
-      if (index >= 0) list = list.slice(0, index);
-    }
+    const targetIndex = visibleActive.targetId ? list.findIndex((item) => item.id === visibleActive.targetId) : -1;
+    if (visibleActive.action === "edit" && targetIndex >= 0) list = [...list.slice(0, targetIndex), { ...list[targetIndex], content: visibleActive.pendingContent ?? list[targetIndex].content }];
+    if (visibleActive.action === "regenerate" && targetIndex >= 0) list = list.slice(0, targetIndex);
     if (list.some((item) => item.id === visibleActive.messageId)) return list;
-    const blank = { input_tokens: null, output_tokens: null, generation_ms: null, tokens_per_second: null, model_id: visibleActive.modelId, checkpoint_id: visibleActive.checkpointId, generation_params: null, reasoning_trace: [], created_at: "" };
+    const blank = { input_tokens: null, output_tokens: null, generation_ms: null, tokens_per_second: null, model_id: visibleActive.modelId, checkpoint_id: visibleActive.checkpointId, generation_params: null, reasoning_trace: [], variants: [], created_at: "" };
     const extra: ChatMessage[] = [];
     if (visibleActive.action === "send" && visibleActive.pendingContent) extra.push({ ...blank, id: `pending-user-${visibleActive.requestId}`, role: "user", content: visibleActive.pendingContent, status: "completed" });
     if (visibleActive.action !== "continue") extra.push({ ...blank, id: visibleActive.messageId ?? `pending-${visibleActive.requestId}`, role: "assistant", content: "", status: "running" });
@@ -110,10 +114,15 @@ export function ChatPage() {
     if (!model) return;
     let chatId = selected;
     if (chatId === null) {
-      const created = await createChat.mutateAsync({ ...modelPayload(model), generation_settings: settings });
-      chatId = created.id;
-      setSelected(chatId);
-      refreshChats();
+      try {
+        const created = await createChat.mutateAsync({ ...modelPayload(model), generation_settings: settings });
+        chatId = created.id;
+        setSelected(chatId);
+        refreshChats();
+      } catch (error) {
+        push("error", describe(error));
+        return;
+      }
     }
     setPinned(true);
     start({ chatId, action: "send", content, checkpointId: model.id, settings });
@@ -125,108 +134,128 @@ export function ChatPage() {
     setDraftModel(next.id);
     if (selected) updateChat.mutate({ id: selected, payload: modelPayload(next) });
   };
+  const saveSettings = (next: Required<GenerationSettings>, prompt: string) => {
+    if (selected) updateChat.mutate({ id: selected, payload: { generation_settings: next, system_prompt: prompt } });
+    else push("info", t("chat.settingsAfterFirst"));
+  };
+
   const lastAssistant = [...messages].reverse().find((item) => item.role === "assistant")?.id;
   const lastUsage = [...messages].reverse().find((item) => item.input_tokens !== null);
   const contextUsed = visibleActive?.inputTokens ?? (lastUsage ? (lastUsage.input_tokens ?? 0) + (lastUsage.output_tokens ?? 0) : null);
   const contextLimit = visibleActive?.contextLimit ?? model?.context_length ?? null;
-  const stageNotice = model?.stage === "pretrain" ? t("chat.pretrainNotice") : null;
-  const productionNotice = runtime?.production && !runtime.production.ready ? t("chat.notReadyNotice") : null;
+  const notice = model?.stage === "pretrain" ? t("chat.pretrainNotice") : runtime?.production && !runtime.production.ready ? t("chat.notReadyNotice") : null;
   const failureHere = failure && failure.chatId === selected ? failure : null;
   const empty = messages.length === 0;
-  const title = chat.data?.title ?? t("chat.newChat");
+  const blockReason = !backendOnline ? t("chatError.disconnected") : model === null ? t("chat.noModel") : null;
+  const composer = (
+    <Composer generating={running} disabled={blockReason !== null} disabledReason={blockReason} onSend={(content) => void send(content)} onStop={cancel} focusKey={selected} large={empty} />
+  );
+  const sidebar = (
+    <ChatSidebar
+      chats={chats.data ?? []}
+      selected={selected}
+      query={query}
+      onQuery={setQuery}
+      onSelect={(id) => { setSelected(id); setDrawer(false); }}
+      onNew={() => { setSelected(null); setDrawer(false); }}
+      onPin={(item: ChatSummary) => updateChat.mutate({ id: item.id, payload: { pinned: !item.pinned } })}
+      onRename={(item, next) => updateChat.mutate({ id: item.id, payload: { title: next } })}
+      onDelete={(item) => removeChat.mutate(item.id)}
+    />
+  );
 
   return (
     <div className="flex h-full min-h-0">
-      <aside className={`${sidebarOpen ? "fixed inset-y-0 left-0 z-40 flex shadow-xl" : "hidden"} w-72 shrink-0 flex-col border-r bg-card lg:static lg:flex lg:shadow-none`}>
-        <ChatSidebar
-          chats={chats.data ?? []}
-          selected={selected}
-          query={query}
-          onQuery={setQuery}
-          onSelect={(id) => { setSelected(id); setSidebarOpen(false); }}
-          onNew={() => { setSelected(null); setSidebarOpen(false); }}
-          onPin={(item: ChatSummary) => updateChat.mutate({ id: item.id, payload: { pinned: !item.pinned } })}
-          onRename={(item, next) => updateChat.mutate({ id: item.id, payload: { title: next } })}
-          onDelete={(item) => removeChat.mutate(item.id)}
-        />
-      </aside>
-      {sidebarOpen ? <button type="button" aria-label={t("common.close")} className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} /> : null}
+      <aside aria-label={t("chat.history")} className={cn("hidden w-64 shrink-0 border-r hairline", historyOpen && "lg:block")}>{sidebar}</aside>
+      {drawer ? (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button type="button" aria-label={t("common.close")} className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
+          <aside aria-label={t("chat.history")} className="relative h-full w-72 max-w-[85vw] bg-background shadow-xl">{sidebar}</aside>
+        </div>
+      ) : null}
       <section className="relative flex min-w-0 flex-1 flex-col">
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3 lg:hidden">
-          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={t("chat.history")} onClick={() => setSidebarOpen(true)}><PanelLeft size={16} /></Button>
-          <span className="truncate text-sm font-medium">{title}</span>
+        <div className="flex h-11 shrink-0 items-center gap-1 px-2">
+          <Button variant="ghost" size="icon" className="lg:hidden" aria-label={t("chat.history")} onClick={() => setDrawer(true)}><PanelLeft size={16} /></Button>
+          <Button variant="ghost" size="icon" className="hidden lg:inline-flex" aria-label={t(historyOpen ? "chat.hideHistory" : "chat.showHistory")} aria-pressed={historyOpen} onClick={toggleHistory}><PanelLeft size={16} /></Button>
+          <ModelPicker registry={registry} selected={model} locked={running} onSelect={pickModel} />
+          <span className="mx-1 hidden min-w-0 flex-1 truncate text-center text-[13px] text-muted-foreground md:block">{chat.data?.title ?? ""}</span>
+          <div className="ml-auto flex items-center md:ml-0">
+            <ContextPanel
+              used={contextUsed}
+              limit={contextLimit}
+              messageCount={messages.length}
+              window={settings.context_messages}
+              disabled={selected === null || running}
+              onWindow={(value) => selected && updateChat.mutate({ id: selected, payload: { generation_settings: { ...settings, context_messages: value } } })}
+              onSystemPrompt={() => setSettingsOpen(true)}
+              onClear={() => setSelected(null)}
+            />
+            <Button variant="ghost" size="icon" aria-label={t("chat.settings")} title={t("chat.settings")} onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={15} /></Button>
+          </div>
         </div>
         <div ref={viewport} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto" data-testid="messages">
-          <div className="mx-auto grid w-full max-w-3xl gap-6 px-4 py-6">
-            {empty ? (
-              <div className="grid gap-6 py-10 text-center sm:py-16">
-                <div>
-                  <h1 className="text-2xl font-semibold tracking-tight">{t("chat.welcome")}</h1>
-                  <p className="mt-1 text-sm text-muted-foreground">{t("chat.localOnly")}</p>
-                </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {SUGGESTIONS.map((key) => (
-                    <button key={key} type="button" disabled={running || !model || !backendOnline} onClick={() => void send(t(`chat.suggestions.${key}`))} className="rounded-xl border bg-card p-3 text-left text-sm transition-colors hover:bg-muted disabled:opacity-50">
-                      {t(`chat.suggestions.${key}`)}
-                    </button>
-                  ))}
-                </div>
+          {empty ? (
+            <div className="mx-auto flex min-h-full w-full max-w-[44rem] flex-col justify-center gap-8 px-4 pb-16">
+              <div className="text-center">
+                <h1 className="text-[28px] font-semibold tracking-tight">{t("chat.welcome")}</h1>
+                <p className="mt-1.5 text-[13px] text-muted-foreground">{t("chat.localOnly")}</p>
               </div>
-            ) : (
-              messages.map((message) => (
+              <div className="grid gap-2">
+                {notice ? <p role="note" className="flex items-start gap-2 text-xs text-warning"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{notice}</p> : null}
+                {failureHere ? <FailureNotice code={failureHere.code} detail={failureHere.detail} onClose={clearFailure} /> : null}
+                {composer}
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((key) => (
+                  <button key={key} type="button" disabled={running || blockReason !== null} onClick={() => void send(t(`chat.suggestions.${key}`))} className="rounded-full border px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">
+                    {t(`chat.suggestions.${key}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto grid w-full max-w-[44rem] gap-7 px-4 pb-6 pt-4">
+              {messages.map((message) => (
                 <MessageItem
                   key={message.id}
                   message={message}
-                  streaming={visibleActive && message.id === visibleActive.messageId ? visibleActive : visibleActive && message.role === "assistant" && message.id.startsWith("pending-") ? visibleActive : null}
+                  streaming={visibleActive && (message.id === visibleActive.messageId || (message.role === "assistant" && message.id.startsWith("pending-"))) ? visibleActive : null}
                   isLast={message.id === lastAssistant}
                   busy={running}
                   onEdit={(item, content) => act("edit", item, content)}
                   onRegenerate={(item) => act("regenerate", item)}
                   onContinue={(item) => act("continue", item)}
+                  onUseVariant={(item, index) => useVariant.mutate({ message: item, index })}
                 />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
         {!pinned && !empty ? (
-          <Button variant="outline" size="icon" className="absolute bottom-40 right-6 z-10 rounded-full shadow" aria-label={t("chat.scrollBottom")} onClick={() => { setPinned(true); }}><ArrowDown size={16} /></Button>
+          <Button variant="outline" size="icon" className="absolute bottom-36 right-6 z-10 rounded-full bg-background shadow" aria-label={t("chat.scrollBottom")} onClick={() => setPinned(true)}><ArrowDown size={15} /></Button>
         ) : null}
-        <div className="shrink-0 px-4 pb-3 pt-1">
-          <div className="mx-auto grid max-w-3xl gap-2">
-            {failureHere ? (
-              <div role="alert" className="flex items-start justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                <span>{t(`chatError.${failureHere.code}`, { defaultValue: failureHere.detail ?? t("chatError.generation_failed") })}</span>
-                <button type="button" className="underline" onClick={clearFailure}>{t("common.close")}</button>
-              </div>
-            ) : null}
-            {!backendOnline ? <p role="status" className="rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">{t("chatError.disconnected")}</p> : null}
-            {stageNotice || productionNotice ? (
-              <p role="note" className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{stageNotice ?? productionNotice}</p>
-            ) : null}
-            <Composer
-              registry={registry}
-              model={model}
-              generating={running}
-              offline={!backendOnline}
-              contextUsed={contextUsed}
-              contextLimit={contextLimit}
-              onSend={(content) => void send(content)}
-              onStop={cancel}
-              onModel={pickModel}
-              onSettings={() => setSettingsOpen(true)}
-              focusKey={selected}
-            />
+        {empty ? null : (
+          <div className="shrink-0 px-4 pb-3 pt-1">
+            <div className="mx-auto grid max-w-[44rem] gap-2">
+              {failureHere ? <FailureNotice code={failureHere.code} detail={failureHere.detail} onClose={clearFailure} /> : null}
+              {notice ? <p role="note" className="flex items-start gap-2 text-xs text-warning"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{notice}</p> : null}
+              {composer}
+            </div>
           </div>
-        </div>
+        )}
       </section>
-      <SettingsDialog
-        key={`${selected}-${settingsOpen}`}
-        open={settingsOpen}
-        settings={settings}
-        systemPrompt={chat.data?.system_prompt ?? ""}
-        onClose={() => setSettingsOpen(false)}
-        onSave={(next, prompt) => selected ? updateChat.mutate({ id: selected, payload: { generation_settings: next, system_prompt: prompt } }) : push("info", t("chat.settingsAfterFirst"))}
-      />
+      <SettingsDialog key={`${selected}-${settingsOpen}`} open={settingsOpen} settings={settings} systemPrompt={chat.data?.system_prompt ?? ""} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />
+    </div>
+  );
+}
+
+function FailureNotice({ code, detail, onClose }: { code: string; detail: string | null; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const key = `chatError.${code}`;
+  return (
+    <div role="alert" className="flex items-start justify-between gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <span>{i18n.exists(key) ? t(key) : detail ? t("chatError.generation_failed") : t("chatError.generation_failed")}</span>
+      <button type="button" className="underline" onClick={onClose}>{t("common.close")}</button>
     </div>
   );
 }

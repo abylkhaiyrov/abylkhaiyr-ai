@@ -57,7 +57,7 @@ function RowMenu({ chat, onPin, onRename, onDelete }: { chat: ChatSummary; onPin
       </button>
       {anchor
         ? createPortal(
-            <div ref={menu} role="menu" style={{ position: "fixed", top, left: Math.max(8, anchor.right - 176) }} className="z-[70] w-44 rounded-lg border bg-card p-1 shadow-xl animate-rise" onClick={() => setAnchor(null)}>
+            <div ref={menu} role="menu" style={{ position: "fixed", top, left: Math.max(8, anchor.right - 176) }} className="z-[70] w-44 rounded-lg border bg-background p-1 shadow-xl animate-rise" onClick={() => setAnchor(null)}>
               <button role="menuitem" type="button" className={item} onClick={onPin}>{chat.pinned ? <PinOff size={14} /> : <Pin size={14} />}{chat.pinned ? t("chat.unpin") : t("chat.pin")}</button>
               <button role="menuitem" type="button" className={item} onClick={onRename}><Pencil size={14} />{t("chat.rename")}</button>
               <a role="menuitem" className={item} href={api.exportChatUrl(chat.id, "md")} download><Download size={14} />{t("chat.exportMd")}</a>
@@ -90,8 +90,8 @@ export function ChatSidebar({ chats, selected, query, onQuery, onSelect, onNew, 
   };
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="grid gap-2 p-3">
-        <Button onClick={onNew} className="w-full justify-start"><Plus size={15} />{t("chat.newChat")}</Button>
+      <div className="grid gap-2 p-2.5">
+        <Button variant="outline" onClick={onNew} className="w-full justify-start"><Plus size={14} />{t("chat.newChat")}</Button>
         <div className="relative">
           <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input type="search" aria-label={t("chat.search")} placeholder={t("chat.search")} className="field pl-8" value={query} onChange={(event) => onQuery(event.target.value)} />
@@ -107,7 +107,7 @@ export function ChatSidebar({ chats, selected, query, onQuery, onSelect, onNew, 
             const chat = row.chat;
             return (
               <div key={chat.id} style={style} className="py-0.5">
-                <div className={cn("group flex h-full items-center rounded-lg px-2 transition-colors", chat.id === selected ? "bg-primary/10" : "hover:bg-muted")}>
+                <div className={cn("group flex h-full items-center rounded-lg px-2 transition-colors", chat.id === selected ? "bg-muted" : "hover:bg-muted/60")}>
                   {renaming === chat.id ? (
                     <input autoFocus aria-label={t("chat.rename")} className="h-7 min-w-0 flex-1 rounded border bg-background px-1.5 text-sm" value={title} onChange={(event) => setTitle(event.target.value)} onBlur={() => commit(chat)} onKeyDown={(event) => { if (event.key === "Enter") commit(chat); if (event.key === "Escape") setRenaming(null); }} />
                   ) : (
