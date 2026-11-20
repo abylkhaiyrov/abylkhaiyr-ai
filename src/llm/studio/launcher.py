@@ -80,7 +80,11 @@ def prepare_frontend(frontend: Path, dev: bool) -> None:
 
 
 def run_frontend_command(frontend: Path, command: list[str]) -> None:
-    result = subprocess.run(command, cwd=frontend, check=False)
+    # Windows CreateProcess does not resolve npm to npm.cmd automatically.
+    executable = shutil.which(command[0])
+    if executable is None:
+        raise ConfigError(f"Studio frontend executable not found: {command[0]}")
+    result = subprocess.run([executable, *command[1:]], cwd=frontend, check=False)
     if result.returncode:
         raise ConfigError(
             f"Studio frontend command failed: {' '.join(command)} (exit {result.returncode})"

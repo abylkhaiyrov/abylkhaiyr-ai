@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import fcntl
 import logging
+import os
 import signal
 import threading
 import time
@@ -10,6 +10,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
 from typing import IO
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 from llm.core.config import ExperimentConfig
 from llm.core.errors import LLMError, ResourceError
@@ -29,12 +34,22 @@ logger = logging.getLogger("llm.training")
 @contextmanager
 def exclusive_session(lock_path: Path = LOCK_FILE) -> Iterator[None]:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    handle: IO[str] = lock_path.open("w")
+    handle: IO[str] = lock_path.open("a+")
     try:
         try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
+            if os.name == "nt":
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() == 0:
+                    handle.write(" ")
+                    handle.flush()
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
             raise ResourceError("another training session is already running") from error
+        handle.seek(0)
+        handle.truncate()
         handle.write(str(time.time()))
         handle.flush()
         yield

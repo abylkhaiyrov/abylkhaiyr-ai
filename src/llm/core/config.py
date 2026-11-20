@@ -58,6 +58,7 @@ class TokenizerConfig(StrictModel):
 class DataSourceConfig(StrictModel):
     name: str
     dataset: str
+    data_files: str | list[str] | None = None
     config: str | None = None
     split: str = "train"
     text_field: str | None = None

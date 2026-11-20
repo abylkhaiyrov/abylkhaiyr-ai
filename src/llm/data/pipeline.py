@@ -117,6 +117,9 @@ class CorpusBuilder:
                 name: {
                     "dataset": s.dataset,
                     "config": s.config,
+                    "data_files": next(
+                        source.data_files for source in self.config.sources if source.name == name
+                    ),
                     "license": s.license,
                     "seen": s.seen,
                     "kept": s.kept,

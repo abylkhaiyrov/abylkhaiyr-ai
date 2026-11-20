@@ -17,6 +17,20 @@ def test_sandbox_runs_and_captures_output():
     assert result.passed and result.stdout.strip() == "42"
 
 
+def test_sandbox_without_resource_does_not_start_process(monkeypatch):
+    from llm.reasoning import sandbox
+
+    monkeypatch.setattr(sandbox, "resource", None)
+
+    def unexpected_process(*args, **kwargs):
+        pytest.fail("Sandbox must not launch code without resource limits")
+
+    monkeypatch.setattr(sandbox.subprocess, "run", unexpected_process)
+    result = sandbox.run_python("print(42)")
+    assert not result.passed and not result.timed_out
+    assert "resource limits" in result.stderr
+
+
 def test_sandbox_enforces_timeout():
     result = run_python("while True: pass", SandboxLimits(timeout_seconds=1.0, cpu_seconds=1))
     assert not result.passed

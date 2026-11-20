@@ -35,8 +35,14 @@ def stream_source(
     source: DataSourceConfig, raw_dir: str, allowed_licenses: list[str] | None = None
 ) -> Iterator[Record]:
     try:
+        file_options = {"data_files": source.data_files} if source.data_files else {}
         dataset = load_dataset(
-            source.dataset, source.config, split=source.split, streaming=True, cache_dir=raw_dir
+            source.dataset,
+            source.config,
+            split=source.split,
+            streaming=True,
+            cache_dir=raw_dir,
+            **file_options,
         )
     except Exception as error:
         raise DataError(f"cannot load {source.dataset}: {error}") from error

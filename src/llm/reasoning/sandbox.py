@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import os
-import resource
 import shutil
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 from llm.core.errors import SandboxError
 
@@ -80,6 +84,13 @@ def os_confinement(workdir: str) -> list[str]:
 def run_program(language: str, code: str, limits: SandboxLimits | None = None) -> SandboxResult:
     if language not in LANGUAGES:
         raise SandboxError(f"unsupported language: {language}")
+    if resource is None:
+        return SandboxResult(
+            False,
+            "",
+            "Code execution sandbox requires Unix resource limits; unavailable on Windows.",
+            False,
+        )
     limits = limits or SandboxLimits()
     filename, template = LANGUAGES[language]
     command = [part.format(python=sys.executable) for part in template]

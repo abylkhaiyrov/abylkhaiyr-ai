@@ -1,5 +1,7 @@
 import os
 import signal
+import subprocess
+import sys
 import threading
 
 import pytest
@@ -16,6 +18,35 @@ def test_lock_prevents_second_session(tmp_path):
         pass
     with exclusive_session(lock):
         pass
+
+
+def test_lock_prevents_another_process(tmp_path):
+    lock = tmp_path / "lock"
+    code = (
+        "import sys; from pathlib import Path; "
+        "from llm.training.session import exclusive_session; "
+        "with_lock = exclusive_session(Path(sys.argv[1])); with_lock.__enter__()"
+    )
+    with exclusive_session(lock):
+        size = lock.stat().st_size
+        blocked = subprocess.run(
+            [sys.executable, "-c", code, str(lock)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert blocked.returncode != 0
+        assert "another training session" in blocked.stderr
+        assert lock.stat().st_size == size
+    released = subprocess.run(
+        [sys.executable, "-c", code, str(lock)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert released.returncode == 0, released.stderr
 
 
 def test_signals_set_stop_event_and_restore_handlers():

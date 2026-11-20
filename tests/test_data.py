@@ -30,6 +30,29 @@ def make_config(**overrides) -> DataConfig:
     return DataConfig(**{**values, **overrides})
 
 
+def test_source_reads_explicit_data_files(monkeypatch):
+    from llm.data import sources
+
+    calls = {}
+
+    def fake_load(dataset, config, **kwargs):
+        calls.update(dataset=dataset, config=config, **kwargs)
+        return [{"text": "sample training document"}]
+
+    monkeypatch.setattr(sources, "load_dataset", fake_load)
+    source = DataSourceConfig(
+        name="direct",
+        dataset="parquet",
+        data_files="sample.parquet",
+        text_field="text",
+        license="MIT",
+    )
+    records = list(sources.stream_source(source, "cache"))
+    assert records[0].text == "sample training document"
+    assert calls["data_files"] == "sample.parquet"
+    assert calls["streaming"] is True
+
+
 def test_html_stripping_and_unescape():
     assert strip_html("<p>Hi &amp; <b>bye</b></p><script>x()</script>").split() == [
         "Hi",

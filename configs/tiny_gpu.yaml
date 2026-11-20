@@ -1,0 +1,36 @@
+name: tiny_gpu
+model:
+  vocab_size: 8192
+  hidden_size: 384
+  num_hidden_layers: 8
+  num_attention_heads: 6
+  num_key_value_heads: 2
+  intermediate_size: 1024
+  max_position_embeddings: 512
+tokenizer:
+  vocab_size: 8192
+  path: data/tokenizer
+train:
+  stage: pretrain
+  data_dir: data/processed
+  output_dir: experiments/tiny_gpu
+  checkpoint_dir: checkpoints/tiny_gpu
+  device: cuda
+  precision: bf16
+  max_steps: 6000
+  micro_batch_size: 16
+  gradient_accumulation_steps: 4
+  sequence_length: 512
+  fast_causal: true
+  num_threads: 4
+  eval_interval: 100
+  eval_batches: 20
+  log_interval: 10
+  checkpoint_interval: 100
+  keep_checkpoints: 3
+  early_stopping_patience: 6
+  optimizer:
+    learning_rate: 0.001
+    warmup_steps: 200
+    weight_decay: 0.1
+    foreach: true

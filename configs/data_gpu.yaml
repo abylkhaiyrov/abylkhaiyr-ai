@@ -1,0 +1,48 @@
+version: gpu-v1
+output_dir: data/processed
+raw_dir: data/raw
+decontaminate: true
+validation_fraction: 0.01
+test_fraction: 0.01
+min_chars: 200
+detect_language: false
+minhash_permutations: 32
+sources:
+- name: wiki_ru
+  dataset: parquet
+  text_field: text
+  language: ru
+  license: CC-BY-SA-3.0
+  max_documents: 8000
+  data_files: https://huggingface.co/datasets/wikimedia/wikipedia/resolve/main/20231101.ru/train-00001-of-00021.parquet
+- name: wiki_kk
+  dataset: parquet
+  text_field: text
+  language: kk
+  license: CC-BY-SA-3.0
+  max_documents: 8000
+  data_files: https://huggingface.co/datasets/wikimedia/wikipedia/resolve/main/20231101.kk/train-00000-of-00001.parquet
+- name: wiki_simple
+  dataset: parquet
+  text_field: text
+  language: en
+  license: CC-BY-SA-3.0
+  max_documents: 8000
+  data_files: https://huggingface.co/datasets/wikimedia/wikipedia/resolve/main/20231101.simple/train-00000-of-00001.parquet
+- name: tinystories
+  dataset: parquet
+  text_field: text
+  language: en
+  license: CDLA-Sharing-1.0
+  max_documents: 12000
+  data_files: https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/data/train-00000-of-00004-2d5a1467fff1081b.parquet
+- name: dolly_sft
+  dataset: databricks/databricks-dolly-15k
+  kind: instruction
+  template: '{instruction}
+
+
+    {context}'
+  response_field: response
+  language: en
+  license: CC-BY-SA-3.0

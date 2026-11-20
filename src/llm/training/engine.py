@@ -282,7 +282,7 @@ class Trainer:
             window_tokens += tokens
             window_steps += 1
             if self.state.step % config.log_interval == 0:
-                elapsed = time.monotonic() - window_start
+                elapsed = max(time.monotonic() - window_start, 1e-9)
                 mean_loss = window_loss / window_tokens
                 self.monitor.log(
                     self.state.step,

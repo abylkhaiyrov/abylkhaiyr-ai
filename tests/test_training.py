@@ -23,7 +23,9 @@ def write_tokens(path, vocab, size=6000):
 
 
 def build_trainer(tmp_path, model_config, steps, accumulation=2, micro=4, name="run", **extra):
-    write_tokens(tmp_path / "train.bin", model_config.vocab_size)
+    # Windows cannot overwrite a token file while another loader has it memory-mapped.
+    if not (tmp_path / "train.bin").exists():
+        write_tokens(tmp_path / "train.bin", model_config.vocab_size)
     train = PackedTokenLoader(tmp_path / "train.bin", np.dtype(np.uint16), 16, micro, seed=0)
     valid = PackedTokenLoader(
         tmp_path / "train.bin", np.dtype(np.uint16), 16, micro, 0, shuffle=False
