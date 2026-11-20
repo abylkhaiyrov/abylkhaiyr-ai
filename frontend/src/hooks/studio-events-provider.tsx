@@ -118,8 +118,20 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
       stopped = true;
       if (retryTimer) clearTimeout(retryTimer);
       if (heartbeat) clearInterval(heartbeat);
-      socket.current?.close();
+      const ws = socket.current;
       socket.current = null;
+      setConnection(false);
+      if (ws) {
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => ws.close();
+        } else {
+          ws.onopen = null;
+          ws.close();
+        }
+      }
     };
   }, [queryClient, setConnection]);
 
