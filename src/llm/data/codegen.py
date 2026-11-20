@@ -4,10 +4,10 @@ import json
 import random
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
 from functools import lru_cache, partial
 from pathlib import Path
 
+from llm.data.codespecs import NEW_SPECS, Spec
 from llm.reasoning.sandbox import SandboxLimits, run_program
 
 LANGUAGE_NAMES = {
@@ -22,23 +22,8 @@ WRITE_PROMPTS = (
     "{lang} тілінде {name} функциясын жаз: ол {kk}.",
     "Implement {name} in {lang}. It {description}.",
 )
+SQL_OOP_REPEATS = 2
 SANDBOX = SandboxLimits(timeout_seconds=20.0, cpu_seconds=20, memory_mb=512)
-
-
-@dataclass(frozen=True)
-class Spec:
-    name: str
-    description: str
-    ru: str
-    kk: str
-    returns: str
-    reference: Callable
-    inputs: tuple
-    python: str
-    javascript: str
-    typescript: str
-    java: str
-    mutant: tuple[str, str] | None = None
 
 
 def isprime(n: int) -> bool:
@@ -256,7 +241,8 @@ SPECS = [
         ("max(lo, min(x, hi))", "min(lo, max(x, hi))"),
     ),
 ]
-SPEC_BY_NAME = {spec.name: spec for spec in SPECS}
+ALL_SPECS = [*SPECS, *NEW_SPECS]
+SPEC_BY_NAME = {spec.name: spec for spec in ALL_SPECS}
 
 
 def literal(value: object, language: str) -> str:
@@ -338,18 +324,107 @@ def fenced(code: str, language: str) -> str:
     return f"```{language}\n{code}\n```"
 
 
+EXAMPLE_SUFFIX = (
+    "For example, {call} returns {value}.",
+    "Например, {call} возвращает {value}.",
+    "Мысалы, {call} {value} қайтарады.",
+    "Example: {call} -> {value}.",
+)
+CONSTRAINT_SUFFIX = (
+    "Do not use external libraries.",
+    "Не используй внешние библиотеки.",
+    "Сыртқы кітапханаларды қолданба.",
+    "Keep the solution simple and readable.",
+)
+
+
+def plain(value: object, language: str) -> str:
+    return repr(value) if language == "python" else json.dumps(value)
+
+
+def prompt_suffix(rng: random.Random, spec: Spec, language: str, index: int) -> str:
+    args = rng.choice(spec.inputs)
+    call = f"{spec.name}({', '.join(plain(a, language) for a in args)})"
+    options = (
+        "",
+        " " + EXAMPLE_SUFFIX[index].format(call=call, value=plain(spec.reference(*args), language)),
+        " " + CONSTRAINT_SUFFIX[index],
+    )
+    return rng.choice(options)
+
+
 def write_function_task(rng: random.Random, spec: Spec, language: str) -> dict | None:
     solution = getattr(spec, language)
-    if not passes(spec, language, solution):
+    if not solution or not passes(spec, language, solution):
         return None
-    prompt = rng.choice(WRITE_PROMPTS).format(
+    index = rng.randrange(len(WRITE_PROMPTS))
+    prompt = WRITE_PROMPTS[index].format(
         lang=LANGUAGE_NAMES[language],
         name=spec.name,
         description=spec.description,
         ru=spec.ru,
         kk=spec.kk,
     )
+    prompt += prompt_suffix(rng, spec, language, index)
     return conversation(prompt, fenced(solution, language), "write", language)
+
+
+OPTIMIZE_PROMPTS = (
+    "This Python function {name} should {description}, but it runs in {slow}. "
+    "Rewrite it to run in {fast} and keep the same behavior.\n\n{code}",
+    "Эта Python-функция {name} должна {ru}, но работает за {slow}. "
+    "Перепиши её так, чтобы она работала за {fast}, не меняя поведения.\n\n{code}",
+    "Бұл Python {name} функциясы {kk}, бірақ {slow} уақытта жұмыс істейді. "
+    "Оны мінез-құлқын өзгертпей, {fast} уақытта жұмыс істейтін етіп қайта жаз.\n\n{code}",
+)
+OPTIMIZE_ANSWERS = (
+    "Here is a faster version with {fast} time complexity:\n\n{code}",
+    "Вот более быстрая версия со сложностью {fast}:\n\n{code}",
+    "Міне, уақыт күрделілігі {fast} болатын жылдамырақ нұсқа:\n\n{code}",
+)
+COMPLEXITY_QUESTIONS = (
+    "What is the time complexity of this Python function?\n\n{code}",
+    "Какова временная сложность этой Python-функции?\n\n{code}",
+    "Бұл Python функциясының уақыт күрделілігі қандай?\n\n{code}",
+)
+COMPLEXITY_ANSWERS = (
+    "The time complexity is {value}.",
+    "Временная сложность равна {value}.",
+    "Уақыт күрделілігі — {value}.",
+)
+
+
+def optimize_task(rng: random.Random, spec: Spec) -> dict | None:
+    if spec.slow is None or spec.complexity is None:
+        return None
+    if not (passes(spec, "python", spec.slow) and passes(spec, "python", spec.python)):
+        return None
+    index = rng.randrange(len(OPTIMIZE_PROMPTS))
+    slow, fast = spec.complexity
+    prompt = OPTIMIZE_PROMPTS[index].format(
+        name=spec.name,
+        description=spec.description,
+        ru=spec.ru,
+        kk=spec.kk,
+        slow=slow,
+        fast=fast,
+        code=fenced(spec.slow, "python"),
+    )
+    answer = OPTIMIZE_ANSWERS[index].format(fast=fast, code=fenced(spec.python, "python"))
+    return conversation(prompt, answer, "optimize", "python")
+
+
+def complexity_task(rng: random.Random, spec: Spec) -> dict | None:
+    if spec.slow is None or spec.complexity is None:
+        return None
+    index = rng.randrange(len(COMPLEXITY_QUESTIONS))
+    slow_version = rng.random() < 0.5
+    code = spec.slow if slow_version else spec.python
+    value = spec.complexity[0 if slow_version else 1]
+    prompt = COMPLEXITY_QUESTIONS[index].format(code=fenced(code, "python"))
+    return conversation(
+        prompt, COMPLEXITY_ANSWERS[index].format(value=value), "complexity", "python"
+    )
 
 
 def bug_fix_task(rng: random.Random, spec: Spec) -> dict | None:
@@ -504,12 +579,19 @@ def sql_task(rng: random.Random) -> dict | None:
 def build_code_dataset(count: int, seed: int) -> list[dict]:
     rng = random.Random(seed)
     makers: list[Callable[[], dict | None]] = []
-    for spec in SPECS:
+    for spec in ALL_SPECS:
         for language in LANGUAGE_NAMES:
             makers.append(partial(write_function_task, rng, spec, language))
-        for maker in (bug_fix_task, analysis_task, tests_task, refactor_task):
+        for maker in (
+            bug_fix_task,
+            analysis_task,
+            tests_task,
+            refactor_task,
+            optimize_task,
+            complexity_task,
+        ):
             makers.append(partial(maker, rng, spec))
-    makers.extend([partial(oop_task, rng), partial(sql_task, rng)] * 6)
+    makers.extend([partial(oop_task, rng), partial(sql_task, rng)] * SQL_OOP_REPEATS)
     rows: list[dict] = []
     seen: set[str] = set()
     attempts = 0

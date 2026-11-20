@@ -269,6 +269,198 @@ CONCEPTS = [
 ]
 
 
+CODE_CONCEPTS = [
+    Concept(
+        Term("SOLID", "SOLID", "SOLID"),
+        Term(
+            "SOLID is a set of five object-oriented design principles: single responsibility, open/closed, Liskov substitution, interface segregation and dependency inversion.",
+            "SOLID — это пять принципов объектно-ориентированного проектирования: единственная ответственность, открытость/закрытость, подстановка Лисков, разделение интерфейсов и инверсия зависимостей.",
+            "SOLID — объектіге бағытталған жобалаудың бес принципі: жалғыз жауапкершілік, ашықтық/жабықтық, Лисков алмастыруы, интерфейстерді бөлу және тәуелділікті инверсиялау.",
+        ),
+    ),
+    Concept(
+        Term(
+            "the single responsibility principle",
+            "принцип единственной ответственности",
+            "жалғыз жауапкершілік принципі",
+        ),
+        Term(
+            "The single responsibility principle says that a class or function should have only one reason to change.",
+            "Принцип единственной ответственности гласит, что у класса или функции должна быть только одна причина для изменения.",
+            "Жалғыз жауапкершілік принципі бойынша класс немесе функцияның өзгеруіне тек бір ғана себеп болуы керек.",
+        ),
+    ),
+    Concept(
+        Term(
+            "the open/closed principle",
+            "принцип открытости/закрытости",
+            "ашықтық/жабықтық принципі",
+        ),
+        Term(
+            "The open/closed principle says that code should be open for extension but closed for modification.",
+            "Принцип открытости/закрытости: код должен быть открыт для расширения, но закрыт для изменения.",
+            "Ашықтық/жабықтық принципі: код кеңейтуге ашық, бірақ өзгертуге жабық болуы керек.",
+        ),
+    ),
+    Concept(
+        Term(
+            "the Liskov substitution principle",
+            "принцип подстановки Лисков",
+            "Лисков алмастыру принципі",
+        ),
+        Term(
+            "The Liskov substitution principle says that objects of a subclass must be usable wherever objects of the base class are expected without breaking the program.",
+            "Принцип подстановки Лисков: объекты подкласса должны использоваться везде, где ожидаются объекты базового класса, не нарушая работу программы.",
+            "Лисков алмастыру принципі: туынды класс объектілерін базалық класс күтілетін жерде бағдарламаны бұзбай қолдануға болуы керек.",
+        ),
+    ),
+    Concept(
+        Term(
+            "the interface segregation principle",
+            "принцип разделения интерфейсов",
+            "интерфейстерді бөлу принципі",
+        ),
+        Term(
+            "The interface segregation principle says that clients should not be forced to depend on methods they do not use, so interfaces should be small and focused.",
+            "Принцип разделения интерфейсов: клиенты не должны зависеть от методов, которыми не пользуются, поэтому интерфейсы должны быть небольшими и узкоспециализированными.",
+            "Интерфейстерді бөлу принципі: клиенттер өздері қолданбайтын әдістерге тәуелді болмауы керек, сондықтан интерфейстер шағын әрі нақты болуы тиіс.",
+        ),
+    ),
+    Concept(
+        Term(
+            "the dependency inversion principle",
+            "принцип инверсии зависимостей",
+            "тәуелділікті инверсиялау принципі",
+        ),
+        Term(
+            "The dependency inversion principle says that high-level modules should depend on abstractions rather than on concrete low-level implementations.",
+            "Принцип инверсии зависимостей: модули высокого уровня должны зависеть от абстракций, а не от конкретных низкоуровневых реализаций.",
+            "Тәуелділікті инверсиялау принципі: жоғары деңгейлі модульдер нақты төмен деңгейлі іске асыруларға емес, абстракцияларға тәуелді болуы керек.",
+        ),
+    ),
+    Concept(
+        Term("clean code", "чистый код", "таза код"),
+        Term(
+            "Clean code is code that is easy to read, understand and change: it has clear names, small functions and no unnecessary duplication.",
+            "Чистый код — это код, который легко читать, понимать и изменять: понятные имена, небольшие функции и отсутствие лишнего дублирования.",
+            "Таза код — оқуға, түсінуге және өзгертуге оңай код: түсінікті атаулар, шағын функциялар және артық қайталанусыз.",
+        ),
+    ),
+    Concept(
+        Term("the DRY principle", "принцип DRY", "DRY принципі"),
+        Term(
+            "DRY means don't repeat yourself: every piece of knowledge should have a single representation in the code.",
+            "DRY означает «не повторяйся»: каждый фрагмент знания должен иметь в коде единственное представление.",
+            "DRY «қайталанба» дегенді білдіреді: әрбір білім бөлігінің кодта бір ғана көрінісі болуы керек.",
+        ),
+    ),
+    Concept(
+        Term("the KISS principle", "принцип KISS", "KISS принципі"),
+        Term(
+            "KISS means keep it simple: prefer the simplest solution that works.",
+            "KISS означает «делай проще»: выбирай самое простое решение, которое работает.",
+            "KISS «қарапайым ұста» дегенді білдіреді: жұмыс істейтін ең қарапайым шешімді таңда.",
+        ),
+    ),
+    Concept(
+        Term("a unit test", "модульный тест", "модульдік тест"),
+        Term(
+            "A unit test is a small automatic check that verifies that one piece of code, such as a function, behaves as expected.",
+            "Модульный тест — это небольшая автоматическая проверка того, что отдельный фрагмент кода, например функция, работает как ожидается.",
+            "Модульдік тест — функция сияқты код бөлігінің күтілгендей жұмыс істейтінін тексеретін шағын автоматты тексеру.",
+        ),
+    ),
+    Concept(
+        Term("refactoring", "рефакторинг", "рефакторинг"),
+        Term(
+            "Refactoring is changing the structure of code to make it cleaner without changing what it does.",
+            "Рефакторинг — это изменение структуры кода для улучшения его качества без изменения его поведения.",
+            "Рефакторинг — кодтың жұмысын өзгертпей, оның құрылымын жақсарту.",
+        ),
+    ),
+    Concept(
+        Term("recursion", "рекурсия", "рекурсия"),
+        Term(
+            "Recursion is a technique where a function solves a problem by calling itself on smaller inputs until it reaches a base case.",
+            "Рекурсия — это приём, при котором функция решает задачу, вызывая саму себя для меньших входных данных, пока не дойдёт до базового случая.",
+            "Рекурсия — функция есепті өзін кішірек деректермен шақыру арқылы, базалық жағдайға жеткенше шешетін әдіс.",
+        ),
+    ),
+    Concept(
+        Term("Big O notation", "O-большое", "O-үлкен белгілеуі"),
+        Term(
+            "Big O notation describes how the running time or memory of an algorithm grows as the input size grows.",
+            "O-большое описывает, как время работы или память алгоритма растут с увеличением размера входных данных.",
+            "O-үлкен белгілеуі кіріс деректер өлшемі өскенде алгоритмнің жұмыс уақыты немесе жады қалай өсетінін сипаттайды.",
+        ),
+    ),
+    Concept(
+        Term("a stack", "стек", "стек"),
+        Term(
+            "A stack is a data structure that works on the last in, first out principle: the last element added is the first one removed.",
+            "Стек — это структура данных, работающая по принципу «последним пришёл — первым вышел».",
+            "Стек — «соңғы кірген — бірінші шығады» принципімен жұмыс істейтін деректер құрылымы.",
+        ),
+    ),
+    Concept(
+        Term("a queue", "очередь", "кезек"),
+        Term(
+            "A queue is a data structure that works on the first in, first out principle: the first element added is the first one removed.",
+            "Очередь — это структура данных, работающая по принципу «первым пришёл — первым вышел».",
+            "Кезек — «бірінші кірген — бірінші шығады» принципімен жұмыс істейтін деректер құрылымы.",
+        ),
+    ),
+    Concept(
+        Term("a hash table", "хеш-таблица", "хэш-кесте"),
+        Term(
+            "A hash table stores key-value pairs and uses a hash function to find a value by its key in constant time on average.",
+            "Хеш-таблица хранит пары «ключ — значение» и с помощью хеш-функции в среднем находит значение по ключу за постоянное время.",
+            "Хэш-кесте «кілт — мән» жұптарын сақтайды және хэш-функция арқылы мәнді кілті бойынша орта есеппен тұрақты уақытта табады.",
+        ),
+    ),
+    Concept(
+        Term("a linked list", "связный список", "байланыстырылған тізім"),
+        Term(
+            "A linked list is a data structure made of nodes, where each node stores a value and a reference to the next node.",
+            "Связный список — это структура данных из узлов, где каждый узел хранит значение и ссылку на следующий узел.",
+            "Байланыстырылған тізім — түйіндерден тұратын деректер құрылымы, мұнда әр түйін мәнді және келесі түйінге сілтемені сақтайды.",
+        ),
+    ),
+    Concept(
+        Term("polymorphism", "полиморфизм", "полиморфизм"),
+        Term(
+            "Polymorphism lets objects of different classes be used through the same interface, each responding in its own way.",
+            "Полиморфизм позволяет использовать объекты разных классов через один интерфейс, причём каждый отвечает по-своему.",
+            "Полиморфизм әртүрлі класс объектілерін бір интерфейс арқылы қолдануға мүмкіндік береді, әрқайсысы өзінше жауап береді.",
+        ),
+    ),
+    Concept(
+        Term("encapsulation", "инкапсуляция", "инкапсуляция"),
+        Term(
+            "Encapsulation means hiding the internal state of an object and exposing it only through methods.",
+            "Инкапсуляция — это сокрытие внутреннего состояния объекта и доступ к нему только через методы.",
+            "Инкапсуляция — объектінің ішкі күйін жасырып, оған тек әдістер арқылы қол жеткізу.",
+        ),
+    ),
+    Concept(
+        Term("inheritance", "наследование", "мұрагерлік"),
+        Term(
+            "Inheritance lets a class reuse the fields and methods of another class and extend or change them.",
+            "Наследование позволяет классу повторно использовать поля и методы другого класса, расширяя или изменяя их.",
+            "Мұрагерлік класқа басқа таптың өрістері мен әдістерін қайта пайдалануға, оларды кеңейтуге немесе өзгертуге мүмкіндік береді.",
+        ),
+    ),
+    Concept(
+        Term("binary search", "бинарный поиск", "бинарлық іздеу"),
+        Term(
+            "Binary search finds an element in a sorted list by repeatedly halving the search range, which takes logarithmic time.",
+            "Бинарный поиск находит элемент в отсортированном списке, многократно деля диапазон поиска пополам, и работает за логарифмическое время.",
+            "Бинарлық іздеу сұрыпталған тізімнен элементті іздеу ауқымын қайта-қайта екіге бөлу арқылы табады және логарифмдік уақытта жұмыс істейді.",
+        ),
+    ),
+]
+
+
 @dataclass(frozen=True)
 class Fact:
     question: Term

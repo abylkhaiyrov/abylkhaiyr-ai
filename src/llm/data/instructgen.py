@@ -555,13 +555,23 @@ def general_fact(rng: random.Random, facts: IdentityFacts) -> Row:
     )
 
 
-def explain_concept(rng: random.Random, facts: IdentityFacts) -> Row:
+def concept_row(rng: random.Random, concepts: list[lx.Concept], category: str, group: str) -> Row:
     language = _language(rng)
-    concept = _pick(rng, lx.CONCEPTS)
+    concept = _pick(rng, concepts)
     name = concept.name.in_language(language)
     question = _pick(rng, CONCEPT_QUESTIONS[language]).format(c=name, C=name[:1].upper() + name[1:])
     answer = concept.definition.in_language(language) + _pick(rng, CONCEPT_CLOSERS[language])
-    return _row("explain_concept", language, [(question, answer)])
+    row = _row(category, language, [(question, answer)])
+    row["group"] = group
+    return row
+
+
+def explain_concept(rng: random.Random, facts: IdentityFacts) -> Row:
+    return concept_row(rng, lx.CONCEPTS, "explain_concept", "dialog")
+
+
+def explain_code_concept(rng: random.Random, facts: IdentityFacts) -> Row:
+    return concept_row(rng, lx.CODE_CONCEPTS, "explain_code_concept", "code")
 
 
 def _person_line(language: str, name: str, job: lx.Term, city: lx.Term, age: int) -> str:
@@ -751,6 +761,7 @@ CATEGORIES: dict[str, tuple[float, str, Generator]] = {
     "unknown_entity": (0.03, "dialog", unknown_entity),
     "general_fact": (0.06, "dialog", general_fact),
     "explain_concept": (0.07, "dialog", explain_concept),
+    "explain_code_concept": (0.02, "code", explain_code_concept),
     "multi_turn_name": (0.03, "dialog", multi_turn_name),
     "multi_turn_identity": (0.03, "identity", multi_turn_identity),
     "context_qa": (0.22, "skills", context_qa),
