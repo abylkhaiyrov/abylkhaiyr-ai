@@ -156,3 +156,15 @@ def profile_phases(config: ExperimentConfig, variant: Variant, steps: int) -> di
 
 def with_overrides(variant: Variant, **changes) -> Variant:
     return replace(variant, **changes)
+
+
+def loss_trajectory(config: ExperimentConfig, variant: Variant, steps: int) -> list[float]:
+    with tempfile.TemporaryDirectory() as workdir:
+        trainer = build_trainer(apply_variant(config, variant, Path(workdir)), resume=False)
+        losses = [trainer.run_step()[0] for _ in range(steps)]
+        del trainer
+    return losses
+
+
+def max_trajectory_gap(reference: list[float], candidate: list[float]) -> float:
+    return max(abs(a - b) for a, b in zip(reference, candidate, strict=True))

@@ -5,7 +5,9 @@ import { useFormat } from "@/hooks/use-format";
 import type { ReasoningStageEvent } from "@/lib/api";
 import type { ActiveGeneration } from "@/lib/generation";
 
-function chips(event: ReasoningStageEvent, t: (key: string, options?: Record<string, unknown>) => string): string[] {
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+function chips(event: ReasoningStageEvent, t: Translate): string[] {
   const data = event.data ?? {};
   const result: string[] = [];
   if (typeof data.kind === "string") result.push(t(`trace.kinds.${data.kind}`, { defaultValue: data.kind }));
@@ -21,37 +23,38 @@ function chips(event: ReasoningStageEvent, t: (key: string, options?: Record<str
   return result;
 }
 
+function phaseLabel(events: ReasoningStageEvent[], active: ActiveGeneration | null, t: Translate): string | null {
+  if (active === null) return null;
+  if (active.status === "queued") return active.queuePosition > 0 ? t("trace.queued", { position: active.queuePosition }) : t("trace.waitingCompute");
+  const running = [...events].reverse().find((event) => event.status === "running");
+  if (running) return t("trace.running", { stage: t(`trace.stages.${running.stage}`, { defaultValue: running.stage }) });
+  if (!active.text) return events.length === 0 ? t("trace.preparing") : t("trace.generating");
+  return t("trace.generating");
+}
+
 export function GenerationTrace({ events, active }: { events: ReasoningStageEvent[]; active: ActiveGeneration | null }) {
   const { t } = useTranslation();
   const format = useFormat();
   const [open, setOpen] = useState(false);
-  const queued = active?.status === "queued";
-  const waiting = active && active.status === "running" && !active.text && events.length === 0;
-  if (events.length === 0 && !queued && !waiting) return null;
-  const running = active !== null && (queued || events.some((item) => item.status === "running") || !active.text);
-  const summary = queued
-    ? active.queuePosition > 0
-      ? t("trace.queued", { position: active.queuePosition })
-      : t("trace.waitingCompute")
-    : waiting
-      ? t("trace.preparing")
-      : t("trace.steps", { count: events.length });
+  const live = active !== null && ["queued", "running"].includes(active.status);
+  const label = live ? phaseLabel(events, active, t as Translate) : t("trace.done", { count: events.length });
+  if (!live && events.length === 0) return null;
   return (
-    <div className="mb-2 rounded-lg border bg-muted/40 text-xs">
-      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
-        {running ? <Loader2 size={13} className="animate-spin text-info" /> : <CheckCircle2 size={13} className="text-success" />}
-        <span className="font-medium">{summary}</span>
-        {active?.queueReason ? <span className="truncate text-muted-foreground">· {t(`queueReason.${active.queueReason}`, { defaultValue: active.queueReason })}</span> : null}
-        <span className="ml-auto text-muted-foreground">{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+    <div className="mb-3 text-xs">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex items-center gap-1.5 rounded-md py-0.5 pr-1.5 text-muted-foreground hover:text-foreground">
+        {live ? <Loader2 size={12} className="animate-spin text-accent" /> : <CheckCircle2 size={12} className="text-success" />}
+        <span className="font-medium">{label}</span>
+        {active?.queueReason ? <span className="hidden truncate sm:inline">· {t(`queueReason.${active.queueReason}`, { defaultValue: active.queueReason })}</span> : null}
+        {events.length > 0 ? open ? <ChevronDown size={12} /> : <ChevronRight size={12} /> : null}
       </button>
-      {open ? (
-        <ol className="grid gap-1.5 border-t px-3 py-2.5">
+      {open && events.length > 0 ? (
+        <ol className="mt-1.5 grid gap-1.5 border-l hairline pl-3">
           {events.map((event) => (
             <li key={`${event.stage}-${event.timestamp}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {event.status === "running" ? <Loader2 size={12} className="animate-spin text-info" /> : <CheckCircle2 size={12} className="text-success" />}
-              <span>{t(`trace.stages.${event.stage}`, { defaultValue: event.stage })}</span>
-              {chips(event, t as never).map((chip) => <span key={chip} className="rounded bg-background px-1.5 py-0.5 text-muted-foreground">{chip}</span>)}
-              {event.timestamp ? <span className="ml-auto text-muted-foreground tabular-nums">{format.time(event.timestamp * 1000)}</span> : null}
+              {event.status === "running" ? <Loader2 size={11} className="animate-spin text-accent" /> : <CheckCircle2 size={11} className="text-success" />}
+              <span className="text-foreground">{t(`trace.stages.${event.stage}`, { defaultValue: event.stage })}</span>
+              {chips(event, t as Translate).map((chip) => <span key={chip} className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{chip}</span>)}
+              {event.timestamp ? <span className="ml-auto tabular-nums text-muted-foreground">{format.time(event.timestamp * 1000)}</span> : null}
             </li>
           ))}
         </ol>

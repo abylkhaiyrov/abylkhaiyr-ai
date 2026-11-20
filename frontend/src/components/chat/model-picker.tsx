@@ -36,13 +36,13 @@ export function ModelPicker({ registry, selected, locked, onSelect }: ModelPicke
   const models = registry?.models ?? [];
   return (
     <div ref={ref} className="relative">
-      <Button variant="outline" size="sm" aria-haspopup="listbox" aria-expanded={open} disabled={locked} title={locked ? t("chat.modelLocked") : undefined} onClick={() => setOpen((value) => !value)} className="max-w-[16rem]">
+      <Button variant="ghost" size="sm" aria-haspopup="listbox" aria-expanded={open} disabled={locked} title={locked ? t("chat.modelLocked") : undefined} onClick={() => setOpen((value) => !value)} className="max-w-[16rem] font-semibold text-foreground">
         <span className="truncate">{selected?.display_name ?? t("chat.noModel")}</span>
         {selected ? <span className="rounded bg-muted px-1 text-[10px] uppercase">{t(`modelStage.${selected.stage}`, { defaultValue: selected.stage })}</span> : null}
         <ChevronDown size={13} />
       </Button>
       {open ? (
-        <ul role="listbox" aria-label={t("chat.selectModel")} className="absolute bottom-full left-0 z-30 mb-1 max-h-80 w-80 max-w-[85vw] overflow-y-auto rounded-xl border bg-card p-1 shadow-xl animate-rise">
+        <ul role="listbox" aria-label={t("chat.selectModel")} className="absolute left-0 top-full z-30 mt-1 max-h-80 w-80 max-w-[85vw] overflow-y-auto rounded-xl border bg-background p-1 shadow-xl animate-rise">
           {models.length === 0 ? <li className="p-3 text-sm text-muted-foreground">{t("chat.noModels")}</li> : null}
           {models.map((model) => {
             const blocked = reason(model, t);

@@ -9,6 +9,8 @@ type UiState = {
   locale: Locale;
   backendOnline: boolean;
   sidebarCollapsed: boolean;
+  historyOpen: boolean;
+  toggleHistory: () => void;
   setTheme: (theme: Theme) => void;
   setLocale: (locale: Locale) => void;
   setConnection: (online: boolean) => void;
@@ -35,6 +37,12 @@ export const useUiStore = create<UiState>((set) => ({
   locale: i18n.language === "en" ? "en" : "ru",
   backendOnline: true,
   sidebarCollapsed: read("abylkhaiyr-sidebar") === "collapsed",
+  historyOpen: read("abylkhaiyr-history") !== "closed",
+  toggleHistory: () =>
+    set((state) => {
+      write("abylkhaiyr-history", state.historyOpen ? "closed" : "open");
+      return { historyOpen: !state.historyOpen };
+    }),
   setTheme: (theme) => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     write("abylkhaiyr-theme", theme);

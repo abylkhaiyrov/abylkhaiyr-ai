@@ -49,3 +49,13 @@ def test_throughput_and_phase_profile_cover_every_variant(tmp_path, tokenizer):
         phases = profile_phases(config, variant, steps=1)
         assert set(PHASES) <= set(phases) and phases["checkpoint_save"] > 0
         assert all(value >= 0 for value in phases.values())
+
+
+def test_optimized_variants_follow_the_baseline_loss_trajectory(tmp_path, tokenizer):
+    from llm.optimization.profiling import loss_trajectory, max_trajectory_gap
+
+    config = make_config(tmp_path, tokenizer)
+    base = Variant("base", micro_batch=2, accumulation=2, foreach=False)
+    tuned = Variant("tuned", micro_batch=2, accumulation=2, native_gqa=True, fast_causal=True)
+    reference = loss_trajectory(config, base, 5)
+    assert max_trajectory_gap(reference, loss_trajectory(config, tuned, 5)) < 1e-4
