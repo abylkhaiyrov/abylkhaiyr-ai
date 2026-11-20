@@ -86,7 +86,7 @@ def solve(
                 if remaining <= 0:
                     attempt.failure = "Time budget reached"
                     break
-                result = run_isolated(code, case.stdin, min(remaining, 10), image)
+                result = run_isolated(code, case.stdin, min(remaining, 25), image)
                 if result.status == "unavailable":
                     attempt.failure = result.stderr
                     return DeveloperResult(status="unavailable", attempts=attempts)

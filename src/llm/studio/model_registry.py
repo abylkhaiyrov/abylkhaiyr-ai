@@ -18,6 +18,10 @@ def relative_id(root: Path, value: str | None) -> str | None:
         return value
 
 
+def checkpoint_key(value: str) -> str:
+    return value.replace("\\", "/")
+
+
 def stage_status(pipeline: dict[str, Any] | None, key: str) -> str:
     if pipeline is None:
         return "pending"
@@ -37,7 +41,7 @@ def verified_checkpoints(root: Path, pipeline: dict[str, Any] | None) -> dict[st
     for artifact, gate, stage in candidates:
         identifier = relative_id(root, artifacts.get(artifact))
         if identifier and stage_status(pipeline, gate) == "completed":
-            verified[identifier] = stage
+            verified[checkpoint_key(identifier)] = stage
     return verified
 
 
@@ -49,8 +53,15 @@ def role_assignments(
 ) -> dict[str, str | None]:
     artifacts = pipeline["artifacts"] if pipeline else {}
     best_pretrain = relative_id(root, artifacts.get("best_pretrain_checkpoint"))
+    identifiers = {checkpoint_key(item["id"]): item["id"] for item in models}
+    if best_pretrain:
+        best_pretrain = identifiers.get(checkpoint_key(best_pretrain), best_pretrain)
     directories = (
-        {item["checkpoint_dir"] for item in pipeline["stages"] if item["checkpoint_dir"]}
+        {
+            checkpoint_key(item["checkpoint_dir"])
+            for item in pipeline["stages"]
+            if item["checkpoint_dir"]
+        }
         if pipeline
         else set()
     )
@@ -58,7 +69,7 @@ def role_assignments(
         item
         for item in models
         if not directories
-        or any(item["id"].startswith(f"{directory}/") for directory in directories)
+        or any(checkpoint_key(item["id"]).startswith(f"{directory}/") for directory in directories)
     ]
     latest = max(trained, key=lambda item: item["created_at"], default=None)
     production = production_info(root)
@@ -86,9 +97,11 @@ def annotate_models(
     failed_sft = gate.get("note_code") == "sft_perplexity_regression"
     for model in models:
         model["roles"] = [role for role in ROLE_ORDER if assignments[role] == model["id"]]
-        model["verified_stage"] = verified.get(model["id"])
-        model["evaluated"] = model["id"] in verified
-        model["quality_failed"] = failed_sft and model["id"] == sft
+        model["verified_stage"] = verified.get(checkpoint_key(model["id"]))
+        model["evaluated"] = model["verified_stage"] is not None
+        model["quality_failed"] = (
+            failed_sft and sft is not None and (checkpoint_key(model["id"]) == checkpoint_key(sft))
+        )
         model["verified"] = model["evaluated"] and not model["quality_failed"]
         model["trained"] = model["step"] is not None and model["step"] > 0
         model["display_name"] = f"{model['name']} · {model.get('step') or '—'}"
