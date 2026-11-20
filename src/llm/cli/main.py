@@ -262,6 +262,13 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 
 
 def _latest_checkpoint_root(root: Path) -> Path | None:
+    from llm.training.continuous import active_checkpoint
+
+    promoted = active_checkpoint(root / "experiments" / "continuous")
+    if promoted is not None:
+        checkpoint = (root / promoted.checkpoint).resolve()
+        if checkpoint.is_relative_to(root / "checkpoints") and (checkpoint / "meta.json").is_file():
+            return checkpoint
     metadata = [
         path
         for path in (root / "checkpoints").glob("*/step-*/meta.json")

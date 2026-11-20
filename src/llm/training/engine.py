@@ -6,6 +6,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -105,6 +106,7 @@ class Trainer:
         self.monitor = monitor
         self.tokenizer_version = tokenizer_version
         self.stop_event = threading.Event()
+        self.stop_file: Path | None = None
         self.logger = logging.getLogger("llm.training")
         self.optimizer = build_optimizer(self.model, config)
         self.scaler = make_grad_scaler(device, dtype)
@@ -179,6 +181,8 @@ class Trainer:
             clip_grad_norm(self.model.parameters(), self.config.optimizer.max_grad_norm)
         )
         if not math.isfinite(grad_norm):
+            if self.scaler:
+                self.scaler.update()
             return grad_norm, False
         if self.scaler:
             self.scaler.step(self.optimizer)
@@ -197,10 +201,10 @@ class Trainer:
             except (RuntimeError, torch.OutOfMemoryError) as error:
                 if not is_out_of_memory(error):
                     raise
-                self.optimizer.zero_grad(set_to_none=True)
-                release_device_memory(self.device)
-                self._reduce_micro_batch()
-                self.train_source.load_state_dict(snapshot)
+            self.optimizer.zero_grad(set_to_none=True)
+            release_device_memory(self.device)
+            self._reduce_micro_batch()
+            self.train_source.load_state_dict(snapshot)
         grad_norm, applied = self._optimizer_step()
         return loss, tokens, grad_norm, applied
 
@@ -260,7 +264,7 @@ class Trainer:
         session_tokens, last_train_loss = 0, float("nan")
         skips, last_validation, stopped_early, interrupted = 0, float("nan"), False, False
         while self.state.step < limit:
-            if self.stop_event.is_set():
+            if self.stop_event.is_set() or (self.stop_file is not None and self.stop_file.exists()):
                 interrupted = True
                 break
             if free_disk_gb(config.checkpoint_dir) < config.min_free_disk_gb:

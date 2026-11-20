@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import tempfile
 import time
 from collections import defaultdict
@@ -9,13 +10,12 @@ from functools import partial
 from pathlib import Path
 from typing import TypeVar
 
-import psutil
 import torch
 
 from llm.core.config import ExperimentConfig, OptimizerConfig
-from llm.optimization.benchmark import BYTES_PER_GB, peak_device_gb, synchronize
+from llm.optimization.benchmark import peak_device_gb, synchronize
 from llm.optimization.grad import clip_grad_norm
-from llm.optimization.memory import release_device_memory
+from llm.optimization.memory import release_device_memory, swap_used_gb
 from llm.training.runner import build_trainer
 
 WARMUP_STEPS = 2
@@ -45,7 +45,7 @@ class Throughput:
     slot_tokens_per_second: float
     useful_fraction: float
     peak_device_gb: float
-    swap_gb: float
+    swap_gb: float | None
 
 
 def apply_variant(config: ExperimentConfig, variant: Variant, workdir: Path) -> ExperimentConfig:
@@ -91,6 +91,8 @@ def measure_throughput(config: ExperimentConfig, variant: Variant, steps: int) -
         trainer = build_trainer(apply_variant(config, variant, Path(workdir)), resume=False)
         device = trainer.device
         release_device_memory(device)
+        if device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(device)
         for _ in range(WARMUP_STEPS):
             trainer.run_step()
         counter = count_slots(trainer.train_source)
@@ -103,10 +105,16 @@ def measure_throughput(config: ExperimentConfig, variant: Variant, steps: int) -
         elapsed = time.perf_counter() - started
         slots = counter["slots"]
         peak = peak_device_gb(device)
-        swap = psutil.swap_memory().used / BYTES_PER_GB
+        swap = swap_used_gb()
         del trainer
     return Throughput(
-        variant.name, steps / elapsed, useful / elapsed, slots / elapsed, useful / slots, peak, swap
+        variant.name,
+        steps / elapsed,
+        useful / elapsed,
+        slots / elapsed,
+        useful / slots,
+        peak,
+        swap if math.isfinite(swap) else None,
     )
 
 

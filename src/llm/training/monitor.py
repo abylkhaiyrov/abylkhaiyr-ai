@@ -68,12 +68,13 @@ class TrainingMonitor:
 
     def system_metrics(self) -> dict[str, float]:
         elapsed = time.monotonic() - self.started
-        return {
+        values = {
             "ram_gb": ram_used_gb(),
             "swap_gb": swap_used_gb(),
             "device_memory_gb": device_memory_used_gb(self.device),
             "elapsed_seconds": elapsed,
         }
+        return {key: value for key, value in values.items() if math.isfinite(value)}
 
     def eta_seconds(self, step: int) -> float:
         completed = step - self.start_step

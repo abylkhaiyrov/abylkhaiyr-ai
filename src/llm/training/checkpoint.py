@@ -5,6 +5,7 @@ import json
 import os
 import random
 import shutil
+import stat
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +28,14 @@ STEP_DIGITS = 8
 TEMP_SUFFIX = ".tmp"
 HASH_CHUNK = 1 << 20
 TIED_HEAD_KEY = "lm_head.weight"
+
+
+def is_junction(path: Path) -> bool:
+    try:
+        details = path.lstat()
+    except FileNotFoundError:
+        return False
+    return getattr(details, "st_reparse_tag", None) == stat.IO_REPARSE_TAG_MOUNT_POINT
 
 
 @dataclass
@@ -167,8 +176,28 @@ class CheckpointManager:
         return self.directory / f"{self.alias_prefix}_{suffix}"
 
     def _link(self, alias: Path, target: Path) -> None:
-        alias.unlink(missing_ok=True)
-        alias.symlink_to(target.name)
+        if os.name == "nt":
+            junction = alias.with_name(alias.name + TEMP_SUFFIX)
+            if is_junction(junction):
+                junction.rmdir()
+            elif junction.is_dir():
+                shutil.rmtree(junction)
+            import _winapi
+
+            try:
+                _winapi.CreateJunction(str(target.resolve()), str(junction.absolute()))
+            except PermissionError:
+                shutil.copytree(target, junction)
+            if is_junction(alias):
+                alias.rmdir()
+            elif alias.is_symlink():
+                alias.unlink()
+            elif alias.is_dir():
+                shutil.rmtree(alias)
+            os.replace(junction, alias)
+        else:
+            alias.unlink(missing_ok=True)
+            alias.symlink_to(target.name, target_is_directory=True)
 
     def _publish_aliases(self, target: Path, step: int) -> None:
         if not self.alias_prefix:

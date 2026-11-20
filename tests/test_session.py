@@ -1,4 +1,3 @@
-import os
 import signal
 import subprocess
 import sys
@@ -53,7 +52,7 @@ def test_signals_set_stop_event_and_restore_handlers():
     event = threading.Event()
     before = signal.getsignal(signal.SIGTERM)
     with graceful_shutdown(event):
-        os.kill(os.getpid(), signal.SIGTERM)
+        signal.raise_signal(signal.SIGTERM)
         assert event.wait(timeout=2)
     assert signal.getsignal(signal.SIGTERM) == before
 

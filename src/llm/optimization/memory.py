@@ -19,7 +19,10 @@ def ram_used_gb() -> float:
 
 
 def swap_used_gb() -> float:
-    return psutil.swap_memory().used / BYTES_PER_GB
+    try:
+        return psutil.swap_memory().used / BYTES_PER_GB
+    except (OSError, RuntimeError):
+        return float("nan")
 
 
 def ram_fraction_used() -> float:

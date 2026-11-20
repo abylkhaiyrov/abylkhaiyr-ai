@@ -38,8 +38,8 @@ def test_protected_steps_survive_rotation(tmp_path):
     names = sorted(p.name for p in tmp_path.iterdir())
     assert "step-00000001" in names
     assert "step-00000002" not in names
-    assert (tmp_path / "tiny_step_1").resolve().name == "step-00000001"
-    assert (tmp_path / "tiny_latest").resolve().name == "step-00000003"
+    assert manager.verify(tmp_path / "tiny_step_1")["step"] == 1
+    assert manager.verify(tmp_path / "tiny_latest")["step"] == 3
 
 
 def test_labeled_checkpoint_is_not_rotated(tmp_path):

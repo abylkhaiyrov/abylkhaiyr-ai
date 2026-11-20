@@ -50,7 +50,8 @@ class InferenceEngine:
         if len(prompt_ids) <= budget:
             return prompt_ids
         keep_bos = prompt_ids[:1] if prompt_ids[0] == self.tokenizer.bos_id else []
-        return keep_bos + prompt_ids[len(prompt_ids) - (budget - len(keep_bos)) :]
+        tail = budget - len(keep_bos)
+        return keep_bos + (prompt_ids[-tail:] if tail else [])
 
     def fit_messages(
         self, messages: list[Message], reserved_tokens: int

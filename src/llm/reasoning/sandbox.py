@@ -6,14 +6,24 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
-
-try:
-    import resource
-except ImportError:
-    resource = None
+from typing import Protocol, cast
 
 from llm.core.errors import SandboxError
+from llm.reasoning.container import run_isolated
+
+
+class ResourceLimits(Protocol):
+    RLIMIT_CPU: int
+    RLIMIT_FSIZE: int
+    RLIMIT_NOFILE: int
+    RLIMIT_AS: int
+
+    def setrlimit(self, resource: int, limits: tuple[int, int]) -> None: ...
+
+
+resource = None if sys.platform == "win32" else cast(ResourceLimits, import_module("resource"))
 
 BYTES_PER_MB = 1024 * 1024
 RESTRICTED_ENV = {"PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1"}
@@ -63,14 +73,19 @@ class SandboxResult:
 
 
 def _apply_limits(limits: SandboxLimits, language: str = "python"):
+    module = resource
+    if module is None:
+        raise SandboxError("Unix resource limits unavailable")
+
     def apply() -> None:
-        resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
-        resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_mb * BYTES_PER_MB,) * 2)
+        module.setrlimit(module.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
+        module.setrlimit(module.RLIMIT_FSIZE, (limits.max_file_mb * BYTES_PER_MB,) * 2)
         if language == "python":
-            resource.setrlimit(resource.RLIMIT_NOFILE, (limits.max_open_files,) * 2)
+            module.setrlimit(module.RLIMIT_NOFILE, (limits.max_open_files,) * 2)
         if sys.platform.startswith("linux"):
-            resource.setrlimit(resource.RLIMIT_AS, (limits.memory_mb * BYTES_PER_MB,) * 2)
-        os.setsid()
+            module.setrlimit(module.RLIMIT_AS, (limits.memory_mb * BYTES_PER_MB,) * 2)
+        if sys.platform != "win32":
+            os.setsid()
 
     return apply
 
@@ -84,6 +99,13 @@ def os_confinement(workdir: str) -> list[str]:
 def run_program(language: str, code: str, limits: SandboxLimits | None = None) -> SandboxResult:
     if language not in LANGUAGES:
         raise SandboxError(f"unsupported language: {language}")
+    limits = limits or SandboxLimits()
+    image = os.environ.get("ABYLKHAIYR_SANDBOX_IMAGE")
+    if language == "python" and image:
+        result = run_isolated(PREAMBLE + "\n" + code, "", limits.timeout_seconds, image)
+        return SandboxResult(
+            result.status == "passed", result.stdout, result.stderr, result.status == "timeout"
+        )
     if resource is None:
         return SandboxResult(
             False,
@@ -91,7 +113,6 @@ def run_program(language: str, code: str, limits: SandboxLimits | None = None) -
             "Code execution sandbox requires Unix resource limits; unavailable on Windows.",
             False,
         )
-    limits = limits or SandboxLimits()
     filename, template = LANGUAGES[language]
     command = [part.format(python=sys.executable) for part in template]
     source = PREAMBLE + "\n" + code if language == "python" else code

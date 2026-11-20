@@ -124,7 +124,12 @@ def test_real_sft_labels_cover_only_assistant_text():
     )
     import json
 
-    rows = [json.loads(line) for line in (PROCESSED / "sft" / "validation.jsonl").open()]
+    rows = [
+        json.loads(line)
+        for line in (PROCESSED / "sft" / "validation.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
     for row in rows[:20]:
         _, targets = loader.next_batch()
         trained = targets[0][targets[0] != -100].tolist()

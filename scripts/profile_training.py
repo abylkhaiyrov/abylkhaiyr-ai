@@ -25,6 +25,11 @@ VARIANTS = {
     "packed": Variant("packed", pack=True),
     "packed_gqa_causal": Variant("packed_gqa_causal", pack=True, native_gqa=True),
     "bf16": Variant("bf16", precision="bf16"),
+    "fp16": Variant("fp16", precision="fp16"),
+    "bf16_causal": Variant("bf16_causal", precision="bf16", fast_causal=True),
+    "bf16_causal_mb16": Variant(
+        "bf16_causal_mb16", precision="bf16", fast_causal=True, micro_batch=16, accumulation=2
+    ),
     "ckpt_mb16": Variant("ckpt_mb16", micro_batch=16, accumulation=2, checkpointing=True),
     "mb4": Variant("mb4", micro_batch=4, accumulation=8),
     "mb16": Variant("mb16", micro_batch=16, accumulation=2),

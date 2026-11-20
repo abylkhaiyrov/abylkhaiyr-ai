@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -11,7 +12,7 @@ from pathlib import Path
 from types import FrameType
 from typing import IO
 
-if os.name == "nt":
+if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
@@ -37,7 +38,7 @@ def exclusive_session(lock_path: Path = LOCK_FILE) -> Iterator[None]:
     handle: IO[str] = lock_path.open("a+")
     try:
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 handle.seek(0, os.SEEK_END)
                 if handle.tell() == 0:
                     handle.write(" ")
@@ -86,12 +87,14 @@ def run_training(
     stop_step: int | None = None,
     max_restarts: int = 0,
     backoff_seconds: float = RESTART_BACKOFF_SECONDS,
+    stop_file: Path | None = None,
 ) -> TrainingResult:
     configure_logging(config.train.output_dir)
     attempt = 0
     with exclusive_session():
         while True:
             trainer = build_trainer(config, resume or attempt > 0)
+            trainer.stop_file = stop_file
             with graceful_shutdown(trainer.stop_event):
                 try:
                     logger.info("starting at step %d", trainer.state.step)

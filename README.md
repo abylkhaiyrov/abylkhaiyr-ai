@@ -139,6 +139,16 @@ Studio при запуске предпочитает диалоговые ве�
 [Model Card](docs/model_card_stage11.md).
 
 ## Проверка качества кода
+
+Фоновое обучение на Windows управляется командами
+`.\scripts\control_continuous.ps1 start`, `status` и `stop`.
+Контроллер читает локальный список разрешённых источников, сохраняет состояние
+цикла и сравнивает новые веса с текущими перед публикацией.
+Локальный агент запускается через `scripts/run_developer_agent.py` и использует
+модель проекта для решения Python CLI задач с проверкой в Docker.
+
+[Архитектура цикла, измерения и ограничения](docs/local-learning.md).
+
 `scripts/check.sh` запускает ruff, black, mypy и pytest.
 
 Документация: `docs/mathematics.md`, `docs/architecture.md`, `docs/data.md`, `docs/instruction_tuning.md`.
