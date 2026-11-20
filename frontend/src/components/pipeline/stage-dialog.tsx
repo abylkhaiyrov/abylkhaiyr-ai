@@ -38,7 +38,7 @@ export function StageDialog({ stage, onClose }: { stage: PipelineStage | null; o
             <ResultsGrid entries={results} />
           </div>
         ) : null}
-        {stage.note ? <p className="rounded-lg bg-muted p-3 text-sm">{stage.note}</p> : null}
+        {stage.note ? <p className="rounded-lg bg-muted p-3 text-sm">{stage.note_code && stage.note_values ? t(`stageNote.${stage.note_code}`, stage.note_values) : stage.note}</p> : null}
         {stage.error ? <p role="alert" className="break-words rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{stage.error}</p> : null}
       </div>
     </Dialog>

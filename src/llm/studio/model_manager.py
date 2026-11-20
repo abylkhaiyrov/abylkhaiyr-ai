@@ -15,10 +15,11 @@ from pydantic import ValidationError
 from llm.core.config import ModelConfig, load_experiment_config
 from llm.core.errors import CheckpointError, ConfigError, TokenizerError
 from llm.core.hardware import resolve_device
+from llm.core.profiles import count_parameters
 from llm.inference.engine import InferenceEngine
 from llm.studio.model_registry import annotate_models
 from llm.studio.runtime import RuntimeState
-from llm.studio.telemetry import latest_metrics
+from llm.studio.telemetry import read_metrics
 from llm.tokenizer.bpe import BPETokenizer
 from llm.training.checkpoint import MODEL_FILE, CheckpointManager, load_model_for_inference
 
@@ -153,10 +154,6 @@ class ModelManager:
         )
 
     def _scan_models(self) -> list[dict[str, Any]]:
-        metrics_by_run = {
-            path.parent.name: latest_metrics(self.root, path.parent.name)
-            for path in (self.root / "experiments").glob("*/metrics.jsonl")
-        }
         tokenizer = self._load_tokenizer()
         training_active = self.runtime.training_active()
         active = self.active
@@ -225,7 +222,7 @@ class ModelManager:
                         "vocab_size": config_dict.get("vocab_size"),
                         "context_length": config_dict.get("max_position_embeddings"),
                         "architecture": config_dict,
-                        "metrics": metrics_by_run.get(run_name, {}),
+                        "metrics": {},
                         "metadata": metadata,
                     }
                 )
@@ -257,6 +254,14 @@ class ModelManager:
                     "metadata": {},
                 },
             )
+        rows_by_run: dict[str, dict[int, dict[str, float]]] = {}
+        for model in results:
+            run = model["name"]
+            if run not in rows_by_run:
+                rows_by_run[run] = {}
+                for row in read_metrics(self.root / "experiments" / run / "metrics.jsonl", 200000):
+                    rows_by_run[run].setdefault(int(row["step"]), {}).update(row)
+            model["metrics"] = rows_by_run[run].get(model["step"], {})
         return results
 
     def load(self, checkpoint_id: str, device: str | None = None) -> dict[str, Any]:
@@ -359,17 +364,10 @@ class ModelManager:
 
     @staticmethod
     def parameter_count(config: dict[str, Any]) -> int | None:
-        values = ("vocab_size", "hidden_size", "num_hidden_layers", "intermediate_size")
-        if not all(isinstance(config.get(key), int) for key in values):
+        try:
+            return count_parameters(ModelConfig.model_validate(config))
+        except ValidationError:
             return None
-        return int(
-            config["vocab_size"] * config["hidden_size"]
-            + config["num_hidden_layers"]
-            * (
-                4 * config["hidden_size"] ** 2
-                + 3 * config["hidden_size"] * config["intermediate_size"]
-            )
-        )
 
     def _select_device(
         self,

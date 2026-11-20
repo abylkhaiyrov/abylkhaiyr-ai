@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { EmptyState, ErrorState, LoadingState, PageHeader, Panel, Stat } from "@/components/data-state";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Panel } from "@/components/data-state";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -67,13 +66,20 @@ export function ModelsPage() {
                       return (
                         <tr key={model.id}>
                           <td className="max-w-64"><p className="truncate font-medium" title={model.id}>{model.display_name}</p><p className="truncate text-xs text-muted-foreground" title={model.id}>{model.id}</p></td>
-                          <td><span className="rounded bg-muted px-1.5 py-0.5 text-xs uppercase">{t(`modelStage.${model.stage}`, { defaultValue: model.stage })}</span>{model.verified ? <BadgeCheck size={14} className="ml-1.5 inline text-success" aria-label={t("roles.verified")} /> : null}</td>
+                          <td><span className="rounded bg-muted px-1.5 py-0.5 text-xs uppercase">{t(`modelStage.${model.stage}`, { defaultValue: model.stage })}</span></td>
                           <td><div className="flex flex-wrap gap-1">{model.roles.map((role) => <span key={role} className="rounded border px-1.5 py-0.5 text-xs">{t(`role.${role}`)}</span>)}</div></td>
                           <td className="tabular-nums">{format.compact(model.parameters)}</td>
                           <td className="tabular-nums">{format.number(model.context_length, 0)}</td>
                           <td className="tabular-nums">{format.bytes(model.weights_bytes)}</td>
                           <td>
                             <StatusBadge value={model.loaded ? "active" : blocked ? "failed" : "ready"} />
+                            <ul className="mt-1 grid gap-0.5 text-xs text-muted-foreground">
+                              {model.weights_bytes !== null ? <li>{t("modelEvidence.checkpoint")}</li> : null}
+                              {model.trained ? <li>{t("modelEvidence.trained")}</li> : null}
+                              {model.evaluated ? <li>{t("modelEvidence.evaluated")}</li> : null}
+                              {model.quality_failed ? <li className="text-warning">{t("modelEvidence.qualityFailed")}</li> : null}
+                              {!model.roles.includes("production") ? <li>{t("modelEvidence.experimental")}</li> : null}
+                            </ul>
                             {blocked ? <p className="mt-1 text-xs text-destructive">{blocked}</p> : null}
                             {model.metrics?.["validation/loss"] !== undefined ? <p className="mt-1 text-xs text-muted-foreground">{metric.label("validation_loss")} {metric.value("validation_loss", model.metrics["validation/loss"])}</p> : null}
                           </td>
@@ -176,30 +182,6 @@ export function ExperimentsPage() {
                 })}
               </tbody>
             </table>
-          </div>
-        )}
-      </Query>
-    </div>
-  );
-}
-
-export function EvaluationPage() {
-  const { t } = useTranslation();
-  const metric = useMetricFormat();
-  const query = useQuery({ queryKey: ["evaluation"], queryFn: api.evaluations, staleTime: 60_000 });
-  return (
-    <div className="grid gap-4">
-      <PageHeader title={t("evaluation.title")} subtitle={t("evaluation.subtitle")} />
-      <Query query={query}>
-        {(items) => items.length === 0 ? <EmptyState title={t("evaluation.empty")} /> : (
-          <div className="grid gap-4">
-            {items.map((item) => (
-              <Panel key={item.path} title={item.path}>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
-                  {Object.entries(item.results).slice(0, 15).map(([key, value]) => <Stat key={key} label={metric.label(key)} value={metric.value(key, value)} />)}
-                </dl>
-              </Panel>
-            ))}
           </div>
         )}
       </Query>

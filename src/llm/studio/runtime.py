@@ -56,6 +56,23 @@ class RuntimeState:
     def pipeline(self) -> dict[str, Any] | None:
         return self.snapshot()["pipeline"]
 
+    def pipeline_history(self) -> list[dict[str, Any]]:
+        now = datetime.now(UTC)
+        running = self._running_process()
+        active_dir = self._state_dir(running) if running else None
+        paths = sorted(
+            (self.root / "experiments").glob("*/state.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        return [
+            pipeline
+            for path in paths
+            if (pipeline := self._pipeline_view(
+                path.parent, running if path.parent == active_dir else None, now
+            )) is not None
+        ]
+
     def active_pipeline(self) -> dict[str, Any] | None:
         pipeline = self.pipeline()
         return pipeline if pipeline is not None and pipeline["running"] else None
@@ -154,7 +171,10 @@ class RuntimeState:
             try:
                 config = load_experiment_config(path)
                 self._config_cache[signature] = StageConfig(
-                    config.train.output_dir, config.train.checkpoint_dir, config.train.max_steps
+                    config.train.output_dir,
+                    config.train.checkpoint_dir,
+                    config.train.max_steps,
+                    config.train.data_dir,
                 )
             except ConfigError:
                 self._config_cache[signature] = None

@@ -48,9 +48,7 @@ def role_assignments(
     loaded_id: str | None,
 ) -> dict[str, str | None]:
     artifacts = pipeline["artifacts"] if pipeline else {}
-    final = relative_id(root, artifacts.get("final_checkpoint"))
     best_pretrain = relative_id(root, artifacts.get("best_pretrain_checkpoint"))
-    exported = stage_status(pipeline, "export_release") == "completed"
     directories = (
         {item["checkpoint_dir"] for item in pipeline["stages"] if item["checkpoint_dir"]}
         if pipeline
@@ -63,9 +61,11 @@ def role_assignments(
         or any(item["id"].startswith(f"{directory}/") for directory in directories)
     ]
     latest = max(trained, key=lambda item: item["created_at"], default=None)
+    production = production_info(root)
+    approved = production_checkpoint(root) if production and production["ready"] else None
     return {
-        "production": production_checkpoint(root) or (final if exported else None),
-        "best_evaluated": final or best_pretrain,
+        "production": relative_id(root, approved),
+        "best_evaluated": best_pretrain,
         "latest_trained": None if latest is None else latest["id"],
         "loaded": loaded_id,
     }
@@ -79,10 +79,18 @@ def annotate_models(
 ) -> dict[str, str | None]:
     assignments = role_assignments(root, pipeline, models, loaded_id)
     verified = verified_checkpoints(root, pipeline)
+    stages = {item["key"]: item for item in pipeline["stages"]} if pipeline else {}
+    artifacts = pipeline["artifacts"] if pipeline else {}
+    sft = relative_id(root, artifacts.get("sft_checkpoint"))
+    gate = stages.get("dpo", {})
+    failed_sft = gate.get("note_code") == "sft_perplexity_regression"
     for model in models:
         model["roles"] = [role for role in ROLE_ORDER if assignments[role] == model["id"]]
         model["verified_stage"] = verified.get(model["id"])
-        model["verified"] = model["id"] in verified
+        model["evaluated"] = model["id"] in verified
+        model["quality_failed"] = failed_sft and model["id"] == sft
+        model["verified"] = model["evaluated"] and not model["quality_failed"]
+        model["trained"] = model["step"] is not None and model["step"] > 0
         model["display_name"] = f"{model['name']} · {model.get('step') or '—'}"
     return assignments
 

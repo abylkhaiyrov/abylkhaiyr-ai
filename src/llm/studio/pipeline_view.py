@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,6 +43,7 @@ class StageConfig:
     output_dir: str
     checkpoint_dir: str
     max_steps: int
+    data_dir: str
 
 
 @dataclass(frozen=True)
@@ -126,6 +128,14 @@ def apply_state_entry(stage: dict[str, Any], entry: dict[str, Any], alive: bool)
         stage["finished_at"] = entry.get("updated_at")
     stage["error"] = entry.get("error")
     stage["note"] = entry.get("reason")
+    regression = re.fullmatch(
+        r"SFT perplexity ([\d.]+) regressed > ([\d.]+)x pretrain ([\d.]+)",
+        stage["note"] or "",
+    )
+    if regression:
+        sft, limit, pretrain = map(float, regression.groups())
+        stage["note_code"] = "sft_perplexity_regression"
+        stage["note_values"] = {"sft": sft, "limit": limit, "pretrain": pretrain}
     started, ended = parse_time(stage["started_at"]), parse_time(stage["finished_at"])
     if started and ended:
         stage["duration_seconds"] = max((ended - started).total_seconds(), 0.0)
@@ -245,27 +255,28 @@ def stage_results_from_entry(spec: StageSpec, entry: dict[str, Any]) -> dict[str
     return {}
 
 
-def data_stages(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    manifest_path = next(iter(sorted((root / "data").glob("*/manifest.json"))), None)
+def data_stages(root: Path, data_dir: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
     prepared = blank_stage(STAGE_SPECS[0])
-    if manifest_path is not None:
-        prepared["status"] = "completed"
-        prepared["finished_at"] = iso_from_mtime(manifest_path)
-        try:
-            sources = json.loads(manifest_path.read_text(encoding="utf-8")).get("sources", {})
-        except (OSError, json.JSONDecodeError):
-            sources = {}
-        prepared["results"] = {
-            "sources": len(sources),
-            "documents": sum(int(item.get("kept", 0)) for item in sources.values()),
-        }
     tokenized = blank_stage(STAGE_SPECS[1])
-    tokenizer_file = root / "data" / "tokenizer" / "tokenizer.json"
-    token_files = sorted((root / "data").glob("*/tokens/train.bin"))
-    if tokenizer_file.is_file() and token_files:
+    if not data_dir:
+        return prepared, tokenized
+    manifest_path = root / data_dir / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return prepared, tokenized
+    prepared["status"] = "completed"
+    prepared["finished_at"] = iso_from_mtime(manifest_path)
+    prepared["results"] = {
+        "dataset": manifest.get("version") or data_dir,
+        "sources": len(manifest.get("sources", {})),
+        "documents": sum(manifest.get("splits", {}).values()),
+    }
+    train_tokens = finite(manifest.get("tokenized", {}).get("train", {}).get("tokens"))
+    if train_tokens is not None:
         tokenized["status"] = "completed"
-        tokenized["finished_at"] = iso_from_mtime(token_files[0])
-        tokenized["results"] = {"train_tokens": token_files[0].stat().st_size // 2}
+        tokenized["finished_at"] = prepared["finished_at"]
+        tokenized["results"] = {"train_tokens": train_tokens}
     return prepared, tokenized
 
 
@@ -294,7 +305,8 @@ def build_pipeline_view(
 ) -> list[dict[str, Any]]:
     entries = state.get("stages", {})
     tracked = read_progress(state_dir)
-    prepared, tokenized = data_stages(root)
+    pretrain = configs.get("pretrain")
+    prepared, tokenized = data_stages(root, pretrain.data_dir if pretrain else None)
     stages: list[dict[str, Any]] = [prepared, tokenized]
     for spec in STAGE_SPECS[2:]:
         stage = blank_stage(spec)

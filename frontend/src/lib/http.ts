@@ -1,7 +1,7 @@
 import { csrfToken } from "@/lib/utils";
 import { isRecord, type Guard } from "@/lib/schema";
 
-export const API_BASE: string = import.meta.env.VITE_API_BASE ?? "/api";
+export const API_BASE = "/api";
 
 export type ApiErrorCode =
   | "network"

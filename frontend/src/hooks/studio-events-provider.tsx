@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isGenerationEvent, type GenerationEvent, type ServerEvent } from "@/lib/events";
 import type { Metric, SystemSnapshot } from "@/lib/api";
+import { API_BASE } from "@/lib/http";
 import { EventContext } from "@/hooks/use-studio-events";
 import { useUiStore } from "@/store/ui-store";
 
@@ -43,8 +44,14 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
     let connectionSeq = 0;
 
     function applyData(event: ServerEvent) {
-      if (event.type === "runtime.update") queryClient.setQueryData(["runtime"], event.data);
-      else if (event.type === "models.update") queryClient.setQueryData(["models"], event.data);
+      if (event.type === "runtime.update") {
+        queryClient.setQueryData(["runtime"], event.data);
+      }
+      else if (event.type === "models.update") {
+        queryClient.setQueryData(["models"], event.data);
+        void queryClient.invalidateQueries({ queryKey: ["evaluation"] });
+        void queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+      }
       else if (event.type === "system.update") {
         queryClient.setQueryData(["system"], event.data);
         queryClient.setQueryData<SystemSnapshot[]>(["system-history"], (previous) =>
@@ -77,7 +84,7 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
 
     function connect() {
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${protocol}//${location.host}/api/ws`);
+      const ws = new WebSocket(`${protocol}//${location.host}${API_BASE}/ws`);
       socket.current = ws;
       connectionSeq = 0;
       ws.onopen = () => {
@@ -113,7 +120,9 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
       ws.onerror = () => ws.close();
     }
 
-    connect();
+    queueMicrotask(() => {
+      if (!stopped) connect();
+    });
     return () => {
       stopped = true;
       if (retryTimer) clearTimeout(retryTimer);

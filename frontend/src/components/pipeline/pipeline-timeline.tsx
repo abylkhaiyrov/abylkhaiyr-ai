@@ -44,7 +44,7 @@ function StageRow({ stage, onOpen, last }: { stage: PipelineStage; onOpen: () =>
               {headline.map(([key, value]) => `${metric.label(key)} ${metric.value(key, value)}`).join(" · ")}
             </span>
           ) : null}
-          {stage.note && stage.status === "skipped" ? <span className="mt-0.5 block truncate text-xs text-muted-foreground">{stage.note}</span> : null}
+          {stage.note && stage.status === "skipped" ? <span className="mt-0.5 block text-xs text-muted-foreground">{stage.note_code && stage.note_values ? t(`stageNote.${stage.note_code}`, stage.note_values) : stage.note}</span> : null}
         </span>
         <ChevronRight size={14} className="mt-1.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
       </button>

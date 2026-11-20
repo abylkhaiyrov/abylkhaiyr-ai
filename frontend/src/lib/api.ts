@@ -54,6 +54,8 @@ export type PipelineStage = {
   results: Record<string, number | string | null>;
   error: string | null;
   note: string | null;
+  note_code?: "sft_perplexity_regression";
+  note_values?: { sft: number; limit: number; pretrain: number };
   output_dir: string | null;
   checkpoint_dir: string | null;
 };
@@ -124,6 +126,9 @@ export type Model = {
   created_at?: string;
   weights_bytes?: number | null;
   parameters: number | null;
+  trained: boolean;
+  evaluated: boolean;
+  quality_failed: boolean;
   vocab_size: number | null;
   context_length: number | null;
   roles: ModelRole[];
@@ -167,7 +172,15 @@ export type GenerationSettings = {
 export type StudioEvent = { process_id: string; level: string; message: string; created_at: string };
 export type Dataset = { name: string; path: string; size_bytes: number; manifest: Record<string, unknown> };
 export type Experiment = { name: string; results: Metric; [key: string]: unknown };
-export type Evaluation = { path: string; results: Metric };
+export type Evaluation = {
+  path: string;
+  experiment: string;
+  dataset: string | null;
+  stage: string | null;
+  model: string | null;
+  checkpoint: string | null;
+  results: Metric;
+};
 
 export type Run = {
   name: string;
@@ -237,7 +250,8 @@ export type Chat = ChatSummary & { messages: ChatMessage[] };
 
 const named = shape<{ name: string }>({ name: string });
 const me = shape<{ username: string; requires_password_change: boolean }>({ username: string, requires_password_change: boolean });
-const runtimeGuard = shape<RuntimeState>({ generated_at: string, pipeline: nullable(shape<Pipeline>({ stages: arrayOf(shape<PipelineStage>({ key: string, status: string })), running: boolean })), compute: shape({ busy: boolean }), models: record(anything), events: arrayOf(anything) });
+const pipelineGuard = shape<Pipeline>({ id: string, stages: arrayOf(shape<PipelineStage>({ key: string, status: string })), running: boolean });
+const runtimeGuard = shape<RuntimeState>({ generated_at: string, pipeline: nullable(pipelineGuard), compute: shape({ busy: boolean }), models: record(anything), events: arrayOf(anything) });
 const registryGuard = shape<ModelRegistry>({ roles: record(anything), models: arrayOf(shape<Model>({ id: string, roles: arrayOf(string) })) });
 const systemGuard = shape<SystemSnapshot>({ recorded_at: string, cpu: shape({ percent: number }), memory: shape({ total_bytes: number }), gpu: shape({ device: string }), disk: shape({ total_bytes: number }) });
 const chatSummary = shape<ChatSummary>({ id: string, title: string, pinned: boolean, updated_at: string });
@@ -267,7 +281,8 @@ export const api = {
   unloadModel: () => http<{ loaded: boolean }>("/models/unload", body("POST")),
   datasets: () => http<Dataset[]>("/datasets", {}, listOf<Dataset>(shape({ name: string, size_bytes: number }))),
   experiments: () => http<Experiment[]>("/experiments", {}, listOf<Experiment>(named)),
-  evaluations: () => http<Evaluation[]>("/evaluation", {}, listOf<Evaluation>(shape({ path: string, results: record(number) }))),
+  pipelines: () => http<Pipeline[]>("/pipelines", {}, listOf(pipelineGuard)),
+  evaluations: () => http<Evaluation[]>("/evaluation", {}, listOf<Evaluation>(shape({ path: string, experiment: string, dataset: nullable(string), stage: nullable(string), model: nullable(string), checkpoint: nullable(string), results: record(number) }))),
   logs: (category?: string) => http<{ items: { category: string; source: string; message: string }[]; total: number }>(`/logs${category ? `?category=${category}` : ""}`, {}, shape({ items: arrayOf(shape({ message: string })), total: number })),
   chats: (query?: string) => http<ChatSummary[]>(`/chats${query ? `?query=${encodeURIComponent(query)}` : ""}`, {}, listOf<ChatSummary>(chatSummary)),
   chat: (id: string) => http<Chat>(`/chats/${id}`, {}, chatGuard),

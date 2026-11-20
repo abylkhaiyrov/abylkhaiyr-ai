@@ -212,6 +212,12 @@ def create_studio_router(
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
 
+    @router.get("/pipelines")
+    def pipeline_history(
+        _identity: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> list[dict[str, Any]]:
+        return studio.runtime.pipeline_history()
+
     @router.get("/runtime")
     def runtime_state(
         _: Annotated[tuple[Any, str], Depends(current_identity)],

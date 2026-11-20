@@ -145,6 +145,11 @@ def create_app(
             },
         }
 
+    @app.api_route("/api", methods=["GET", "HEAD"], include_in_schema=False)
+    @app.api_route("/v1", methods=["GET", "HEAD"], include_in_schema=False)
+    def unknown_namespace() -> JSONResponse:
+        return unknown_endpoint("")
+
     @app.api_route(
         "/api/{rest:path}",
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
@@ -170,11 +175,11 @@ def create_app(
             app.mount("/assets", StaticFiles(directory=assets), name="studio-assets")
 
         @app.get("/{path:path}", include_in_schema=False)
-        def studio_frontend(path: str) -> FileResponse:
+        def studio_frontend(path: str, request: Request) -> FileResponse:
             requested = (frontend_dist / path).resolve()
             if path and frontend_dist in requested.parents and requested.is_file():
                 return FileResponse(requested)
-            if PurePosixPath(path).suffix:
+            if PurePosixPath(path).suffix or "application/json" in request.headers.get("accept", ""):
                 raise HTTPException(status_code=404, detail="file_not_found")
             return FileResponse(frontend_dist / "index.html", headers={"Cache-Control": "no-store"})
 

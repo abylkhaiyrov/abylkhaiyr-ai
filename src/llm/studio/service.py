@@ -15,6 +15,7 @@ from sqlalchemy import or_, select
 from llm.evaluation.registry import load_registry
 from llm.studio.auth import AuthenticationService
 from llm.studio.database import create_sqlite_engine, ensure_studio_schema, make_session_factory
+from llm.studio.evaluations import evaluation_reports
 from llm.studio.experiments import ExperimentCatalog
 from llm.studio.model_manager import ModelManager
 from llm.studio.model_registry import production_info
@@ -242,7 +243,7 @@ class StudioService:
             run_name = model["name"]
             config = metadata.get("model_config", {})
             model["architecture"] = config
-            model["parameters"] = self._parameter_count(config)
+            model["parameters"] = ModelManager.parameter_count(config)
             model["vocab_size"] = config.get("vocab_size")
             model["context_length"] = config.get("max_position_embeddings")
             model["metrics"] = metrics_by_run.get(run_name, {})
@@ -273,25 +274,7 @@ class StudioService:
         return load_registry(self.root / "experiments" / "registry.jsonl")
 
     def evaluations(self) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        seen: set[Path] = set()
-        for pattern in ("experiments/**/evaluation.json", "experiments/*_eval.json"):
-            for path in sorted(self.root.glob(pattern)):
-                if path in seen:
-                    continue
-                seen.add(path)
-                try:
-                    data = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                payload = data.get("metrics", data) if isinstance(data, dict) else {}
-                numeric = {
-                    key: float(value)
-                    for key, value in payload.items()
-                    if isinstance(value, (int, float))
-                }
-                results.append({"path": str(path.relative_to(self.root)), "results": numeric})
-        return results
+        return evaluation_reports(self.root)
 
     def events(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.session_factory() as database:
@@ -871,20 +854,6 @@ class StudioService:
             "created_at": job.created_at.isoformat(),
             "updated_at": job.updated_at.isoformat(),
         }
-
-    @staticmethod
-    def _parameter_count(config: dict[str, Any]) -> int | None:
-        values = ("vocab_size", "hidden_size", "num_hidden_layers", "intermediate_size")
-        if not all(isinstance(config.get(key), int) for key in values):
-            return None
-        return int(
-            config["vocab_size"] * config["hidden_size"]
-            + config["num_hidden_layers"]
-            * (
-                4 * config["hidden_size"] ** 2
-                + 3 * config["hidden_size"] * config["intermediate_size"]
-            )
-        )
 
     @staticmethod
     def _serialize_chat(chat: Chat) -> dict[str, Any]:
