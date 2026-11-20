@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingState } from "@/components/data-state";
 import { useApiError } from "@/hooks/use-api-error";
 import { useChatGeneration } from "@/hooks/use-chat-generation";
+import { useRole } from "@/hooks/use-auth";
 import { useModelRegistry, useRuntime } from "@/hooks/use-runtime";
 import { api, type ChatMessage, type ChatSummary, type GenerationSettings, type Model } from "@/lib/api";
 import { DEFAULT_SETTINGS } from "@/lib/chat-settings";
@@ -24,6 +25,7 @@ import { useUiStore } from "@/store/ui-store";
 
 const SUGGESTIONS = ["math", "code", "explain", "kazakh"] as const;
 const STICK_THRESHOLD = 96;
+const MESSAGE_PAGE = 100;
 
 const resolveSettings = (saved: GenerationSettings | undefined): Required<GenerationSettings> => ({ ...DEFAULT_SETTINGS, ...(saved ?? {}) }) as Required<GenerationSettings>;
 
@@ -45,15 +47,20 @@ export function ChatPage() {
   const viewport = useRef<HTMLDivElement>(null);
   const { active, failure, start, cancel, clearFailure } = useChatGeneration();
 
-  const chats = useQuery({ queryKey: ["chats", search], queryFn: () => api.chats(search), staleTime: 30_000 });
-  const chat = useQuery({ queryKey: ["chat", selected], queryFn: () => api.chat(selected ?? ""), enabled: selected !== null, staleTime: 30_000 });
+  const isAdmin = useRole() === "ADMIN";
+  const [archived, setArchived] = useState(false);
+  const [messageLimit, setMessageLimit] = useState(MESSAGE_PAGE);
+  const chats = useQuery({ queryKey: ["chats", search, archived], queryFn: () => api.chats(search, archived), staleTime: 30_000 });
+  const chat = useQuery({ queryKey: ["chat", selected, messageLimit], queryFn: () => api.chat(selected ?? "", messageLimit), enabled: selected !== null, staleTime: 30_000, placeholderData: (previous) => previous });
+  const activeModelInfo = useQuery({ queryKey: ["chat-model"], queryFn: api.chatModel, enabled: !isAdmin, staleTime: 60_000 });
   const registry = useModelRegistry().data;
   const runtime = useRuntime().data;
 
-  const model: Model | null = useMemo(
+  const adminModel: Model | null = useMemo(
     () => modelById(registry, chat.data?.checkpoint ?? draftModel) ?? modelById(registry, draftModel) ?? defaultModel(registry, runtime),
     [registry, runtime, chat.data?.checkpoint, draftModel],
   );
+  const model: Pick<Model, "id" | "display_name" | "stage" | "context_length"> | null = isAdmin ? adminModel : (activeModelInfo.data ?? null);
   const settings = useMemo(() => resolveSettings(chat.data?.generation_settings), [chat.data?.generation_settings]);
   const running = isActive(active);
   const visibleActive = active && active.chatId === selected ? active : null;
@@ -103,20 +110,23 @@ export function ChatPage() {
     const element = viewport.current;
     if (element && pinned) element.scrollTop = element.scrollHeight;
   }, [messages, visibleActive?.text, visibleActive?.stages.length, pinned]);
-  useEffect(() => setPinned(true), [selected]);
+  useEffect(() => {
+    setPinned(true);
+    setMessageLimit(MESSAGE_PAGE);
+  }, [selected]);
 
   const onScroll = () => {
     const element = viewport.current;
     if (element) setPinned(element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD);
   };
-  const modelPayload = (target: Model | null) => (target ? { model_name: target.model_id, checkpoint: target.id } : {});
+  const modelPayload = (target: Model | null) => (isAdmin && target ? { model_name: target.model_id, checkpoint: target.id } : {});
 
   const send = async (content: string) => {
     if (!model || running || createChat.isPending) return;
     let chatId = selected;
     if (chatId === null) {
       try {
-        const created = await createChat.mutateAsync({ ...modelPayload(model), generation_settings: settings });
+        const created = await createChat.mutateAsync({ ...modelPayload(adminModel), generation_settings: settings });
         chatId = created.id;
         setSelected(chatId);
         refreshChats();
@@ -126,10 +136,10 @@ export function ChatPage() {
       }
     }
     setPinned(true);
-    start({ chatId, action: "send", content, checkpointId: model.id, settings });
+    start({ chatId, action: "send", content, checkpointId: isAdmin ? model.id : null, settings });
   };
   const act = (action: "edit" | "regenerate" | "continue", message: ChatMessage, content?: string) => {
-    if (selected && model) start({ chatId: selected, action, targetId: message.id, content, checkpointId: model.id, settings });
+    if (selected && model) start({ chatId: selected, action, targetId: message.id, content, checkpointId: isAdmin ? model.id : null, settings });
   };
   const pickModel = (next: Model) => {
     setDraftModel(next.id);
@@ -159,6 +169,9 @@ export function ChatPage() {
       onQuery={setQuery}
       onSelect={(id) => { setSelected(id); setDrawer(false); }}
       onNew={() => { setSelected(null); setDrawer(false); }}
+      archived={archived}
+      onArchivedChange={setArchived}
+      onArchive={(item: ChatSummary) => updateChat.mutate({ id: item.id, payload: { archived: !item.archived } })}
       onPin={(item: ChatSummary) => updateChat.mutate({ id: item.id, payload: { pinned: !item.pinned } })}
       onRename={(item, next) => updateChat.mutate({ id: item.id, payload: { title: next } })}
       onDelete={(item) => removeChat.mutate(item.id)}
@@ -178,7 +191,11 @@ export function ChatPage() {
         <div className="flex h-11 shrink-0 items-center gap-1 px-2">
           <Button variant="ghost" size="icon" className="lg:hidden" aria-label={t("chat.history")} onClick={() => setDrawer(true)}><PanelLeft size={16} /></Button>
           <Button variant="ghost" size="icon" className="hidden lg:inline-flex" aria-label={t(historyOpen ? "chat.hideHistory" : "chat.showHistory")} aria-pressed={historyOpen} onClick={toggleHistory}><PanelLeft size={16} /></Button>
-          <ModelPicker registry={registry} selected={model} locked={running} onSelect={pickModel} />
+          {isAdmin ? (
+            <ModelPicker registry={registry} selected={adminModel} locked={running} onSelect={pickModel} />
+          ) : (
+            <span className="px-2 text-[13px] font-semibold" title={t("chat.activeModel")}>{model?.display_name ?? t("chat.noModel")}</span>
+          )}
           <span className="mx-1 hidden min-w-0 flex-1 truncate text-center text-[13px] text-muted-foreground md:block">{chat.data?.title ?? ""}</span>
           <div className="ml-auto flex items-center md:ml-0">
             <ContextPanel
@@ -220,6 +237,9 @@ export function ChatPage() {
             </div>
           ) : (
             <div className="mx-auto grid w-full max-w-[44rem] gap-7 px-4 pb-6 pt-4">
+              {chat.data && chat.data.total_messages > chat.data.messages.length ? (
+                <Button variant="ghost" size="sm" className="mx-auto" disabled={chat.isFetching} onClick={() => setMessageLimit((value) => value + MESSAGE_PAGE)}>{t("chat.loadEarlier")}</Button>
+              ) : null}
               {messages.map((message) => (
                 <MessageItem
                   key={message.id}

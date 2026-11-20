@@ -8,27 +8,24 @@ import {
   FileText,
   FlaskConical,
   LayoutDashboard,
-  LogOut,
   Menu,
-  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
-  Sun,
+  Users,
   TerminalSquare,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { Suspense, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useMatch } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ConnectionStatus } from "@/components/connection-status";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { LoadingState } from "@/components/data-state";
+import { HeaderActions } from "@/components/header-actions";
 import { Toaster } from "@/components/toaster";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/store/ui-store";
 
@@ -47,6 +44,7 @@ const management: NavItem[] = [
   ["/evaluation", "evaluation", ClipboardList],
   ["/processes", "processes", TerminalSquare],
   ["/logs", "logs", FileText],
+  ["/users", "users", Users],
 ];
 
 function NavGroup({ items, collapsed, close, title }: { items: NavItem[]; collapsed: boolean; close: () => void; title?: string }) {
@@ -103,19 +101,10 @@ function Brand({ collapsed }: { collapsed: boolean }) {
 
 export function AppShell({ apiError, retryApi }: { apiError: Error | null; retryApi: () => void }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
-  const client = useQueryClient();
   const chatRoute = useMatch("/chat");
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { theme, locale, setTheme, setLocale, sidebarCollapsed, toggleSidebar } = useUiStore();
-  const logout = useMutation({
-    mutationFn: api.logout,
-    onSettled: () => {
-      client.clear();
-      navigate("/login");
-    },
-  });
+  const { sidebarCollapsed, toggleSidebar } = useUiStore();
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
       <a href="#content" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-[80] focus:rounded-md focus:bg-background focus:px-3 focus:py-1.5">{t("app.skip")}</a>
@@ -139,14 +128,7 @@ export function AppShell({ apiError, retryApi }: { apiError: Error | null; retry
               {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </Button>
           </div>
-          <div className="flex items-center gap-0.5">
-            <select aria-label={t("settings.language")} className="h-8 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:bg-muted" value={locale} onChange={(event) => setLocale(event.target.value as "ru" | "en")}>
-              <option value="ru">RU</option>
-              <option value="en">EN</option>
-            </select>
-            <Button variant="ghost" size="icon" aria-label={t("settings.theme")} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</Button>
-            <Button variant="ghost" size="icon" aria-label={t("app.logout")} onClick={() => logout.mutate()}><LogOut size={16} /></Button>
-          </div>
+          <HeaderActions />
         </header>
         <ConnectionStatus error={apiError} retry={retryApi} />
         <main id="content" tabIndex={-1} className={cn("min-h-0 flex-1 outline-none", chatRoute ? "overflow-hidden" : "overflow-y-auto")}>

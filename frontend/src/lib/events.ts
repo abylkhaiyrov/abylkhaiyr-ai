@@ -1,5 +1,5 @@
 import { isRecord } from "@/lib/schema";
-import type { ChatMessage, Metric, ModelRegistry, ReasoningStageEvent, RuntimeState, SystemSnapshot } from "@/lib/api";
+import type { AppNotification, ChatMessage, Metric, ModelRegistry, ReasoningStageEvent, RuntimeState, SystemSnapshot } from "@/lib/api";
 
 type Envelope = { seq: number; ts: number };
 type GenerationBase = {
@@ -25,6 +25,7 @@ export type GenerationEvent = Envelope &
       | "generation.failed"
       | "generation.snapshot";
     status?: string;
+    task_status?: string;
     text?: string;
     code?: string;
     detail?: string;
@@ -55,6 +56,10 @@ export type ServerEvent =
   | (Envelope & { type: "system.update"; data: SystemSnapshot })
   | (Envelope & { type: "models.update"; data: ModelRegistry })
   | (Envelope & { type: "metrics.append"; run: string; rows: Metric[]; reset: boolean })
+  | (Envelope & { type: "notification.created"; notification: AppNotification })
+  | (Envelope & { type: "notification.read" | "notification.deleted"; ids: string[] })
+  | (Envelope & { type: "notification.count.updated"; unread: number })
+  | (Envelope & { type: "session.revoked" })
   | GenerationEvent;
 
 export function isGenerationEvent(event: ServerEvent): event is GenerationEvent {
@@ -72,6 +77,9 @@ export function parseServerEvent(data: unknown): ServerEvent | null {
     if (event.type === "chat.ready" && (!Array.isArray(event.request_ids) || !event.request_ids.every((id) => typeof id === "string"))) return null;
     if (event.type === "metrics.append" && (!Array.isArray(event.rows) || !event.rows.every((row) => isRecord(row) && typeof row.step === "number") || typeof event.run !== "string")) return null;
     if (event.type.endsWith(".update") && !isRecord(event.data)) return null;
+    if (event.type === "notification.created" && (!isRecord(event.notification) || typeof event.notification.id !== "string")) return null;
+    if (event.type === "notification.count.updated" && !Number.isSafeInteger(event.unread)) return null;
+    if ((event.type === "notification.read" || event.type === "notification.deleted") && !Array.isArray(event.ids)) return null;
     return event as ServerEvent;
   } catch {
     return null;

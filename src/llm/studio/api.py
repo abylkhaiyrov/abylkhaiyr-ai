@@ -306,8 +306,11 @@ def create_studio_router(
         if active is None:
             return None
         return {
-            key: active.get(key)
-            for key in ("id", "display_name", "stage", "context_length", "device")
+            "id": active.get("id"),
+            "display_name": active.get("display_name") or active.get("name"),
+            "stage": active.get("stage"),
+            "context_length": active.get("context_length"),
+            "device": active.get("device"),
         }
 
     @router.post("/chats", status_code=status.HTTP_201_CREATED)

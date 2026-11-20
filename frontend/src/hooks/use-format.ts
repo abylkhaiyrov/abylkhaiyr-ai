@@ -53,8 +53,17 @@ export function useFormat() {
       value === null || value === undefined
         ? DASH
         : new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+    const relative = (value: string | number | null | undefined) => {
+      if (value === null || value === undefined) return DASH;
+      const stamp = typeof value === "string" && !/[zZ]|[+-]\d\d:?\d\d$/.test(value) ? `${value}Z` : value;
+      const seconds = Math.round((new Date(stamp).getTime() - Date.now()) / 1000);
+      const formatter = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+      const steps: [Intl.RelativeTimeFormatUnit, number][] = [["day", 86400], ["hour", 3600], ["minute", 60]];
+      for (const [unit, size] of steps) if (Math.abs(seconds) >= size) return formatter.format(Math.round(seconds / size), unit);
+      return formatter.format(seconds, "second");
+    };
     const ratio = (done: number | null | undefined, total: number | null | undefined) =>
       isFiniteNumber(done) && isFiniteNumber(total) ? `${number(done, 0)} / ${number(total, 0)}` : DASH;
-    return { number, compact, percent, bytes, duration, dateTime, time, clock, ratio };
+    return { number, compact, percent, bytes, duration, dateTime, time, clock, relative, ratio };
   }, [language, t]);
 }

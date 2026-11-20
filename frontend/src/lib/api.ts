@@ -1,6 +1,41 @@
 import { body, http } from "@/lib/http";
 import { anything, arrayOf, boolean, listOf, nullable, number, record, shape, string } from "@/lib/schema";
 
+export type Role = "ADMIN" | "USER";
+export type User = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  username: string;
+  role: Role;
+  is_active: boolean;
+  requires_password_change: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  last_active_at: string | null;
+};
+export type UserPage = { items: User[]; total: number };
+export type UserSession = { id: number; created_at: string; last_seen_at: string | null; user_agent: string | null; current: boolean };
+export type NotificationType = "GENERATION_COMPLETED" | "GENERATION_FAILED" | "GENERATION_CANCELLED" | "SYSTEM" | "ACCOUNT";
+export type AppNotification = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  chat_id: string | null;
+  generation_id: string | null;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
+};
+export type NotificationPage = { items: AppNotification[]; total: number; unread: number };
+export type NotificationQuery = { unread: boolean; type: NotificationType | null; limit: number; offset: number };
+export type ChatModelInfo = { id: string; display_name: string; stage: string; context_length: number | null; device: string | null };
+export type RegisterPayload = { firstName: string; lastName: string; email: string; username: string; password: string };
+export type ProfilePayload = { firstName: string; lastName: string; email: string; username: string };
+export type UserChanges = Partial<{ firstName: string; lastName: string; email: string; username: string; role: Role; isActive: boolean }>;
+
 export type Metric = Record<string, number>;
 export type StageStatus = "pending" | "running" | "completed" | "skipped" | "failed" | "interrupted";
 export type StageKind = "data" | "tokenize" | "train" | "eval" | "select" | "export";
@@ -216,6 +251,7 @@ export type ChatSummary = {
   checkpoint: string | null;
   system_prompt: string;
   pinned: boolean;
+  archived: boolean;
   generation_settings: GenerationSettings;
   created_at: string;
   updated_at: string;
@@ -247,10 +283,13 @@ export type MessageVariant = {
   status: string;
   created_at: string;
 };
-export type Chat = ChatSummary & { messages: ChatMessage[] };
+export type Chat = ChatSummary & { messages: ChatMessage[]; total_messages: number };
 
 const named = shape<{ name: string }>({ name: string });
-const me = shape<{ username: string; requires_password_change: boolean }>({ username: string, requires_password_change: boolean });
+const me = shape<User>({ id: string, username: string, role: string, is_active: boolean, requires_password_change: boolean });
+const userPage = shape<UserPage>({ items: arrayOf(me), total: number });
+const notification = shape<AppNotification>({ id: string, type: string, title: string, is_read: boolean });
+const notificationPage = shape<NotificationPage>({ items: arrayOf(notification), total: number, unread: number });
 const pipelineGuard = shape<Pipeline>({ id: string, stages: arrayOf(shape<PipelineStage>({ key: string, status: string })), running: boolean });
 const runtimeGuard = shape<RuntimeState>({ generated_at: string, pipeline: nullable(pipelineGuard), compute: shape({ busy: boolean }), models: record(anything), events: arrayOf(anything) });
 const registryGuard = shape<ModelRegistry>({ roles: record(anything), models: arrayOf(shape<Model>({ id: string, roles: arrayOf(string) })) });
@@ -260,8 +299,25 @@ const chatGuard = shape<Chat>({ id: string, title: string, messages: arrayOf(sha
 const rows = listOf<Metric>(shape({ step: number }));
 
 export const api = {
-  login: (username: string, password: string) => http<{ username: string; requires_password_change: boolean }>("/auth/login", body("POST", { username, password }), me, { session: false }),
-  me: (signal?: AbortSignal) => http<{ username: string; requires_password_change: boolean }>("/auth/me", { signal }, me, { session: false, verifyVersion: true }),
+  login: (identifier: string, password: string) => http<User>("/auth/login", body("POST", { identifier, password }), me, { session: false }),
+  register: (payload: RegisterPayload) => http<User>("/auth/register", body("POST", payload), me, { session: false }),
+  me: (signal?: AbortSignal) => http<User>("/auth/me", { signal }, me, { session: false, verifyVersion: true }),
+  updateProfile: (payload: ProfilePayload) => http<User>("/auth/profile", body("PATCH", payload), me),
+  sessions: () => http<UserSession[]>("/auth/sessions", {}, listOf<UserSession>(shape({ id: number, current: boolean }))),
+  revokeSession: (id: number) => http<void>(`/auth/sessions/${id}`, body("DELETE")),
+  revokeOtherSessions: () => http<{ revoked: number }>("/auth/sessions/revoke-others", body("POST")),
+  users: (query: { query: string; role: Role | null; active: boolean | null; limit: number; offset: number }) =>
+    http<UserPage>(`/users?${new URLSearchParams(Object.entries({ query: query.query, role: query.role ?? "", active: query.active === null ? "" : String(query.active), limit: String(query.limit), offset: String(query.offset) }).filter(([, value]) => value !== ""))}`, {}, userPage),
+  updateUser: (id: string, changes: UserChanges) => http<User>(`/users/${id}`, body("PATCH", changes), me),
+  resetUserPassword: (id: string) => http<{ temporary_password: string }>(`/users/${id}/reset-password`, body("POST"), shape({ temporary_password: string })),
+  revokeUserSessions: (id: string) => http<{ revoked: number }>(`/users/${id}/revoke-sessions`, body("POST")),
+  notifications: (query: NotificationQuery) =>
+    http<NotificationPage>(`/notifications?${new URLSearchParams(Object.entries({ unread: String(query.unread), type: query.type ?? "", limit: String(query.limit), offset: String(query.offset) }).filter(([, value]) => value !== ""))}`, {}, notificationPage),
+  unreadCount: () => http<{ unread: number }>("/notifications/unread-count", {}, shape({ unread: number })),
+  readNotification: (id: string) => http<AppNotification>(`/notifications/${id}/read`, body("POST"), notification),
+  readAllNotifications: () => http<{ updated: number }>("/notifications/read-all", body("POST")),
+  deleteNotification: (id: string) => http<void>(`/notifications/${id}`, body("DELETE")),
+  chatModel: () => http<ChatModelInfo | null>("/chat/model"),
   logout: () => http<void>("/auth/logout", body("POST"), undefined, { session: false }),
   changePassword: (currentPassword: string, newPassword: string) => http<void>("/auth/password", body("PUT", { current_password: currentPassword, new_password: newPassword })),
   runtime: () => http<RuntimeState>("/runtime", {}, runtimeGuard),
@@ -285,10 +341,10 @@ export const api = {
   pipelines: () => http<Pipeline[]>("/pipelines", {}, listOf(pipelineGuard)),
   evaluations: () => http<Evaluation[]>("/evaluation", {}, listOf<Evaluation>(shape({ path: string, experiment: string, dataset: nullable(string), stage: nullable(string), model: nullable(string), checkpoint: nullable(string), results: record(number) }))),
   logs: (category?: string) => http<{ items: { category: string; source: string; message: string }[]; total: number }>(`/logs${category ? `?category=${category}` : ""}`, {}, shape({ items: arrayOf(shape({ message: string })), total: number })),
-  chats: (query?: string) => http<ChatSummary[]>(`/chats${query ? `?query=${encodeURIComponent(query)}` : ""}`, {}, listOf<ChatSummary>(chatSummary)),
-  chat: (id: string) => http<Chat>(`/chats/${id}`, {}, chatGuard),
+  chats: (query = "", archived = false) => http<ChatSummary[]>(`/chats?${new URLSearchParams({ query, archived: String(archived) })}`, {}, listOf<ChatSummary>(chatSummary)),
+  chat: (id: string, limit = 100) => http<Chat>(`/chats/${id}?limit=${limit}`, {}, chatGuard),
   createChat: (payload?: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings }) => http<ChatSummary>("/chats", body("POST", payload ?? {}), chatSummary),
-  updateChat: (id: string, payload: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings; pinned?: boolean }) => http<ChatSummary>(`/chats/${id}`, body("PATCH", payload), chatSummary),
+  updateChat: (id: string, payload: { title?: string; model_name?: string; checkpoint?: string; system_prompt?: string; generation_settings?: GenerationSettings; pinned?: boolean; archived?: boolean }) => http<ChatSummary>(`/chats/${id}`, body("PATCH", payload), chatSummary),
   deleteChat: (id: string) => http<void>(`/chats/${id}`, body("DELETE")),
   selectVariant: (chatId: string, messageId: string, index: number) => http<ChatMessage>(`/chats/${chatId}/messages/${messageId}/variants/${index}`, body("POST")),
   exportChatUrl: (id: string, format: "md" | "json") => `/api/chats/${id}/export?format=${format}`,

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isGenerationEvent, type GenerationEvent, type ServerEvent } from "@/lib/events";
-import type { Metric, SystemSnapshot } from "@/lib/api";
+import type { AppNotification, Metric, SystemSnapshot } from "@/lib/api";
 import { EventContext } from "@/hooks/use-studio-events";
+import i18n from "@/i18n";
 import { openStudioConnection } from "@/lib/studio-connection";
+import { useToastStore } from "@/store/toast-store";
 import { useUiStore } from "@/store/ui-store";
 
 const MAX_HISTORY = 720;
@@ -69,6 +71,16 @@ export function StudioEventsProvider({ children, enabled }: { children: ReactNod
           if (history.at(-1)?.recorded_at === event.data.recorded_at) return history;
           return [...history, event.data].slice(-MAX_HISTORY);
         });
+      } else if (event.type === "notification.count.updated") {
+        queryClient.setQueryData(["notifications", "count"], { unread: event.unread });
+      } else if (event.type === "notification.read" || event.type === "notification.deleted") {
+        void queryClient.invalidateQueries({ queryKey: ["notifications", "list"] });
+      } else if (event.type === "notification.created") {
+        void queryClient.invalidateQueries({ queryKey: ["notifications", "list"] });
+        announce(event.notification);
+      } else if (event.type === "session.revoked") {
+        useToastStore.getState().push("info", i18n.t("auth.sessionRevoked"));
+        void queryClient.invalidateQueries({ queryKey: ["me"], exact: true });
       } else if (event.type === "metrics.append") {
         queryClient.setQueryData<Metric[]>(["metrics", event.run], (previous) => {
           const byStep = new Map((previous ?? []).map((row) => [row.step, row]));
@@ -76,6 +88,18 @@ export function StudioEventsProvider({ children, enabled }: { children: ReactNod
           return [...byStep.values()].sort((a, b) => a.step - b.step).slice(-MAX_METRIC_ROWS);
         });
       }
+    }
+
+    function announce(notification: AppNotification) {
+      const params = new URLSearchParams(location.search);
+      const viewing = location.pathname === "/chat" && params.get("c") === notification.chat_id && document.visibilityState === "visible";
+      if (viewing || notification.type === "GENERATION_CANCELLED") return;
+      const key = `notification.${notification.type}`;
+      useToastStore.getState().push(
+        notification.type === "GENERATION_FAILED" ? "error" : "info",
+        i18n.exists(key) ? i18n.t(key) : i18n.t("notification.generic"),
+        notification.chat_id ? { label: i18n.t("notification.open"), href: `/chat?c=${notification.chat_id}` } : undefined,
+      );
     }
 
     function applyGeneration(event: GenerationEvent) {

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Download, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Download, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { Tabs } from "@/components/ui/tabs";
 import { api, type ChatSummary } from "@/lib/api";
 import { buildRows, type ChatRow } from "@/lib/chat-groups";
 import { cn } from "@/lib/utils";
@@ -19,12 +20,15 @@ type SidebarProps = {
   onQuery: (value: string) => void;
   onSelect: (id: string) => void;
   onNew: () => void;
+  archived: boolean;
+  onArchivedChange: (value: boolean) => void;
+  onArchive: (chat: ChatSummary) => void;
   onPin: (chat: ChatSummary) => void;
   onRename: (chat: ChatSummary, title: string) => void;
   onDelete: (chat: ChatSummary) => void;
 };
 
-function RowMenu({ chat, onPin, onRename, onDelete }: { chat: ChatSummary; onPin: () => void; onRename: () => void; onDelete: () => void }) {
+function RowMenu({ chat, onPin, onArchive, onRename, onDelete }: { chat: ChatSummary; onPin: () => void; onArchive: () => void; onRename: () => void; onDelete: () => void }) {
   const { t } = useTranslation();
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -59,6 +63,7 @@ function RowMenu({ chat, onPin, onRename, onDelete }: { chat: ChatSummary; onPin
         ? createPortal(
             <div ref={menu} role="menu" style={{ position: "fixed", top, left: Math.max(8, anchor.right - 176) }} className="z-[70] w-44 rounded-lg border bg-background p-1 shadow-xl animate-rise" onClick={() => setAnchor(null)}>
               <button role="menuitem" type="button" className={item} onClick={onPin}>{chat.pinned ? <PinOff size={14} /> : <Pin size={14} />}{chat.pinned ? t("chat.unpin") : t("chat.pin")}</button>
+              <button role="menuitem" type="button" className={item} onClick={onArchive}>{chat.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}{chat.archived ? t("chat.unarchive") : t("chat.archive")}</button>
               <button role="menuitem" type="button" className={item} onClick={onRename}><Pencil size={14} />{t("chat.rename")}</button>
               <a role="menuitem" className={item} href={api.exportChatUrl(chat.id, "md")} download><Download size={14} />{t("chat.exportMd")}</a>
               <a role="menuitem" className={item} href={api.exportChatUrl(chat.id, "json")} download><Download size={14} />{t("chat.exportJson")}</a>
@@ -71,7 +76,7 @@ function RowMenu({ chat, onPin, onRename, onDelete }: { chat: ChatSummary; onPin
   );
 }
 
-export function ChatSidebar({ chats, selected, query, onQuery, onSelect, onNew, onPin, onRename, onDelete }: SidebarProps) {
+export function ChatSidebar({ chats, selected, query, onQuery, onSelect, onNew, archived, onArchivedChange, onArchive, onPin, onRename, onDelete }: SidebarProps) {
   const { t } = useTranslation();
   const [renaming, setRenaming] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -98,6 +103,7 @@ export function ChatSidebar({ chats, selected, query, onQuery, onSelect, onNew, 
         </div>
       </div>
       <div ref={parent} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        <div className="px-1 pb-1.5"><Tabs value={archived ? "archived" : "active"} onChange={(value) => onArchivedChange(value === "archived")} items={[{ value: "active", label: t("chat.activeChats") }, { value: "archived", label: t("chat.archivedChats") }]} /></div>
         {rows.length === 0 ? <p className="p-3 text-center text-sm text-muted-foreground">{query ? t("chat.noResults") : t("chat.noChats")}</p> : null}
         <div style={{ height: virtualizer.getTotalSize() }} className="relative w-full">
           {virtualizer.getVirtualItems().map((virtual) => {
@@ -117,7 +123,7 @@ export function ChatSidebar({ chats, selected, query, onQuery, onSelect, onNew, 
                     </button>
                   )}
                   <div className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                    <RowMenu chat={chat} onPin={() => onPin(chat)} onRename={() => { setTitle(chat.title); setRenaming(chat.id); }} onDelete={() => setRemoving(chat)} />
+                    <RowMenu chat={chat} onPin={() => onPin(chat)} onArchive={() => onArchive(chat)} onRename={() => { setTitle(chat.title); setRenaming(chat.id); }} onDelete={() => setRemoving(chat)} />
                   </div>
                 </div>
               </div>

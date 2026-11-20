@@ -3,7 +3,7 @@ import type { ChatSummary } from "@/lib/api";
 import { buildRows } from "@/lib/chat-groups";
 
 const chat = (id: string, updated: string, pinned = false): ChatSummary => ({
-  id, title: id, model_name: null, checkpoint: null, system_prompt: "", pinned, generation_settings: {}, created_at: updated, updated_at: updated,
+  id, title: id, model_name: null, checkpoint: null, system_prompt: "", pinned, archived: false, generation_settings: {}, created_at: updated, updated_at: updated,
 });
 
 describe("buildRows", () => {

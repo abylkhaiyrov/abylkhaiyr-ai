@@ -38,7 +38,7 @@ describe("locales", () => {
   });
 
   it("leave no Latin-only values in Russian outside technical terms", () => {
-    const allowed = /^(Abylkhaiyr AI Studio|SFT|DPO|GSM8K|Pretrain|Production|Pipeline|CPU|Swap|Top-P|Top-K|Temperature|Checkpoint|Perplexity|Learning rate|Train loss|Validation loss|Test loss|Test perplexity|Training loss|—)$/;
+    const allowed = /^(Abylkhaiyr AI Studio|SFT|DPO|GSM8K|Pretrain|Production|Pipeline|CPU|Swap|Top-P|Top-K|Temperature|Checkpoint|Perplexity|Learning rate|Train loss|Validation loss|Test loss|Email|Test perplexity|Training loss|—)$/;
     const offenders = leaves(ru).filter((key) => {
       const value = key.split(".").reduce<unknown>((node, part) => (node as Tree)[part], ru) as string;
       return /^[\x20-\x7E]+$/.test(value) && !allowed.test(value) && !/\{\{/.test(value);
