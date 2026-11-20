@@ -98,6 +98,7 @@ def test_pipeline_runs_all_stages_and_resumes(tmp_path: Path, model_config: Mode
         if name == "sft_tiny_v2":
             return {
                 "test_perplexity": 50.0,
+                "conv_pass_rate": 0.5,
                 "repeated_trigram_ratio_greedy": 0.15,
                 "non_empty_response_rate": 1.0,
                 "instruction_following_accuracy": 0.5,
@@ -105,12 +106,14 @@ def test_pipeline_runs_all_stages_and_resumes(tmp_path: Path, model_config: Mode
         if name == "dpo_tiny_v2":
             return {
                 "test_perplexity": 48.0,
+                "conv_pass_rate": 0.6,
                 "repeated_trigram_ratio_greedy": 0.1,
                 "non_empty_response_rate": 1.0,
                 "instruction_following_accuracy": 0.6,
             }, []
         return {
             "test_perplexity": 45.0,
+            "conv_pass_rate": 0.2,
             "repeated_trigram_ratio_greedy": 0.15,
             "non_empty_response_rate": 1.0,
         }, []

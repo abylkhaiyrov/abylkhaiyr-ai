@@ -22,6 +22,7 @@ from llm.inference.sampling import SamplingParams
 from llm.progress import ProgressTracker
 from llm.tokenizer.bpe import BPETokenizer, Message
 from llm.training.checkpoint import CheckpointManager, load_model_for_inference
+from llm.training.promotion import MAX_CORPUS_PERPLEXITY_RATIO, READY_PASS_RATE
 from llm.training.release import export_release
 from llm.training.session import run_training
 
@@ -41,8 +42,9 @@ STAGES = (
 class QualityGates:
     max_repetition_ratio: float = 0.85
     min_non_empty_rate: float = 0.5
-    max_sft_perplexity_ratio: float = 3.0
+    max_sft_perplexity_ratio: float = MAX_CORPUS_PERPLEXITY_RATIO
     require_pretrain_improvement: bool = True
+    min_sft_conversation_pass_rate: float = READY_PASS_RATE
 
 
 @dataclass
@@ -323,15 +325,17 @@ class TrainingPipeline:
         gates = self.config.gates
         sft_ppl = float(sft_metrics.get("test_perplexity", float("inf")))
         pre_ppl = float(pre_metrics.get("test_perplexity", float("inf")))
-        rep = float(sft_metrics.get("repeated_trigram_ratio_greedy", 0.0))
-        non_empty = float(sft_metrics.get("non_empty_response_rate", 1.0))
-        if not math.isfinite(sft_ppl):
-            return False, "non-finite SFT test_perplexity"
-        if math.isfinite(pre_ppl) and sft_ppl > pre_ppl * gates.max_sft_perplexity_ratio:
+        rep = float(sft_metrics.get("repeated_trigram_ratio_greedy", float("nan")))
+        non_empty = float(sft_metrics.get("non_empty_response_rate", float("nan")))
+        if not math.isfinite(sft_ppl) or not math.isfinite(pre_ppl) or min(sft_ppl, pre_ppl) <= 0:
+            return False, "missing comparable test perplexity"
+        if sft_ppl > pre_ppl * gates.max_sft_perplexity_ratio:
             return (
                 False,
                 f"SFT perplexity {sft_ppl:.2f} regressed > {gates.max_sft_perplexity_ratio}x pretrain {pre_ppl:.2f}",
             )
+        if not math.isfinite(rep) or not math.isfinite(non_empty):
+            return False, "missing response quality metrics"
         if rep > gates.max_repetition_ratio:
             return False, f"SFT repetition {rep:.3f} > {gates.max_repetition_ratio:.3f}"
         if non_empty < gates.min_non_empty_rate:
@@ -339,12 +343,19 @@ class TrainingPipeline:
                 False,
                 f"SFT non_empty_response_rate {non_empty:.2f} < {gates.min_non_empty_rate:.2f}",
             )
-        pre_conv = float(pre_metrics.get("conv_pass_rate", 0.0))
-        sft_conv = float(sft_metrics.get("conv_pass_rate", 0.0))
-        if "conv_pass_rate" in sft_metrics and sft_conv <= pre_conv:
+        pre_conv = float(pre_metrics.get("conv_pass_rate", float("nan")))
+        sft_conv = float(sft_metrics.get("conv_pass_rate", float("nan")))
+        if not math.isfinite(pre_conv) or not math.isfinite(sft_conv):
+            return False, "missing comparable conversational benchmark scores"
+        if sft_conv <= pre_conv:
             return (
                 False,
                 f"SFT conversational pass rate {sft_conv:.3f} did not improve on {pre_conv:.3f}",
+            )
+        if sft_conv < gates.min_sft_conversation_pass_rate:
+            return False, (
+                f"SFT conversational pass rate {sft_conv:.3f} is below "
+                f"{gates.min_sft_conversation_pass_rate:.3f}"
             )
         return True, "ok"
 
@@ -377,13 +388,16 @@ class TrainingPipeline:
                 "eval_final", [(dpo_ckpt, "dpo_tiny_v2")]
             )
             self.state["artifacts"]["dpo_metrics"] = dpo_metrics
+            dpo_ppl = float(dpo_metrics.get("test_perplexity", float("inf")))
+            sft_ppl = float(sft_metrics.get("test_perplexity", float("nan")))
             dpo_ok = (
-                math.isfinite(float(dpo_metrics.get("test_perplexity", float("inf"))))
+                math.isfinite(dpo_ppl)
+                and 0 < dpo_ppl <= sft_ppl * self.config.gates.max_sft_perplexity_ratio
                 and float(dpo_metrics.get("repeated_trigram_ratio_greedy", 1.0))
                 <= self.config.gates.max_repetition_ratio
                 and float(dpo_metrics.get("instruction_following_accuracy", 0.0))
                 >= float(sft_metrics.get("instruction_following_accuracy", 0.0))
-                and float(dpo_metrics.get("conv_pass_rate", 1.0))
+                and float(dpo_metrics.get("conv_pass_rate", float("nan")))
                 >= float(sft_metrics.get("conv_pass_rate", 0.0))
             )
             if dpo_ok:

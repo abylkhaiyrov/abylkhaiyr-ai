@@ -23,22 +23,36 @@ def main() -> int:
     parser.add_argument("--data-dir", default="data/v2")
     parser.add_argument("--device", default="mps")
     parser.add_argument("--per-group", type=int, default=30)
+    parser.add_argument("--validation-only", action="store_true")
+    parser.add_argument("--max-new-tokens", type=int, default=96)
+    parser.add_argument("--variants", nargs="+")
     parser.add_argument("--output", default="experiments/sampling_sweep.json")
     args = parser.parse_args()
     engine = load_engine(args.checkpoint, args.tokenizer, args.device)
-    variants = default_variants()
+    variants = default_variants(args.max_new_tokens)
+    if args.variants:
+        requested = set(args.variants)
+        variants = [variant for variant in variants if variant.name in requested]
+        if {variant.name for variant in variants} != requested:
+            parser.error("unknown sampling variant")
     result = sweep_validation(
         engine, variants, validation_cases(args.validation_dir, args.per_group)
     )
     best = result.best_by_group()
     by_name = {variant.name: variant for variant in variants}
     words = word_list(args.data_dir)
-    benchmark = {
-        name: run_conversation_benchmark(
-            engine_responder(engine, by_name[name].params), words
-        ).metrics
-        for name in sorted({row.variant for row in best.values()} | {"greedy_rp1.1"})
-    }
+    benchmark = (
+        {}
+        if args.validation_only
+        else {
+            name: run_conversation_benchmark(
+                engine_responder(engine, by_name[name].params), words
+            ).metrics
+            for name in sorted(
+                {row.variant for row in best.values()} | ({"greedy_rp1.1"} & by_name.keys())
+            )
+        }
+    )
     payload = {
         "selection": "validation split (token F1, completion, repetition)",
         "rows": [asdict(row) for row in result.rows],

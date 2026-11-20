@@ -92,10 +92,39 @@ def _conversation_mixture(
     )
 
 
+def _with_replay(
+    source: MixtureLoader, train: TrainConfig, tokenizer: BPETokenizer
+) -> MixtureLoader:
+    if not train.sft_replay_dir or train.curriculum_start:
+        raise ConfigError("SFT replay needs a token directory and a fixed SFT mixture")
+    root = Path(train.sft_replay_dir)
+    languages = ("en", "ru", "kk")
+    loaders = dict(source.loaders)
+    weights = {
+        name: float(weight) * (1 - train.sft_replay_fraction)
+        for name, weight in zip(source.names, source.final, strict=True)
+    }
+    for language in languages:
+        name = f"replay_{language}"
+        if name in loaders:
+            raise ConfigError(f"reserved SFT replay group: {name}")
+        loaders[name] = PackedTokenLoader(
+            root / f"train.{language}.bin",
+            token_dtype(tokenizer.vocab_size),
+            train.sequence_length,
+            train.micro_batch_size,
+            train.seed,
+        )
+        weights[name] = train.sft_replay_fraction / len(languages)
+    return MixtureLoader(loaders, weights, train.seed)
+
+
 def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
     train, root = config.train, Path(config.train.data_dir)
     dtype = token_dtype(tokenizer.vocab_size)
     batch, length, seed = train.micro_batch_size, train.sequence_length, train.seed
+    if train.sft_replay_fraction and (train.stage != "sft" or not train.mixture):
+        raise ConfigError("SFT replay requires a grouped SFT dataset")
     if train.stage == "pretrain":
         if train.mixture:
             groups = {
@@ -118,10 +147,15 @@ def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
             ),
         )
     if train.stage == "sft" and train.mixture:
-        return tuple(
-            _conversation_mixture(root, split, train.mixture, length, batch, tokenizer, seed, train)
-            for split in ("train", "validation")
+        training = _conversation_mixture(
+            root, "train", train.mixture, length, batch, tokenizer, seed, train
         )
+        validation = _conversation_mixture(
+            root, "validation", train.mixture, length, batch, tokenizer, seed
+        )
+        if train.sft_replay_fraction:
+            training = _with_replay(training, train, tokenizer)
+        return training, validation
     if train.stage == "sft":
         make = lambda split, shuffle: ConversationLoader(
             root / "sft" / split, dtype, length + 1, batch, tokenizer.pad_id, seed, shuffle

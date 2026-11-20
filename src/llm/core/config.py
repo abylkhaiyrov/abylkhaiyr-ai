@@ -159,6 +159,8 @@ class TrainConfig(StrictModel):
     dpo_beta: float = Field(default=0.1, gt=0)
     mixture: dict[str, float] = Field(default_factory=dict)
     dataset_version: str | None = None
+    sft_replay_dir: str | None = None
+    sft_replay_fraction: float = Field(default=0.0, ge=0, lt=1)
     optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
 
 

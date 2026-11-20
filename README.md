@@ -78,6 +78,11 @@ Studio автоматически использует самый свежий c
 Данные: Wikipedia (kk, ru, simple en), TinyStories, GSM8K, CodeAlpaca, Dolly, HH-RLHF (лицензии в `configs/data_small.yaml`
 и `data/processed/manifest.json`).
 
+## Этап 11: SFT и сохранение языковых способностей
+
+[Результаты MPS, подбор SFT и выбор checkpoint](docs/stage11_sft.md) ·
+[Model Card](docs/model_card_stage11.md).
+
 ## Проверка качества кода
 `scripts/check.sh` запускает ruff, black, mypy и pytest.
 

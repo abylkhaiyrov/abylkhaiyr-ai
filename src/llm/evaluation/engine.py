@@ -5,7 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 import numpy as np
 import torch
@@ -60,6 +60,7 @@ class EvaluationConfig:
     seed: int = 0
     benchmark_dir: str = "data/benchmarks"
     math_bench_cases: int = 60
+    corpus_split: Literal["test", "validation"] = "test"
 
 
 BASE_SUITES = (
@@ -108,9 +109,9 @@ class Evaluator:
         return self.engine.chat([Message("user", prompt)], greedy(max_tokens)).text
 
     def language_modeling(self) -> dict[str, float]:
-        path = Path(self.config.data_dir) / "tokens" / "test.bin"
+        path = Path(self.config.data_dir) / "tokens" / f"{self.config.corpus_split}.bin"
         if not path.is_file():
-            raise DataError(f"test tokens not found: {path}")
+            raise DataError(f"held-out tokens not found: {path}")
         tokens = np.memmap(
             path, dtype=np.uint16 if self.tokenizer.vocab_size <= 1 << 16 else np.uint32, mode="r"
         )
@@ -125,14 +126,14 @@ class Evaluator:
             self.engine.model, windows, self.device, self.hooks.item_done
         )
         return {
-            "test_loss": total / n,
-            "test_perplexity": perplexity_from(total, n),
+            f"{self.config.corpus_split}_loss": total / n,
+            f"{self.config.corpus_split}_perplexity": perplexity_from(total, n),
             "next_token_accuracy": correct / n,
         }
 
     def multilingual_perplexity(self) -> dict[str, float]:
         results: dict[str, float] = {}
-        test_file = Path(self.config.data_dir) / "corpus" / "test.jsonl"
+        test_file = Path(self.config.data_dir) / "corpus" / f"{self.config.corpus_split}.jsonl"
         by_language: dict[str, list[Tensor]] = {}
         for row in read_jsonl(test_file):
             language = row.get("language")

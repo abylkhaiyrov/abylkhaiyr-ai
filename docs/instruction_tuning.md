@@ -24,7 +24,7 @@ mechanism based on measured conversational quality, not on step numbers.
 * Shift: `targets[t] == ids[t+1]`; only assistant tokens and the closing `<eos>` are supervised.
 * Loss is a sum divided by supervised tokens of the whole accumulated step.
 * Batches are right-padded to a multiple of 64 tokens (few distinct shapes, faster on MPS); padding is masked.
-* There is no sequence packing in SFT: one conversation per row, so no cross-example attention leakage.
+* SFT supports optional sequence packing with segment-isolated attention and reset positions. Validation keeps the padded, unpacked representation.
 * Over-long conversations are removed at build time instead of being truncated (truncation would drop `<eos>`).
 * `test_controlled_overfit_reproduces_training_answers_only` shows the model can memorise instruction pairs. It proves
   the training loop works, **not** quality on new prompts; quality is measured only on the independent benchmark.
@@ -64,9 +64,15 @@ sandbox; everything else goes through the model. The model-only and with-tools s
 
 ## Selection of the production model (`training/promotion.py`)
 
-`scripts/promote_model.py` writes `checkpoints/production.json`. A checkpoint is eligible only if it is SFT/DPO, beats
-the pretrained reference on `conv_pass_rate` and is not repetitive; ties prefer lower repetition. `ready` stays false
-below a pass rate of 0.5 and Studio must then label the model as an experimental preview. Known limitations are stored in the manifest.
+`scripts/promote_model.py` writes `checkpoints/production.json`. A production checkpoint must be
+SFT/DPO, improve on the pretrained conversational pass rate, reach **0.5** pass rate and stay
+at or below **0.45** conversational repetition. On the same held-out corpus, aggregate and
+EN/RU/KK perplexity must each stay within **1.5×** the pretrained reference. Missing measurements
+block production approval. Export is independent of these gates. An experimental checkpoint can
+be recorded separately; serving code only resolves a ready production entry.
+
+See [Stage 11](stage11_sft.md) for the comparison and [the model card](model_card_stage11.md)
+for measured limitations.
 
 ## Commands
 
@@ -75,5 +81,6 @@ python scripts/build_instruction_corpus.py
 python scripts/run_pipeline.py --sft configs/tiny_v3_sft.yaml --dpo configs/tiny_v3_dpo.yaml --build-preference
 python scripts/compare_conversations.py base=checkpoints/tiny_session sft=checkpoints/tiny_v3_sft/tiny_v3_sft_best
 python scripts/sampling_sweep.py checkpoints/tiny_v3_sft/tiny_v3_sft_best
-python scripts/promote_model.py experiments/conversation_compare.json sft=checkpoints/tiny_v3_sft/tiny_v3_sft_best=sft --reference base
+python scripts/evaluate_sft.py --split test --output experiments/production_eval.json base=checkpoints/tiny_v2/tiny_best sft=checkpoints/tiny_v31_sft_stage11/step-00000120
+python scripts/promote_model.py experiments/production_eval.json sft=checkpoints/tiny_v31_sft_stage11/step-00000120=sft --reference base
 ```

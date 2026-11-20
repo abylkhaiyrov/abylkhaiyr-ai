@@ -116,7 +116,7 @@ class SweepRow:
     pass_rate: float
     completion_rate: float
     repetition: float
-    language_stability: float
+    language_stability: float | None
 
 
 @dataclass
@@ -198,7 +198,7 @@ def sweep_sampling(
 
 VALIDATION_GROUPS: dict[str, tuple[str, ...]] = {
     "dialogue": ("dialog", "identity"),
-    "explanation": ("chat",),
+    "explanation": ("chat", "chat_en", "chat_ru", "chat_kk", "chat_other"),
     "skills": ("skills",),
     "math": ("math", "word_math"),
     "code": ("code",),
@@ -279,7 +279,7 @@ def sweep_validation(
                     float(np.mean(f1)),
                     float(np.mean(finished)),
                     float(np.mean(repetition)),
-                    1.0,
+                    None,
                 )
             )
     return result
