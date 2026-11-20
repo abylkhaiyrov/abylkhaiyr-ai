@@ -439,3 +439,21 @@ def test_prompt_echo_and_hallucination_metrics_are_computed_from_behaviour():
         for item in CASES
     ]
     assert summarize(honest)["conv_hallucination_rate"] == 0.0
+
+
+def test_math_rejections_must_have_a_different_final_answer_not_just_different_text():
+    from llm.data.preference_builder import is_verified_wrong
+
+    row = {
+        "group": "word_math",
+        "messages": [
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "2 + 2 = 4\n#### 4"},
+        ],
+    }
+    assert not is_verified_wrong(row, "Adding gives four.\n#### 4")
+    assert is_verified_wrong(row, "I think it is five.\n#### 5")
+    assert is_verified_wrong(row, "no final answer given")
+    plain = {"group": "skills", "messages": row["messages"]}
+    assert not is_verified_wrong(plain, "2 + 2 = 4\n#### 4")
+    assert is_verified_wrong(plain, "something else")

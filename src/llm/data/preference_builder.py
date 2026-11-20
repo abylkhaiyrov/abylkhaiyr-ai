@@ -11,9 +11,19 @@ from llm.data.binary import read_jsonl
 from llm.data.preference import PREFERENCE_DIR, tokenize_preference_split
 from llm.data.sft_builder import SPLITS
 from llm.data.sft_quality import normalize
+from llm.reasoning.tools import extract_final_answer
 from llm.tokenizer.bpe import BPETokenizer
 
-PROMPT_GROUPS = ("skills", "dialog", "identity", "chat")
+PROMPT_GROUPS = (
+    "skills",
+    "dialog",
+    "identity",
+    "reading_en",
+    "reading_ru",
+    "reading_kk",
+    "word_math",
+)
+FINAL_ANSWER_GROUPS = frozenset({"word_math"})
 IMITATION_FOREIGN_IDENTITY = ("ChatGPT", "OpenAI GPT", "Gemini", "Claude")
 NUMBER = re.compile(r"\d+")
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
@@ -28,7 +38,7 @@ class PreferenceBuildConfig:
     data_dir: str = "data/v3"
     human_pairs_dir: str = "data/v2"
     pairs_per_group: int = 1500
-    human_pairs: int = 1500
+    human_pairs: int = 600
     validation_fraction: float = 0.05
     seed: int = 1
     source_split: str = "train"
@@ -124,6 +134,18 @@ def usable_prompt(row: dict) -> bool:
     return sum(len(m["content"]) for m in row["messages"][:-1]) <= MAX_PROMPT_CHARS
 
 
+def final_answer(text: str) -> str | None:
+    value = extract_final_answer(text)
+    return None if value is None else normalize(value)
+
+
+def is_verified_wrong(row: dict, sample: str) -> bool:
+    if row.get("group") in FINAL_ANSWER_GROUPS:
+        reference, produced = final_answer(last_answer(row)), final_answer(sample)
+        return reference is not None and produced != reference
+    return normalize(sample) != normalize(last_answer(row))
+
+
 def synthetic_pairs(
     rows: list[dict], count: int, rng: random.Random, sampler: Sampler | None = None
 ) -> list[dict]:
@@ -134,7 +156,7 @@ def synthetic_pairs(
         rejected, kind = None, "corruption"
         if sampler is not None:
             sample = sampler(prompt_messages(row)).strip()
-            if sample and normalize(sample) != normalize(last_answer(row)):
+            if sample and is_verified_wrong(row, sample):
                 rejected, kind = sample, "on_policy"
         if rejected is None:
             rejected = corrupted_answer(rng, row, pool)
