@@ -48,13 +48,40 @@ def seed_everything(seed: int) -> None:
     torch.manual_seed(seed)
 
 
-def build_optimizer(model: nn.Module, config: TrainConfig) -> AdamW:
+BLOCK_PREFIX = "blocks."
+
+
+def freeze_lower_layers(model: CausalLM, count: int) -> None:
+    if count == 0:
+        return
+    model.embedding.weight.requires_grad_(False)
+    for block in list(model.blocks)[:count]:
+        block.requires_grad_(False)
+
+
+def layer_scale(name: str, layers: int, decay: float) -> float:
+    if name.startswith("embedding"):
+        return decay**layers
+    if name.startswith(BLOCK_PREFIX):
+        index = int(name.removeprefix(BLOCK_PREFIX).split(".", 1)[0])
+        return decay ** (layers - 1 - index)
+    return 1.0
+
+
+def build_optimizer(model: CausalLM, config: TrainConfig) -> AdamW:
     settings = config.optimizer
-    decay = [p for p in model.parameters() if p.requires_grad and p.ndim > NO_DECAY_NDIM]
-    plain = [p for p in model.parameters() if p.requires_grad and p.ndim <= NO_DECAY_NDIM]
+    buckets: dict[tuple[float, bool], list[nn.Parameter]] = {}
+    for name, parameter in model.named_parameters():
+        if parameter.requires_grad:
+            scale = layer_scale(name, model.config.num_hidden_layers, config.layer_lr_decay)
+            buckets.setdefault((scale, parameter.ndim > NO_DECAY_NDIM), []).append(parameter)
     groups = [
-        {"params": decay, "weight_decay": settings.weight_decay},
-        {"params": plain, "weight_decay": 0.0},
+        {
+            "params": params,
+            "weight_decay": settings.weight_decay if decayed else 0.0,
+            "lr_scale": scale,
+        }
+        for (scale, decayed), params in sorted(buckets.items())
     ]
     return AdamW(
         groups,
@@ -108,6 +135,7 @@ class Trainer:
         self.stop_event = threading.Event()
         self.stop_file: Path | None = None
         self.logger = logging.getLogger("llm.training")
+        freeze_lower_layers(self.model, config.freeze_layers)
         self.optimizer = build_optimizer(self.model, config)
         self.scaler = make_grad_scaler(device, dtype)
         self.state = TrainingState(
@@ -144,7 +172,7 @@ class Trainer:
             settings.min_lr_ratio,
         )
         for group in self.optimizer.param_groups:
-            group["lr"] = rate
+            group["lr"] = rate * group.get("lr_scale", 1.0)
         return rate
 
     def _forward_loss(self, batch: Batch) -> Tensor:

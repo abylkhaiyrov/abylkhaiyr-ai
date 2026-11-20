@@ -145,6 +145,8 @@ class TrainConfig(StrictModel):
     device: DeviceName = "auto"
     activation_checkpointing: bool = False
     pack_sequences: bool = False
+    freeze_layers: int = Field(default=0, ge=0)
+    layer_lr_decay: float = Field(default=1.0, gt=0, le=1)
     pad_multiple: int = Field(default=64, gt=0)
     bucket_window: int = Field(default=0, ge=0)
     curriculum_start: dict[str, float] = Field(default_factory=dict)

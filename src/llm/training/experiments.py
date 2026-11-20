@@ -42,6 +42,8 @@ class EfficiencyVariant:
     curriculum_batches: int = 0
     learning_rate: float | None = None
     replay_fraction: float = 0.0
+    freeze_layers: int = 0
+    layer_lr_decay: float = 1.0
 
 
 def configure(
@@ -60,6 +62,8 @@ def configure(
             "curriculum_batches": variant.curriculum_batches,
             "max_steps": steps,
             "sft_replay_fraction": variant.replay_fraction,
+            "freeze_layers": variant.freeze_layers,
+            "layer_lr_decay": variant.layer_lr_decay,
             "eval_interval": max(steps, 1),
             "checkpoint_interval": steps + 1,
             "protected_steps": [],

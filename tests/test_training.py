@@ -310,3 +310,25 @@ def test_replacing_a_labelled_checkpoint_never_leaves_a_window_without_valid_wei
     assert not (manager.directory / "best.old").exists()
     trainer.save_checkpoint("best")
     assert CheckpointManager.verify(best)["files"]
+
+
+def test_frozen_layers_do_not_change_and_layer_wise_rates_scale_each_group(tmp_path, model_config):
+    trainer = build_trainer(tmp_path, model_config, steps=4, freeze_layers=1, layer_lr_decay=0.5)
+    model = trainer.model
+    frozen_before = model.blocks[0].attention.q_proj.weight.detach().clone()
+    embedding_before = model.embedding.weight.detach().clone()
+    free_before = model.blocks[1].attention.q_proj.weight.detach().clone()
+    trainer.train()
+    assert torch.equal(model.blocks[0].attention.q_proj.weight, frozen_before)
+    assert torch.equal(model.embedding.weight, embedding_before)
+    assert not torch.equal(model.blocks[1].attention.q_proj.weight, free_before)
+    scales = {group["lr_scale"] for group in trainer.optimizer.param_groups}
+    assert scales <= {1.0, 0.5}
+    rates = {round(group["lr"] / group["lr_scale"], 9) for group in trainer.optimizer.param_groups}
+    assert len(rates) == 1
+
+
+def test_default_layer_options_keep_two_groups_and_unit_scale(tmp_path, model_config):
+    trainer = build_trainer(tmp_path, model_config, steps=2)
+    assert {g["lr_scale"] for g in trainer.optimizer.param_groups} == {1.0}
+    assert len(trainer.optimizer.param_groups) == 2

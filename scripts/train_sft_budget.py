@@ -36,12 +36,16 @@ def main() -> int:
     for trial in args.trials:
         name, rate, budget, replay, *extra = trial.split(":")
         seed = int(extra[0]) if extra else base.train.seed
+        freeze = int(extra[1]) if len(extra) > 1 else 0
+        decay = float(extra[2]) if len(extra) > 2 else 1.0
         variant = EfficiencyVariant(
             name,
             base.train.mixture,
             pack=True,
             learning_rate=float(rate),
             replay_fraction=float(replay),
+            freeze_layers=freeze,
+            layer_lr_decay=decay,
         )
         seeded = base.model_copy(update={"train": base.train.model_copy(update={"seed": seed})})
         row = train_candidate(
@@ -53,6 +57,8 @@ def main() -> int:
                 "budget_tokens": int(float(budget)),
                 "replay": float(replay),
                 "seed": seed,
+                "freeze_layers": freeze,
+                "layer_lr_decay": decay,
             }
         )
         results.append(row)
