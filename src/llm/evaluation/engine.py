@@ -20,6 +20,7 @@ from llm.evaluation.conversation import (
     engine_responder,
     run_conversation_benchmark,
 )
+from llm.evaluation.hallucination import Probe, build_probes, score_probes
 from llm.evaluation.hooks import EvaluationHooks, NullHooks
 from llm.evaluation.metrics import (
     pass_at_k,
@@ -77,6 +78,7 @@ BASE_SUITES = (
     "context_usage",
     "coherence",
     "conversation",
+    "hallucination",
     "code_generation",
     "repetition",
     "speed_and_memory",
@@ -344,6 +346,15 @@ class Evaluator:
         )
         self.conversation_samples = report.samples()
         return report.metrics
+
+    def hallucination(self) -> dict[str, float]:
+        corpus = Path(self.config.data_dir) / "corpus" / f"{self.config.corpus_split}.jsonl"
+        probes = build_probes(corpus, self.config.seed)
+
+        def respond(probe: Probe) -> str:
+            return self.engine.chat(probe.messages(), CONVERSATION_PARAMS).text
+
+        return score_probes(probes, respond)
 
     def code_generation(self) -> dict[str, float]:
         passes: dict[int, list[float]] = {1: [], CODE_SAMPLES: []}
