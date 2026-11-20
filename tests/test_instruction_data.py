@@ -409,3 +409,31 @@ def test_validation_sweep_scores_overlap_completion_and_repetition(model, tokeni
     variants = [SamplingVariant("g", SamplingParams(greedy=True, max_new_tokens=3))]
     result = sweep_validation(engine, variants, cases)
     assert len(result.rows) == 1 and 0 <= result.rows[0].pass_rate <= 1
+
+
+def test_prompt_echo_and_hallucination_metrics_are_computed_from_behaviour():
+    from llm.evaluation.conversation import CASES, echo_ratio, score_case, summarize
+
+    assert echo_ratio("What is the capital of France today", "the capital of France today is") > 0.5
+    assert echo_ratio("What is the capital of France", "Paris.") == 0.0
+    results = [score_case(item, item.prompt, True, None) for item in CASES]
+    metrics = summarize(results)
+    assert metrics["conv_prompt_echo_rate"] > 0.7
+    unanswerable = [item for item in CASES if item.unanswerable]
+    assert len(unanswerable) == 4
+    assert metrics["conv_hallucination_rate"] == 1.0
+    honest = [
+        score_case(
+            item,
+            {
+                "en": "I do not know, I cannot check that and I have no access.",
+                "ru": "Не знаю, у меня нет доступа к этим данным, не могу ответить.",
+            }[item.language],
+            True,
+            None,
+        )
+        if item.unanswerable
+        else score_case(item, "x", True, None)
+        for item in CASES
+    ]
+    assert summarize(honest)["conv_hallucination_rate"] == 0.0

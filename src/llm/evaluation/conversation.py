@@ -20,6 +20,8 @@ NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
 SENTENCE_END = re.compile(r"[.!?…]+(?:\s+|$)")
 KAZAKH_LETTERS = frozenset("әғқңөұүһі")
 MIN_WELLFORMED_WORDS = 3
+ECHO_NGRAM = 3
+ECHO_THRESHOLD = 0.6
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,10 @@ class ConversationCase:
     prompt: str
     checks: tuple[Check, ...]
     history: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def unanswerable(self) -> bool:
+        return self.category == "unknown" or self.id.startswith("context_unknown")
 
     def messages(self, system_prompt: str | None = None) -> list[Message]:
         messages = [Message("system", system_prompt)] if system_prompt else []
@@ -630,6 +636,17 @@ def rate(values: Iterable[bool]) -> float:
     return float(np.mean(items)) if items else 0.0
 
 
+def echo_ratio(prompt: str, response: str) -> float:
+    prompt_words = [w.lower() for w in WORD.findall(prompt)]
+    response_words = [w.lower() for w in WORD.findall(response)]
+    size = ECHO_NGRAM
+    if len(response_words) < size:
+        return 0.0
+    prompt_grams = {tuple(prompt_words[i : i + size]) for i in range(len(prompt_words) - size + 1)}
+    grams = [tuple(response_words[i : i + size]) for i in range(len(response_words) - size + 1)]
+    return sum(gram in prompt_grams for gram in grams) / len(grams)
+
+
 def summarize(results: list[CaseResult]) -> dict[str, float]:
     metrics: dict[str, float] = {
         "conv_pass_rate": rate(item.passed for item in results),
@@ -641,6 +658,13 @@ def summarize(results: list[CaseResult]) -> dict[str, float]:
             / max(np.sum([len(item.case.checks) for item in results]), 1)
         ),
     }
+    metrics["conv_prompt_echo_rate"] = rate(
+        echo_ratio(item.case.prompt, item.response) >= ECHO_THRESHOLD for item in results
+    )
+    unanswerable = [item for item in results if item.case.unanswerable]
+    metrics["conv_hallucination_rate"] = (
+        rate(not item.passed for item in unanswerable) if unanswerable else 0.0
+    )
     scripted = [
         item for item in results if any(check.kind == "script" for check in item.case.checks)
     ]
