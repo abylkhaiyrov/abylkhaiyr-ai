@@ -221,8 +221,7 @@ class RuntimeState:
 
     def _scan_processes(self) -> dict[str, Any] | None:
         scripts = {
-            (self.root / "scripts" / name).resolve()
-            for name in ("run_pipeline.py", "train_gpu.py")
+            (self.root / "scripts" / name).resolve() for name in ("run_pipeline.py", "train_gpu.py")
         }
         for process in psutil.process_iter(["pid", "cmdline", "create_time"]):
             try:

@@ -21,6 +21,11 @@ ServerEventType = Literal[
     "generation.cancelled",
     "generation.failed",
     "generation.snapshot",
+    "notification.created",
+    "notification.read",
+    "notification.deleted",
+    "notification.count.updated",
+    "session.revoked",
 ]
 
 SERVER_EVENT_TYPES = frozenset(get_args(ServerEventType))

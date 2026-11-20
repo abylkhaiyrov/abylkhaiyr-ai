@@ -1,35 +1,18 @@
 import threading
 import time
-from collections import defaultdict, deque
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, WebSocket, status
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from llm.inference.sampling import SamplingParams
-from llm.studio.auth import AuthenticationError
+from llm.studio.api_accounts import create_account_router
 from llm.studio.model_manager import ModelManager, ModelManagerError
 from llm.studio.processes import ProcessError
-from llm.studio.protocol import API_VERSION, API_VERSION_HEADER
+from llm.studio.security import build_dependencies
 from llm.studio.service import StudioService
 from llm.tokenizer.bpe import Message
-
-SESSION_COOKIE = "abylkhaiyr_session"
-CSRF_COOKIE = "abylkhaiyr_csrf"
-CSRF_HEADER = "X-CSRF-Token"
-LOGIN_ATTEMPTS = 5
-LOGIN_WINDOW_SECONDS = 300
-
-
-class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=128)
-    password: str = Field(min_length=1, max_length=512)
-
-
-class PasswordChangeRequest(BaseModel):
-    current_password: str = Field(min_length=1, max_length=512)
-    new_password: str = Field(min_length=12, max_length=512)
 
 
 class TrainingStartRequest(BaseModel):
@@ -52,6 +35,7 @@ class ChatUpdateRequest(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=20000)
     generation_settings: dict[str, Any] | None = None
     pinned: bool | None = None
+    archived: bool | None = None
 
 
 class ModelLoadRequest(BaseModel):
@@ -70,35 +54,16 @@ class ChatMessageRequest(BaseModel):
     seed: int | None = None
 
 
-class LoginRateLimiter:
-    def __init__(self) -> None:
-        self.attempts: dict[str, deque[float]] = defaultdict(deque)
-        self.lock = threading.Lock()
-
-    def allow(self, key: str) -> bool:
-        now = time.monotonic()
-        with self.lock:
-            attempts = self.attempts[key]
-            while attempts and now - attempts[0] > LOGIN_WINDOW_SECONDS:
-                attempts.popleft()
-            return len(attempts) < LOGIN_ATTEMPTS
-
-    def fail(self, key: str) -> None:
-        with self.lock:
-            self.attempts[key].append(time.monotonic())
-
-    def clear(self, key: str) -> None:
-        with self.lock:
-            self.attempts.pop(key, None)
-
-
 def create_studio_router(
     studio: StudioService,
     model_manager: ModelManager,
     inference_lock: threading.Lock,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
-    rate_limiter = LoginRateLimiter()
+    deps = build_dependencies(studio)
+    current_identity, require_csrf = deps.session, deps.csrf
+    admin_identity, admin_csrf = deps.admin, deps.admin_csrf
+    router.include_router(create_account_router(studio, deps))
     from llm.studio.websocket import WebSocketManager
 
     websocket_manager = WebSocketManager(studio, model_manager, inference_lock)
@@ -111,123 +76,15 @@ def create_studio_router(
         if inference_lock.locked():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="generation_active")
 
-    def current_identity(
-        session_token: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
-    ) -> tuple[Any, str]:
-        identity = studio.auth.get_user(session_token)
-        if identity is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required",
-                headers={API_VERSION_HEADER: API_VERSION},
-            )
-        return identity
-
-    def require_csrf(
-        request: Request,
-        identity: Annotated[tuple[Any, str], Depends(current_identity)],
-        csrf_cookie: Annotated[str | None, Cookie(alias=CSRF_COOKIE)] = None,
-    ) -> tuple[Any, str]:
-        csrf_header = request.headers.get(CSRF_HEADER)
-        if (
-            csrf_cookie is None
-            or csrf_header is None
-            or csrf_header != csrf_cookie
-            or csrf_header != identity[1]
-        ):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid CSRF token")
-        return identity
-
-    @router.post("/auth/login")
-    def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
-        address = request.client.host if request.client is not None else "unknown"
-        if not rate_limiter.allow(address):
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many login attempts"
-            )
-        try:
-            token, csrf_token, user = studio.auth.authenticate(payload.username, payload.password)
-        except AuthenticationError as error:
-            rate_limiter.fail(address)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)
-            ) from error
-        rate_limiter.clear(address)
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            httponly=True,
-            secure=request.url.scheme == "https",
-            samesite="strict",
-            max_age=12 * 60 * 60,
-            path="/",
-        )
-        response.set_cookie(
-            CSRF_COOKIE,
-            csrf_token,
-            httponly=False,
-            secure=request.url.scheme == "https",
-            samesite="strict",
-            max_age=12 * 60 * 60,
-            path="/",
-        )
-        return {
-            "username": user.username,
-            "requires_password_change": user.requires_password_change,
-        }
-
-    @router.get("/auth/me")
-    def me(
-        response: Response, identity: Annotated[tuple[Any, str], Depends(current_identity)]
-    ) -> dict[str, Any]:
-        response.headers[API_VERSION_HEADER] = API_VERSION
-        response.headers["Cache-Control"] = "no-store"
-        user, _ = identity
-        return {
-            "username": user.username,
-            "requires_password_change": user.requires_password_change,
-        }
-
-    @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
-    def logout(
-        identity: Annotated[tuple[Any, str], Depends(require_csrf)],
-        response: Response,
-        session_token: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
-    ) -> Response:
-        studio.auth.logout(session_token)
-        response.delete_cookie(SESSION_COOKIE, path="/")
-        response.delete_cookie(CSRF_COOKIE, path="/")
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return response
-
-    @router.put("/auth/password", status_code=status.HTTP_204_NO_CONTENT)
-    def change_password(
-        payload: PasswordChangeRequest,
-        response: Response,
-        identity: Annotated[tuple[Any, str], Depends(require_csrf)],
-    ) -> Response:
-        try:
-            studio.auth.change_password(
-                identity[0].id, payload.current_password, payload.new_password
-            )
-        except AuthenticationError as error:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-            ) from error
-        response.delete_cookie(SESSION_COOKIE, path="/")
-        response.delete_cookie(CSRF_COOKIE, path="/")
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return response
-
     @router.get("/pipelines")
     def pipeline_history(
-        _identity: Annotated[tuple[Any, str], Depends(current_identity)],
+        _identity: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> list[dict[str, Any]]:
         return studio.runtime.pipeline_history()
 
     @router.get("/runtime")
     def runtime_state(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> dict[str, Any]:
         return studio.runtime_state()
 
@@ -241,24 +98,24 @@ def create_studio_router(
         }
 
     @router.get("/system")
-    def system(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> dict[str, Any]:
+    def system(_: Annotated[tuple[Any, str], Depends(admin_identity)]) -> dict[str, Any]:
         return studio.record_system_metric()
 
     @router.get("/system/history")
     def system_history(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
         seconds: int = 300,
     ) -> list[dict[str, Any]]:
         return studio.system_history(min(max(seconds, 300), 86400))
 
     @router.get("/processes")
-    def processes(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
+    def processes(_: Annotated[tuple[Any, str], Depends(admin_identity)]) -> list[dict[str, Any]]:
         return studio.list_processes()
 
     @router.post("/training")
     def start_training(
         payload: TrainingStartRequest,
-        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
     ) -> dict[str, Any]:
         try:
             return studio.start_training_checked(payload.config_path, payload.stage)
@@ -269,7 +126,7 @@ def create_studio_router(
 
     @router.post("/pipeline/stop")
     def stop_pipeline(
-        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
     ) -> dict[str, Any]:
         try:
             return studio.stop_pipeline()
@@ -279,7 +136,7 @@ def create_studio_router(
     @router.post("/training/{process_id}/pause")
     def pause_training(
         process_id: str,
-        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
     ) -> dict[str, Any]:
         try:
             return studio.processes.pause(process_id)
@@ -289,7 +146,7 @@ def create_studio_router(
     @router.post("/training/{process_id}/stop")
     def stop_training(
         process_id: str,
-        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
     ) -> dict[str, Any]:
         try:
             return studio.processes.stop(process_id)
@@ -298,7 +155,7 @@ def create_studio_router(
 
     @router.get("/training/metrics")
     def training_metrics(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
         run: str | None = None,
         max_points: int = 600,
     ) -> list[dict[str, float]]:
@@ -306,17 +163,17 @@ def create_studio_router(
 
     @router.get("/training/configs")
     def training_configs(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> list[dict[str, str]]:
         return studio.catalog.config_list()
 
     @router.get("/runs")
-    def runs(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
+    def runs(_: Annotated[tuple[Any, str], Depends(admin_identity)]) -> list[dict[str, Any]]:
         return studio.catalog.runs()
 
     @router.get("/runs/{name}")
     def run_detail(
-        name: str, _: Annotated[tuple[Any, str], Depends(current_identity)]
+        name: str, _: Annotated[tuple[Any, str], Depends(admin_identity)]
     ) -> dict[str, Any]:
         detail = studio.catalog.detail(name)
         if detail is None:
@@ -326,7 +183,7 @@ def create_studio_router(
     @router.get("/runs/{name}/metrics")
     def run_metrics(
         name: str,
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
         max_points: int = 600,
     ) -> list[dict[str, float]]:
         rows = studio.catalog.metrics(name, min(max(max_points, 10), 3000))
@@ -337,7 +194,7 @@ def create_studio_router(
     @router.get("/runs/{name}/logs")
     def run_logs(
         name: str,
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
         limit: int = 300,
     ) -> list[str]:
         lines = studio.catalog.logs(name, max(limit, 1))
@@ -346,25 +203,25 @@ def create_studio_router(
         return lines
 
     @router.get("/models")
-    def models(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
+    def models(_: Annotated[tuple[Any, str], Depends(admin_identity)]) -> list[dict[str, Any]]:
         return studio.models()
 
     @router.get("/models/registry")
     def model_registry(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> dict[str, Any]:
         return model_manager.registry()
 
     @router.get("/models/active")
     def active_model(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> dict[str, Any] | None:
         return model_manager.active_info()
 
     @router.post("/models/load")
     def load_model(
         payload: ModelLoadRequest,
-        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
     ) -> dict[str, Any]:
         reject_during_generation()
         try:
@@ -380,7 +237,7 @@ def create_studio_router(
     @router.post("/models/switch")
     def switch_model(
         payload: ModelLoadRequest,
-        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
     ) -> dict[str, Any]:
         reject_during_generation()
         try:
@@ -395,36 +252,36 @@ def create_studio_router(
 
     @router.post("/models/unload")
     def unload_model(
-        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
     ) -> dict[str, Any]:
         reject_during_generation()
         return model_manager.unload()
 
     @router.get("/checkpoints")
     def checkpoints(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> list[dict[str, Any]]:
         return studio.models()
 
     @router.get("/datasets")
-    def datasets(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
+    def datasets(_: Annotated[tuple[Any, str], Depends(admin_identity)]) -> list[dict[str, Any]]:
         return studio.datasets()
 
     @router.get("/experiments")
     def experiments(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> list[dict[str, Any]]:
         return studio.experiments()
 
     @router.get("/evaluation")
     def evaluation(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> list[dict[str, Any]]:
         return studio.evaluations()
 
     @router.get("/logs")
     def logs(
-        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
         category: str | None = None,
         offset: int = 0,
         limit: int = 100,
@@ -435,19 +292,35 @@ def create_studio_router(
     def chats(
         identity: Annotated[tuple[Any, str], Depends(current_identity)],
         query: str | None = None,
+        archived: bool = False,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        return studio.chats(identity[0].id, query)
+        return studio.chats(identity[0].id, query, archived, limit, offset)
+
+    @router.get("/chat/model")
+    def chat_model(
+        identity: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> dict[str, Any] | None:
+        active = model_manager.active_info()
+        if active is None:
+            return None
+        return {
+            key: active.get(key)
+            for key in ("id", "display_name", "stage", "context_length", "device")
+        }
 
     @router.post("/chats", status_code=status.HTTP_201_CREATED)
     def create_chat(
         payload: ChatCreateRequest,
         identity: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
+        privileged = identity[0].role == "ADMIN"
         return studio.create_chat(
             identity[0].id,
             payload.title,
-            payload.model_name,
-            payload.checkpoint,
+            payload.model_name if privileged else None,
+            payload.checkpoint if privileged else None,
             payload.system_prompt,
             payload.generation_settings,
         )
@@ -456,8 +329,9 @@ def create_studio_router(
     def get_chat(
         chat_id: str,
         identity: Annotated[tuple[Any, str], Depends(current_identity)],
+        limit: int = 100,
     ) -> dict[str, Any]:
-        chat = studio.chat(identity[0].id, chat_id)
+        chat = studio.chat(identity[0].id, chat_id, limit)
         if chat is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
         return chat
@@ -468,15 +342,17 @@ def create_studio_router(
         payload: ChatUpdateRequest,
         identity: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
+        privileged = identity[0].role == "ADMIN"
         chat = studio.update_chat(
             identity[0].id,
             chat_id,
             title=payload.title,
-            model_name=payload.model_name,
-            checkpoint=payload.checkpoint,
+            model_name=payload.model_name if privileged else None,
+            checkpoint=payload.checkpoint if privileged else None,
             system_prompt=payload.system_prompt,
             generation_settings=payload.generation_settings,
             pinned=payload.pinned,
+            archived=payload.archived,
         )
         if chat is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")

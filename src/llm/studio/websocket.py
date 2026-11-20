@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from llm.studio.events import DROPPABLE_EVENT_TYPES, make_event
 from llm.studio.model_manager import ModelManager
 from llm.studio.scheduler import GenerationRequest, GenerationScheduler, GenerationState
-from llm.studio.service import StudioService
+from llm.studio.service import TASK_STATUS, StudioService
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,8 @@ class ClientEvent(BaseModel):
 class Connection:
     socket: WebSocket
     user_id: int
+    role: str = "USER"
+    token_hash: str = ""
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     channels: set[str] = field(default_factory=set)
     outbox: asyncio.Queue[dict[str, Any]] = field(
@@ -92,6 +94,37 @@ class WebSocketManager:
         self.last_models = ""
         self.last_system = 0.0
         self.metric_cursor: tuple[str | None, int, str] = (None, -1, "")
+        self.loop: asyncio.AbstractEventLoop | None = None
+        studio.notifications.publishers.append(self.publish_to_user)
+        studio.auth.listeners.append(self.on_sessions_revoked)
+
+    def publish_to_user(self, user_id: int, event: dict[str, Any]) -> None:
+        loop = self.loop
+        if loop is None or loop.is_closed():
+            return
+        payload = make_event(
+            event["type"], **{key: value for key, value in event.items() if key != "type"}
+        )
+        loop.call_soon_threadsafe(self.deliver_to_user, user_id, payload)
+
+    def deliver_to_user(self, user_id: int, payload: dict[str, Any]) -> None:
+        for connection in tuple(self.connections):
+            if connection.user_id == user_id:
+                self.enqueue(connection, payload)
+
+    def on_sessions_revoked(self, user_id: int, hashes: set[str] | None) -> None:
+        loop = self.loop
+        if loop is None or loop.is_closed():
+            return
+        loop.call_soon_threadsafe(self.revoke_connections, user_id, hashes)
+
+    def revoke_connections(self, user_id: int, hashes: set[str] | None) -> None:
+        for connection in tuple(self.connections):
+            if connection.user_id == user_id and (
+                hashes is None or connection.token_hash in hashes
+            ):
+                self.enqueue(connection, make_event("session.revoked"))
+                asyncio.get_running_loop().call_later(0.2, self.drop, connection, 1008)
 
     def enqueue(self, connection: Connection, payload: dict[str, Any]) -> None:
         if connection.closed:
@@ -135,6 +168,7 @@ class WebSocketManager:
             chat_id=state.chat_id,
             message_id=state.message_id,
             sequence_id=state.sequence,
+            task_status=TASK_STATUS.get(state.status, "PROCESSING"),
             **data,
         )
         for connection in tuple(self.connections):
@@ -209,7 +243,7 @@ class WebSocketManager:
         if self.broadcaster is None or self.broadcaster.done():
             self.broadcaster = asyncio.create_task(self.broadcast_loop())
 
-    async def authorize(self, socket: WebSocket) -> tuple[int, str | None] | None:
+    async def authorize(self, socket: WebSocket) -> tuple[int, str, str | None] | None:
         origin = socket.headers.get("origin")
         host = socket.headers.get("host")
         if (
@@ -231,15 +265,18 @@ class WebSocketManager:
         if len(owned) >= MAX_CONNECTIONS_PER_USER:
             await socket.close(code=1013)
             return None
-        return identity[0].id, token
+        return identity[0].id, identity[0].role, token
 
     async def handle(self, socket: WebSocket) -> None:
         authorized = await self.authorize(socket)
         if authorized is None:
             return
-        user_id, token = authorized
+        user_id, role, token = authorized
         await socket.accept()
-        connection = Connection(socket, user_id)
+        self.loop = asyncio.get_running_loop()
+        connection = Connection(
+            socket, user_id, role, self.studio.auth.hash_token(token) if token else ""
+        )
         self.connections.add(connection)
         writer = asyncio.create_task(self.writer(connection))
         guard = asyncio.create_task(self.heartbeat(connection, token))
@@ -294,7 +331,8 @@ class WebSocketManager:
         if event.type == "ping":
             self.enqueue(connection, make_event("pong"))
         elif event.type == "subscribe":
-            connection.channels = set(event.channels)
+            allowed = {"chat"} if connection.role != "ADMIN" else {"chat", "studio"}
+            connection.channels = {str(name) for name in event.channels} & allowed
             recovered: set[str] = set()
             if "chat" in connection.channels:
                 active = self.scheduler.active_states_for_user(connection.user_id)
@@ -340,6 +378,7 @@ class WebSocketManager:
                 top_k=event.top_k,
                 max_tokens=event.max_tokens,
                 repetition_penalty=event.repetition_penalty,
+                privileged=connection.role == "ADMIN",
             )
             outcome, payload = await self.scheduler.submit(request, self.publish)
             if outcome == "existing" and isinstance(payload, dict):

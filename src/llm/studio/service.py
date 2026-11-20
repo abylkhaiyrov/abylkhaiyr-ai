@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from llm.evaluation.registry import load_registry
 from llm.studio.auth import AuthenticationService
@@ -20,6 +20,7 @@ from llm.studio.experiments import ExperimentCatalog
 from llm.studio.model_manager import ModelManager
 from llm.studio.model_registry import production_info
 from llm.studio.models import Chat, GenerationJob, MessageRecord, ProcessEvent, SystemMetric
+from llm.studio.notifications import NotificationService
 from llm.studio.processes import ProcessError, ProcessManager
 from llm.studio.runtime import RuntimeState
 from llm.studio.telemetry import (
@@ -28,10 +29,27 @@ from llm.studio.telemetry import (
     storage_snapshot,
     system_snapshot,
 )
+from llm.studio.users import UserDirectory
 
 SECRET_PATTERN = re.compile(r"(?i)(authorization|password|token|secret)(\s*[=:]\s*)([^\s,]+)")
 STORAGE_REFRESH_SECONDS = 30.0
 TITLE_LIMIT = 48
+CHAT_PAGE = 100
+MESSAGE_PAGE = 100
+TERMINAL_JOB_STATUSES = {"completed", "failed", "cancelled", "interrupted"}
+TASK_STATUS = {
+    "queued": "QUEUED",
+    "running": "PROCESSING",
+    "completed": "COMPLETED",
+    "failed": "FAILED",
+    "cancelled": "CANCELLED",
+    "interrupted": "FAILED",
+}
+NOTIFICATION_BY_STATUS = {
+    "completed": ("GENERATION_COMPLETED", "generation_completed"),
+    "failed": ("GENERATION_FAILED", "generation_failed"),
+    "cancelled": ("GENERATION_CANCELLED", "generation_cancelled"),
+}
 MARKDOWN_NOISE = re.compile(r"[`*_#>\[\]]+")
 INTENSIVE_KINDS = {"pretrain", "sft", "dpo", "evaluation", "sweep"}
 
@@ -55,6 +73,8 @@ class StudioService:
         self.session_factory = make_session_factory(self.engine)
         self.auth = AuthenticationService(self.session_factory)
         self.auth.initialize()
+        self.notifications = NotificationService(self.session_factory)
+        self.users = UserDirectory(self.session_factory, self.auth, self.notifications)
         self.processes = ProcessManager(self.session_factory, self.root)
         self.runtime = RuntimeState(self.root)
         self.catalog = ExperimentCatalog(self.root, self.runtime)
@@ -70,7 +90,9 @@ class StudioService:
             stale = database.scalars(
                 select(GenerationJob).where(GenerationJob.status.in_(["queued", "running"]))
             ).all()
+            interrupted = [(job.user_id, job.chat_id, job.request_id) for job in stale]
             for job in stale:
+                job.completed_at = datetime.now(UTC).replace(tzinfo=None)
                 job.status = "interrupted"
                 job.error_code = "server_restarted"
                 job.error_detail = "Backend restarted before generation completed"
@@ -80,6 +102,8 @@ class StudioService:
                     )
                     if message is not None and message.status in {"queued", "running"}:
                         message.status = "interrupted"
+        for user_id, chat_id, request_id in interrupted:
+            self.notify_generation(user_id, chat_id, request_id, "failed")
 
     def runtime_state(self, registry: dict[str, Any] | None = None) -> dict[str, Any]:
         snapshot = self.runtime.snapshot()
@@ -339,14 +363,41 @@ class StudioService:
             database.add(chat)
         return self._serialize_chat(chat)
 
-    def chats(self, user_id: int, query: str | None = None) -> list[dict[str, Any]]:
+    def chats(
+        self,
+        user_id: int,
+        query: str | None = None,
+        archived: bool = False,
+        limit: int = CHAT_PAGE,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         with self.session_factory() as database:
-            statement = select(Chat).where(Chat.user_id == user_id).order_by(Chat.updated_at.desc())
+            statement = (
+                select(Chat)
+                .where(Chat.user_id == user_id, Chat.archived.is_(archived))
+                .order_by(Chat.pinned.desc(), Chat.updated_at.desc())
+                .limit(min(max(limit, 1), CHAT_PAGE))
+                .offset(max(offset, 0))
+            )
             if query and query.strip():
                 pattern = f"%{query.strip()}%"
                 matching = select(MessageRecord.chat_id).where(MessageRecord.content.ilike(pattern))
                 statement = statement.where(or_(Chat.title.ilike(pattern), Chat.id.in_(matching)))
             return [self._serialize_chat(item) for item in database.scalars(statement).all()]
+
+    def notify_generation(self, user_id: int, chat_id: str, request_id: str, status: str) -> None:
+        entry = NOTIFICATION_BY_STATUS.get(status)
+        if entry is None:
+            return
+        chat = self.chat(user_id, chat_id, with_messages=False)
+        self.notifications.create(
+            user_id,
+            entry[0],
+            entry[1],
+            "" if chat is None else chat["title"],
+            chat_id if chat is not None else None,
+            request_id,
+        )
 
     def export_chat(self, user_id: int, chat_id: str, fmt: str) -> tuple[str, str, str] | None:
         chat = self.chat(user_id, chat_id)
@@ -364,18 +415,31 @@ class StudioService:
             lines.extend([f"**{message['role'].capitalize()}**", "", message["content"], ""])
         return f"{stem}.md", "text/markdown", "\n".join(lines)
 
-    def chat(self, user_id: int, chat_id: str) -> dict[str, Any] | None:
+    def chat(
+        self, user_id: int, chat_id: str, limit: int | None = None, with_messages: bool = True
+    ) -> dict[str, Any] | None:
         with self.session_factory() as database:
             chat = database.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
             if chat is None:
                 return None
             data = self._serialize_chat(chat)
-            messages = database.scalars(
+            if not with_messages:
+                return data
+            total = database.scalar(
+                select(func.count())
+                .select_from(MessageRecord)
+                .where(MessageRecord.chat_id == chat_id)
+            )
+            statement = (
                 select(MessageRecord)
                 .where(MessageRecord.chat_id == chat_id)
-                .order_by(MessageRecord.created_at)
-            ).all()
+                .order_by(MessageRecord.created_at.desc(), MessageRecord.id.desc())
+            )
+            if limit is not None:
+                statement = statement.limit(min(max(limit, 1), MESSAGE_PAGE))
+            messages = list(reversed(database.scalars(statement).all()))
             data["messages"] = [self._serialize_message(item) for item in messages]
+            data["total_messages"] = total or 0
             return data
 
     def update_chat(
@@ -388,6 +452,7 @@ class StudioService:
         system_prompt: str | None = None,
         generation_settings: dict[str, Any] | None = None,
         pinned: bool | None = None,
+        archived: bool | None = None,
     ) -> dict[str, Any] | None:
         with self.session_factory.begin() as database:
             chat = database.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
@@ -395,6 +460,8 @@ class StudioService:
                 return None
             if pinned is not None:
                 chat.pinned = pinned
+            if archived is not None:
+                chat.archived = archived
             if title is not None:
                 chat.title = title.strip()[:256] or chat.title
             if model_name is not None:
@@ -762,6 +829,11 @@ class StudioService:
                 return
             if status is not None:
                 job.status = status
+                now = datetime.now(UTC).replace(tzinfo=None)
+                if status == "running" and job.started_at is None:
+                    job.started_at = now
+                if status in TERMINAL_JOB_STATUSES:
+                    job.completed_at = now
             if sequence_id is not None:
                 job.sequence_id = sequence_id
             if partial_text is not None:
@@ -852,6 +924,9 @@ class StudioService:
             "queue_reason": job.queue_reason,
             "error_code": job.error_code,
             "error_detail": job.error_detail,
+            "task_status": TASK_STATUS.get(job.status, job.status.upper()),
+            "started_at": None if job.started_at is None else job.started_at.isoformat(),
+            "completed_at": None if job.completed_at is None else job.completed_at.isoformat(),
             "created_at": job.created_at.isoformat(),
             "updated_at": job.updated_at.isoformat(),
         }
@@ -865,6 +940,7 @@ class StudioService:
             "checkpoint": chat.checkpoint,
             "system_prompt": chat.system_prompt,
             "pinned": chat.pinned,
+            "archived": chat.archived,
             "generation_settings": json.loads(chat.generation_settings),
             "created_at": chat.created_at.isoformat(),
             "updated_at": chat.updated_at.isoformat(),

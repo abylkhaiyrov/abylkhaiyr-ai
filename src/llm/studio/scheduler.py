@@ -12,7 +12,7 @@ from typing import Any, Literal
 from llm.inference.sampling import SamplingParams
 from llm.reasoning.engine import Budget, ReasoningEngine, classify_task
 from llm.studio.model_manager import LoadedModelState, ModelManager, ModelManagerError
-from llm.studio.service import StudioService
+from llm.studio.service import TASK_STATUS, StudioService
 from llm.studio.streaming import PERSIST_INTERVAL_SECONDS, DeltaBuffer
 from llm.tokenizer.bpe import Message
 
@@ -40,6 +40,7 @@ class GenerationRequest:
     top_k: int | None = None
     max_tokens: int | None = None
     repetition_penalty: float | None = None
+    privileged: bool = False
 
 
 @dataclass
@@ -103,7 +104,9 @@ class GenerationScheduler:
         )
         if existing_job is not None:
             return "existing", self._job_snapshot(existing_job)
-        chat = await asyncio.to_thread(self.studio.chat, request.user_id, request.chat_id)
+        chat = await asyncio.to_thread(
+            self.studio.chat, request.user_id, request.chat_id, None, False
+        )
         if chat is None:
             return "rejected", {"code": "chat_not_found", "detail": "Chat not found"}
         if request.action in {"send", "edit"} and (
@@ -115,7 +118,9 @@ class GenerationScheduler:
                 "code": "queue_full",
                 "detail": f"Generation queue is full ({self.max_queue_size} requests waiting)",
             }
-        target_checkpoint = request.checkpoint_id or chat.get("checkpoint")
+        target_checkpoint = (
+            (request.checkpoint_id or chat.get("checkpoint")) if request.privileged else None
+        )
         active_model = self.model_manager.active
         if active_model is None and not target_checkpoint:
             return "rejected", {
@@ -268,7 +273,9 @@ class GenerationScheduler:
         chat: dict[str, Any],
         publish: PublishCallback,
     ) -> LoadedModelState:
-        target_checkpoint = request.checkpoint_id or chat.get("checkpoint")
+        target_checkpoint = (
+            (request.checkpoint_id or chat.get("checkpoint")) if request.privileged else None
+        )
         active = self.model_manager.active
         training_active = await asyncio.to_thread(self.studio.runtime.training_active)
         if target_checkpoint and (active is None or active.checkpoint_id != target_checkpoint):
@@ -305,7 +312,9 @@ class GenerationScheduler:
         self, state: GenerationState, request: GenerationRequest, publish: PublishCallback
     ) -> None:
         try:
-            chat = await asyncio.to_thread(self.studio.chat, state.user_id, state.chat_id)
+            chat = await asyncio.to_thread(
+                self.studio.chat, state.user_id, state.chat_id, None, False
+            )
             if chat is None:
                 raise ModelManagerError("chat_not_found", "Chat not found")
             loaded = await self._resolve_loaded_model(state, request, chat, publish)
@@ -665,14 +674,23 @@ class GenerationScheduler:
             reasoning_events=state.reasoning_events,
         )
 
-    @staticmethod
     async def _emit(
+        self,
         publish: PublishCallback,
         state: GenerationState,
         event_type: str,
         data: dict[str, Any],
     ) -> None:
         await publish(state, event_type, data)
+        status = event_type.removeprefix("generation.")
+        if status in {"completed", "failed", "cancelled"}:
+            await asyncio.to_thread(
+                self.studio.notify_generation,
+                state.user_id,
+                state.chat_id,
+                state.request_id,
+                status,
+            )
 
     @staticmethod
     def _resolve_sampling_params(
@@ -753,6 +771,7 @@ class GenerationScheduler:
     def _state_snapshot(state: GenerationState) -> dict[str, Any]:
         return {
             "type": "generation.snapshot",
+            "task_status": TASK_STATUS.get(state.status, "PROCESSING"),
             "request_id": state.request_id,
             "chat_id": state.chat_id,
             "message_id": state.message_id,
@@ -775,6 +794,7 @@ class GenerationScheduler:
             "chat_id": job["chat_id"],
             "message_id": job["assistant_message_id"],
             "sequence_id": job["sequence_id"],
+            "task_status": job["task_status"],
             "status": job["status"],
             "text": job["partial_text"],
             "model_id": job["model_id"],

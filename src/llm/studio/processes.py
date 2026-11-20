@@ -246,9 +246,9 @@ class ProcessManager:
             "config_path": record.config_path,
             "output_dir": record.output_dir,
             "started_at": record.started_at.isoformat(),
-            "completed_at": None
-            if record.completed_at is None
-            else record.completed_at.isoformat(),
+            "completed_at": (
+                None if record.completed_at is None else record.completed_at.isoformat()
+            ),
             "exit_code": record.exit_code,
             "error_reason": record.error_reason,
             "cpu_percent": cpu_percent,

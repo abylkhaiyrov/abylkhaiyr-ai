@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import uuid as uuid_module
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from llm.studio.database import Base
@@ -17,8 +18,18 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    uuid: Mapped[str] = mapped_column(
+        String(36), unique=True, index=True, default=lambda: str(uuid_module.uuid4())
+    )
+    first_name: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    last_name: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    email: Mapped[str | None] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512))
+    role: Mapped[str] = mapped_column(String(16), default="USER", server_default="USER", index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     requires_password_change: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -32,6 +43,8 @@ class SessionRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime)
+    user_agent: Mapped[str | None] = mapped_column(String(256))
 
 
 class Chat(Base):
@@ -45,6 +58,7 @@ class Chat(Base):
     system_prompt: Mapped[str] = mapped_column(Text, default="")
     generation_settings: Mapped[str] = mapped_column(Text, default="{}")
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow, index=True
@@ -88,10 +102,30 @@ class GenerationJob(Base):
     model_id: Mapped[str | None] = mapped_column(String(256))
     checkpoint_id: Mapped[str | None] = mapped_column(String(1024))
     queue_reason: Mapped[str | None] = mapped_column(String(128))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     error_code: Mapped[str | None] = mapped_column(String(64))
     error_detail: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    uuid: Mapped[str] = mapped_column(
+        String(36), unique=True, index=True, default=lambda: str(uuid_module.uuid4())
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    type: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(128))
+    message: Mapped[str] = mapped_column(Text, default="", server_default="")
+    chat_id: Mapped[str | None] = mapped_column(String(36))
+    generation_id: Mapped[str | None] = mapped_column(String(64))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class ManagedProcess(Base):
@@ -152,5 +186,18 @@ class ApplicationSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+Index(
+    "ix_notifications_user_read_created",
+    Notification.user_id,
+    Notification.is_read,
+    Notification.created_at,
+)
+Index(
+    "uq_notifications_user_generation",
+    Notification.user_id,
+    Notification.generation_id,
+    unique=True,
+    sqlite_where=text("generation_id IS NOT NULL"),
+)
 Index("ix_messages_chat_created", MessageRecord.chat_id, MessageRecord.created_at)
 Index("ix_process_events_process_created", ProcessEvent.process_id, ProcessEvent.created_at)

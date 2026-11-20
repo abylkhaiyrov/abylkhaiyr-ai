@@ -184,9 +184,9 @@ class ExperimentCatalog:
             "best_validation_loss": best,
             "first_train_loss": None if first is None else finite(first.get("train/loss")),
             "tokens_seen": finite(latest.get("perf/tokens_seen")),
-            "config_path": None
-            if run_config is None
-            else str(run_config.path.relative_to(self.root)),
+            "config_path": (
+                None if run_config is None else str(run_config.path.relative_to(self.root))
+            ),
             "started_at": self._started_at(self.root / output_dir),
             "updated_at": datetime.fromtimestamp(metrics_file.stat().st_mtime, UTC).isoformat(),
         }
