@@ -92,8 +92,9 @@ class RuntimeState:
         configs = {key: self._stage_config(key, command, state_dir, state) for key in TRAIN_KEYS}
         stages = build_pipeline_view(self.root, state, state_dir, configs, alive, now)
         current = next((item for item in stages if item["status"] == "running"), None)
-        pending = [item for item in stages if item["status"] == "pending"]
         current_key = current["key"] if current else None
+        start = stages.index(current) if current else 0
+        pending = [item for item in stages[start:] if item["status"] == "pending"]
         finished = [item for item in stages if item["status"] in FINISHED and item["finished_at"]]
         last = max(finished, key=lambda item: parse_time(item["finished_at"]) or now, default=None)
         pretrain_config = configs["pretrain"]

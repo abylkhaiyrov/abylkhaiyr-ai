@@ -136,3 +136,86 @@ def test_save_and_load_roundtrip(model, model_config, tmp_path):
     ids = torch.randint(0, model_config.vocab_size, (1, 6))
     with torch.no_grad():
         assert torch.allclose(model(ids), clone(ids))
+
+
+def test_native_gqa_and_causal_fast_path_match_reference_forward_and_gradients(model_config):
+    import copy
+
+    torch.manual_seed(1)
+    base = CausalLM(model_config)
+    fast = copy.deepcopy(base)
+    fast.configure_attention(native_gqa=True, fast_causal=True)
+    ids = torch.randint(0, model_config.vocab_size, (3, 24))
+    assert torch.allclose(base(ids), fast(ids), atol=1e-5)
+    base(ids).square().mean().backward()
+    fast(ids).square().mean().backward()
+    for (name, left), (_, right) in zip(
+        base.named_parameters(), fast.named_parameters(), strict=True
+    ):
+        assert torch.allclose(left.grad, right.grad, atol=1e-5), name
+
+
+def test_fast_path_is_not_used_with_padding_or_cache(model_config):
+    torch.manual_seed(2)
+    model = CausalLM(model_config).eval()
+    model.configure_attention(native_gqa=True, fast_causal=True)
+    ids = torch.randint(0, model_config.vocab_size, (2, 10))
+    mask = torch.ones(2, 10, dtype=torch.long)
+    mask[0, :3] = 0
+    padded = model(ids, attention_mask=mask)
+    plain = CausalLM(model_config).eval()
+    plain.load_state_dict(model.state_dict())
+    assert torch.allclose(padded, plain(ids, attention_mask=mask), atol=1e-5)
+    cache = model.new_cache()
+    full = model(ids)
+    step = [model(ids[:, i : i + 1], cache=cache) for i in range(10)]
+    assert torch.allclose(full, torch.cat(step, dim=1), atol=1e-4)
+
+
+def test_preallocated_cache_is_stable_under_growth_truncate_and_reorder(model_config):
+    from llm.model.cache import LayerKVCache
+
+    cache = LayerKVCache(capacity=4)
+    keys = torch.arange(2 * 2 * 3 * 4, dtype=torch.float32).view(2, 2, 3, 4)
+    first_keys, _ = cache.update(keys, keys + 100)
+    assert cache.length == 3 and torch.equal(first_keys, keys)
+    more = torch.full((2, 2, 3, 4), -1.0)
+    grown_keys, grown_values = cache.update(more, more)
+    assert cache.length == 6 and grown_keys.shape[2] == 6
+    assert torch.equal(grown_keys[:, :, :3], keys) and torch.equal(
+        grown_values[:, :, :3], keys + 100
+    )
+    cache.truncate(2)
+    assert cache.length == 2
+    resumed, _ = cache.update(more[:, :, :1], more[:, :, :1])
+    assert resumed.shape[2] == 3 and torch.equal(resumed[:, :, :2], keys[:, :, :2])
+    cache.reorder(torch.tensor([1, 0]))
+    assert torch.equal(cache.keys[0, :, :2], keys[1, :, :2])
+
+
+def test_packed_segments_equal_separate_sequences_in_loss_and_isolation(model_config):
+    from llm.model.transformer import segment_positions
+    from llm.training.losses import causal_lm_loss_sum
+
+    torch.manual_seed(3)
+    model = CausalLM(model_config)
+    first = torch.randint(1, model_config.vocab_size, (1, 9))
+    second = torch.randint(1, model_config.vocab_size, (1, 7))
+    packed = torch.cat([first, second, torch.zeros(1, 4, dtype=torch.long)], dim=1)
+    segments = torch.tensor([[1] * 9 + [2] * 7 + [0] * 4])
+    assert segment_positions(segments).tolist() == [list(range(9)) + list(range(7)) + [0, 1, 2, 3]]
+    logits = model(packed, segment_ids=segments)
+    assert torch.allclose(logits[:, :9], model(first), atol=1e-5)
+    assert torch.allclose(logits[:, 9:16], model(second), atol=1e-5)
+    targets = torch.randint(0, model_config.vocab_size, packed.shape)
+    targets[segments == 0] = -100
+    targets[:, 8] = -100
+    packed_loss, _ = causal_lm_loss_sum(logits, targets)
+    separate = (
+        causal_lm_loss_sum(model(first), targets[:, :9])[0]
+        + causal_lm_loss_sum(model(second), targets[:, 9:16])[0]
+    )
+    assert torch.allclose(packed_loss, separate, atol=1e-4)
+    changed = packed.clone()
+    changed[0, :9] = torch.randint(1, model_config.vocab_size, (9,))
+    assert torch.allclose(model(changed, segment_ids=segments)[:, 9:16], logits[:, 9:16], atol=1e-5)

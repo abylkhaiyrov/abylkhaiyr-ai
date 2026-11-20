@@ -59,6 +59,7 @@ def build_optimizer(model: nn.Module, config: TrainConfig) -> AdamW:
         lr=settings.learning_rate,
         betas=(settings.beta1, settings.beta2),
         eps=settings.eps,
+        foreach=settings.foreach,
     )
 
 
@@ -107,6 +108,7 @@ class Trainer:
             gradient_accumulation_steps=config.gradient_accumulation_steps,
         )
         self.model.activation_checkpointing = config.activation_checkpointing
+        self.model.configure_attention(config.native_gqa, config.fast_causal)
         self.train_source.set_batch_size(self.state.micro_batch_size)
 
     def resume(self) -> bool:
@@ -140,20 +142,19 @@ class Trainer:
         return tuple(t.to(self.device) for t in batch)
 
     def _accumulate(self) -> tuple[float, int]:
-        micro_batches = [
-            self._to_device(self.train_source.next_batch())
-            for _ in range(self.state.gradient_accumulation_steps)
+        host_batches = [
+            self.train_source.next_batch() for _ in range(self.state.gradient_accumulation_steps)
         ]
-        total_tokens = sum(self.objective.weight(batch) for batch in micro_batches)
+        total_tokens = sum(self.objective.weight(batch) for batch in host_batches)
         if total_tokens == 0:
             raise TrainingError("batch contains no target tokens")
-        loss_total = 0.0
-        for batch in micro_batches:
-            loss_sum = self._forward_loss(batch)
+        loss_total = torch.zeros((), device=self.device)
+        for host_batch in host_batches:
+            loss_sum = self._forward_loss(self._to_device(host_batch))
             scaled = loss_sum / total_tokens
             (self.scaler.scale(scaled) if self.scaler else scaled).backward()
-            loss_total += float(loss_sum.detach().item())
-        return loss_total / total_tokens, total_tokens
+            loss_total += loss_sum.detach().float()
+        return float(loss_total.item()) / total_tokens, total_tokens
 
     def _reduce_micro_batch(self) -> None:
         current = self.state.micro_batch_size
@@ -198,6 +199,10 @@ class Trainer:
         grad_norm, applied = self._optimizer_step()
         return loss, tokens, grad_norm, applied
 
+    def run_step(self) -> tuple[float, int, float, bool]:
+        self._set_learning_rate()
+        return self._train_step()
+
     @torch.inference_mode()
     def evaluate(self) -> float:
         was_training = self.model.training
@@ -205,18 +210,19 @@ class Trainer:
         saved = self.validation_source.state_dict()
         self.validation_source.load_state_dict({"epoch": 0, "cursor": 0})
         self.validation_source.set_batch_size(self.state.micro_batch_size)
-        total, count = 0.0, 0
+        total = torch.zeros((), device=self.device)
+        count = 0
         for index in range(self.config.eval_batches):
             self.monitor.phase(
                 "validation", validation_done=index, validation_total=self.config.eval_batches
             )
-            batch = self._to_device(self.validation_source.next_batch())
-            total += float(self._forward_loss(batch).item())
-            count += self.objective.weight(batch)
+            host_batch = self.validation_source.next_batch()
+            count += self.objective.weight(host_batch)
+            total += self._forward_loss(self._to_device(host_batch)).detach().float()
         self.validation_source.load_state_dict(saved)
         self.objective.drain_stats()
         self.model.train(was_training)
-        return total / max(count, 1)
+        return float(total.item()) / max(count, 1)
 
     def save_checkpoint(self, label: str | None = None) -> None:
         self.monitor.phase("checkpoint", checkpoint_step=self.state.step)

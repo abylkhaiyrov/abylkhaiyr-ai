@@ -197,7 +197,7 @@ class ConversationLoader:
     def set_batch_size(self, batch_size: int) -> None:
         self.batch_size = batch_size
 
-    def next_batch(self) -> tuple[Tensor, Tensor]:
+    def next_batch(self) -> tuple[Tensor, ...]:
         picked: list[int] = []
         while len(picked) < self.batch_size:
             if self.cursor >= self.count:
@@ -229,6 +229,75 @@ class ConversationLoader:
     def load_state_dict(self, state: dict[str, int]) -> None:
         self.epoch, self.cursor = state["epoch"], state["cursor"]
         self.order = self._make_order()
+
+
+class PackedConversationLoader(ConversationLoader):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.carry: int | None = None
+
+    def _take(self) -> int:
+        if self.cursor >= self.count:
+            self.epoch += 1
+            self.cursor = 0
+            self.order = self._make_order()
+        index = int(self.order[self.cursor])
+        self.cursor += 1
+        return index
+
+    def _span(self, index: int) -> tuple[int, int]:
+        start, end = int(self.offsets[index]), int(self.offsets[index + 1])
+        return start, min(end, start + self.max_length)
+
+    def _pack_row(self, carry: int | None) -> tuple[list[int], int | None]:
+        members: list[int] = []
+        used = 0
+        pending = carry
+        while True:
+            index = pending if pending is not None else self._take()
+            pending = None
+            start, end = self._span(index)
+            if members and used + (end - start) > self.max_length:
+                return members, index
+            members.append(index)
+            used += end - start
+            if used >= self.max_length:
+                return members, None
+
+    def next_batch(self) -> tuple[Tensor, ...]:
+        width = self.max_length
+        inputs = torch.full((self.batch_size, width), self.pad_id, dtype=torch.long)
+        targets = torch.full((self.batch_size, width), IGNORE_INDEX, dtype=torch.long)
+        segments = torch.zeros((self.batch_size, width), dtype=torch.long)
+        carry = self.carry
+        for row in range(self.batch_size):
+            members, carry = self._pack_row(carry)
+            offset = 0
+            for number, index in enumerate(members, start=1):
+                start, end = self._span(index)
+                size = end - start
+                inputs[row, offset : offset + size] = torch.from_numpy(
+                    self.ids[start:end].astype(np.int64)
+                )
+                targets[row, offset : offset + size] = torch.from_numpy(
+                    self.labels[start:end].astype(np.int64)
+                )
+                segments[row, offset : offset + size] = number
+                offset += size
+        self.carry = carry
+        return (
+            inputs[:, :-1].contiguous(),
+            targets[:, 1:].contiguous(),
+            segments[:, :-1].contiguous(),
+        )
+
+    def state_dict(self) -> dict[str, int]:
+        return {**super().state_dict(), "carry": -1 if self.carry is None else self.carry}
+
+    def load_state_dict(self, state: dict[str, int]) -> None:
+        super().load_state_dict(state)
+        carried = state.get("carry", -1)
+        self.carry = None if carried < 0 else carried
 
 
 class Loader(Protocol):
@@ -268,6 +337,6 @@ class MixtureLoader:
     def load_state_dict(self, state: dict[str, int]) -> None:
         self.counter = state.get("counter", 0)
         for name, loader in self.loaders.items():
-            loader.load_state_dict(
-                {key: state.get(f"{name}.{key}", 0) for key in ("epoch", "cursor")}
-            )
+            prefix = f"{name}."
+            restored = {k[len(prefix) :]: v for k, v in state.items() if k.startswith(prefix)}
+            loader.load_state_dict({"epoch": 0, "cursor": 0, **restored})

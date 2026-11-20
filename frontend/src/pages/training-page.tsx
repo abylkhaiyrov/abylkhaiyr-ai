@@ -1,26 +1,92 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { api } from "@/lib/api";
-import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
-import { MetricChart } from "@/components/metric-chart";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBadge } from "@/components/status-badge";
-import { formatDuration, formatNumber } from "@/lib/utils";
+import { RunCharts } from "@/components/charts/run-charts";
+import { EmptyState, ErrorState, LoadingState, PageHeader } from "@/components/data-state";
+import { CheckpointsTable } from "@/components/training/checkpoints-table";
+import { ProcessControls } from "@/components/training/process-controls";
+import { RunList } from "@/components/training/run-list";
+import { RunOverview } from "@/components/training/run-overview";
+import { ConfigView, LogView } from "@/components/training/text-views";
+import { Tabs } from "@/components/ui/tabs";
+import { useActiveMetrics, useRuntime } from "@/hooks/use-runtime";
+import { api, type Metric } from "@/lib/api";
+
+type Tab = "overview" | "charts" | "checkpoints" | "compare" | "config" | "logs";
 
 export function TrainingPage() {
   const { t } = useTranslation();
-  const client = useQueryClient();
-  const [configPath, setConfigPath] = useState("configs/tiny_v2.yaml");
-  const processes = useQuery({ queryKey: ["processes"], queryFn: api.processes });
-  const metrics = useQuery({ queryKey: ["metrics"], queryFn: api.metrics });
-  const start = useMutation({ mutationFn: () => api.startTraining(configPath), onSuccess: () => client.invalidateQueries({ queryKey: ["processes"] }) });
-  const pause = useMutation({ mutationFn: api.pauseTraining, onSuccess: () => client.invalidateQueries({ queryKey: ["processes"] }) });
-  const stop = useMutation({ mutationFn: api.stopTraining, onSuccess: () => client.invalidateQueries({ queryKey: ["processes"] }) });
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); start.mutate(); }
-  if (processes.isPending || metrics.isPending) return <LoadingState />;
-  if (processes.isError) return <ErrorState error={processes.error} retry={() => processes.refetch()} />;
-  const metricData = metrics.data ?? [];
-  return <div className="grid gap-5"><div><h1 className="text-xl font-semibold">{t("training.title")}</h1><p className="text-sm text-muted-foreground">{t("training.subtitle")}</p></div><Card><CardHeader><CardTitle>{t("training.start")}</CardTitle></CardHeader><CardContent><form className="flex flex-wrap gap-2" onSubmit={submit}><label className="sr-only" htmlFor="training-config">{t("training.config")}</label><input id="training-config" className="h-9 min-w-64 rounded-md border bg-transparent px-3 text-sm" value={configPath} onChange={(event) => setConfigPath(event.target.value)} /><Button type="submit" disabled={start.isPending}>{t("training.launch")}</Button>{start.error ? <p role="alert" className="self-center text-sm text-destructive">{start.error.message}</p> : null}</form></CardContent></Card>{processes.data.length === 0 ? <EmptyState title={t("training.noProcesses")} description={t("training.subtitle")} /> : <div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted text-xs text-muted-foreground"><tr><th className="p-3">{t("training.process")}</th><th className="p-3">PID</th><th className="p-3">{t("dashboard.stage")}</th><th className="p-3">{t("dashboard.elapsed")}</th><th className="p-3">{t("monitoring.cpu")}</th><th className="p-3">{t("common.details")}</th></tr></thead><tbody>{processes.data.map((process) => <tr className="border-t" key={process.id}><td className="p-3">{t(`pipeline.${process.kind}`, { defaultValue: process.kind })}</td><td className="p-3 font-mono">{process.pid ?? "—"}</td><td className="p-3"><StatusBadge value={process.status} /></td><td className="p-3">{formatDuration((Date.now() - new Date(process.started_at).getTime()) / 1000)}</td><td className="p-3">{formatNumber(process.cpu_percent)}%</td><td className="p-3"><div className="flex gap-2"><Button variant="outline" disabled={process.managed === false || process.status !== "running" || pause.isPending} onClick={() => pause.mutate(process.id)}>{t("training.pause")}</Button><Button variant="danger" disabled={process.managed === false || !['running', 'pausing'].includes(process.status) || stop.isPending} onClick={() => stop.mutate(process.id)}>{t("training.stop")}</Button></div></td></tr>)}</tbody></table></div>}{metricData.length > 0 ? <div className="grid gap-5 xl:grid-cols-2"><MetricChart title={t("training.loss")} data={metricData} metric="train/loss" /><MetricChart title={t("training.validationLoss")} data={metricData} metric="validation/loss" color="#f59e0b" /><MetricChart title={t("training.learningRate")} data={metricData} metric="train/learning_rate" color="#60a5fa" /><MetricChart title={t("training.gradNorm")} data={metricData} metric="train/grad_norm" color="#f472b6" /><MetricChart title={t("training.tokensPerSecond")} data={metricData} metric="perf/tokens_per_second" color="#34d399" /></div> : null}</div>;
+  const runtime = useRuntime().data;
+  const runs = useQuery({ queryKey: ["runs"], queryFn: api.runs, staleTime: 30_000 });
+  const [selected, setSelected] = useState<string | null>(null);
+  const [compared, setCompared] = useState<string[]>([]);
+  const [tab, setTab] = useState<Tab>("overview");
+  const activeKey = runtime?.pipeline?.running ? runtime.pipeline.current_stage : null;
+  const pipelineState = runtime?.pipeline?.running ? `${runtime.pipeline.current_stage}:${runtime.pipeline.updated_at}` : "idle";
+
+  useEffect(() => {
+    if (selected === null && runs.data && runs.data.length > 0) {
+      setSelected((runs.data.find((run) => run.status === "running") ?? runs.data[0]).name);
+    }
+  }, [runs.data, selected]);
+  useEffect(() => {
+    void runs.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipelineState]);
+
+  const summary = runs.data?.find((run) => run.name === selected) ?? null;
+  const detail = useQuery({ queryKey: ["run", selected], queryFn: () => api.run(selected ?? ""), enabled: selected !== null, staleTime: 30_000 });
+  const live = summary?.status === "running";
+  const metrics = useActiveMetrics(selected, live);
+  const comparedNames = useMemo(() => (selected ? [selected, ...compared.filter((name) => name !== selected)] : []), [selected, compared]);
+  const comparedQueries = useQueries({
+    queries: comparedNames.map((name) => ({ queryKey: ["metrics", name], queryFn: () => api.runMetrics(name), staleTime: 60_000 })),
+  });
+
+  if (runs.isPending) return <LoadingState />;
+  if (runs.isError) return <ErrorState error={runs.error} retry={() => void runs.refetch()} />;
+  const stage = runtime?.pipeline?.stages.find((item) => item.key === activeKey && item.output_dir === summary?.output_dir) ?? null;
+  const rows: Metric[] = metrics.data ?? [];
+  const toggle = (name: string) => setCompared((previous) => (previous.includes(name) ? previous.filter((item) => item !== name) : [...previous, name]));
+  const tabs: { value: Tab; label: string }[] = [
+    { value: "overview", label: t("training.tabs.overview") },
+    { value: "charts", label: t("training.tabs.charts") },
+    { value: "checkpoints", label: t("training.tabs.checkpoints") },
+    { value: "compare", label: t("training.tabs.compare") },
+    { value: "config", label: t("training.tabs.config") },
+    { value: "logs", label: t("training.tabs.logs") },
+  ];
+
+  return (
+    <div className="grid gap-4">
+      <PageHeader title={t("training.title")} subtitle={t("training.subtitle")} />
+      <ProcessControls />
+      <div className="grid items-start gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside className="grid gap-2">
+          <p className="label-caps">{t("training.experiments", { count: runs.data.length })}</p>
+          {runs.data.length === 0 ? <EmptyState title={t("training.noRuns")} /> : <RunList runs={runs.data} selected={selected} compared={compared} onSelect={setSelected} onToggleCompare={toggle} />}
+        </aside>
+        <section className="grid min-w-0 gap-4">
+          {summary && detail.data ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="truncate text-lg font-semibold">{summary.name}</h2>
+                <Tabs value={tab} onChange={setTab} items={tabs} />
+              </div>
+              {tab === "overview" ? <RunOverview run={detail.data} rows={rows} stage={stage} /> : null}
+              {tab === "charts" ? <RunCharts runs={[{ name: summary.name, rows }]} stage={summary.stage} markers={detail.data.checkpoints.map((item) => item.step ?? 0)} /> : null}
+              {tab === "checkpoints" ? <CheckpointsTable run={detail.data} /> : null}
+              {tab === "compare" ? (
+                comparedNames.length < 2 ? <EmptyState title={t("training.compareHint")} /> : (
+                  <RunCharts runs={comparedNames.map((name, index) => ({ name, rows: comparedQueries[index]?.data ?? [] }))} stage={summary.stage} />
+                )
+              ) : null}
+              {tab === "config" ? <ConfigView run={detail.data} /> : null}
+              {tab === "logs" ? <LogView name={summary.name} live={live} /> : null}
+            </>
+          ) : detail.isPending && selected ? <LoadingState /> : <EmptyState title={t("training.selectRun")} />}
+        </section>
+      </div>
+    </div>
+  );
 }

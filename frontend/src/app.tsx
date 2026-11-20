@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 
 import { AppShell } from "@/components/app-shell";
 import { LoadingState } from "@/components/data-state";
-import { StudioEventsProvider } from "@/hooks/use-studio-events";
+import { StudioEventsProvider } from "@/hooks/studio-events-provider";
 import { api } from "@/lib/api";
 
 const LoginPage = lazy(() => import("@/pages/login-page").then((module) => ({ default: module.LoginPage })));

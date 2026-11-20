@@ -118,6 +118,7 @@ class OptimizerConfig(StrictModel):
     eps: float = Field(default=1e-8, gt=0)
     max_grad_norm: float = Field(default=1.0, gt=0)
     warmup_steps: int = Field(default=100, ge=0)
+    foreach: bool = True
 
 
 class TrainConfig(StrictModel):
@@ -142,6 +143,9 @@ class TrainConfig(StrictModel):
     precision: PrecisionName = "auto"
     device: DeviceName = "auto"
     activation_checkpointing: bool = False
+    pack_sequences: bool = False
+    native_gqa: bool = False
+    fast_causal: bool = False
     dynamic_batch_size: bool = True
     min_micro_batch_size: int = Field(default=1, gt=0)
     seed: int = 1234

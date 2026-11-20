@@ -17,6 +17,7 @@ from llm.studio.auth import AuthenticationService
 from llm.studio.database import create_sqlite_engine, ensure_studio_schema, make_session_factory
 from llm.studio.experiments import ExperimentCatalog
 from llm.studio.model_manager import ModelManager
+from llm.studio.model_registry import production_info
 from llm.studio.models import Chat, GenerationJob, MessageRecord, ProcessEvent, SystemMetric
 from llm.studio.processes import ProcessError, ProcessManager
 from llm.studio.runtime import RuntimeState
@@ -93,6 +94,7 @@ class StudioService:
             "pipeline": pipeline,
             "compute": self._compute_state(pipeline, processes),
             "models": self._role_summary(registry),
+            "production": production_info(self.root),
             "inference_model": self.inference_model,
             "events": self.events(limit=12),
         }

@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isGenerationEvent, type GenerationEvent, type ServerEvent } from "@/lib/events";
 import type { Metric, SystemSnapshot } from "@/lib/api";
+import { EventContext } from "@/hooks/use-studio-events";
 import { useUiStore } from "@/store/ui-store";
 
 const HEARTBEAT_MS = 20_000;
@@ -10,13 +11,6 @@ const MAX_HISTORY = 720;
 const MAX_METRIC_ROWS = 3000;
 const ACTIVE_STATUSES = new Set(["queued", "running"]);
 const TERMINAL_TYPES = new Set(["generation.completed", "generation.cancelled", "generation.failed"]);
-
-type EventClient = {
-  send: (event: Record<string, unknown>) => boolean;
-  subscribe: (listener: (event: GenerationEvent) => void) => () => void;
-};
-
-const EventContext = createContext<EventClient | null>(null);
 
 export function StudioEventsProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
@@ -130,10 +124,4 @@ export function StudioEventsProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => ({ send, subscribe }), [send, subscribe]);
   return <EventContext.Provider value={value}>{children}</EventContext.Provider>;
-}
-
-export function useStudioEvents() {
-  const value = useContext(EventContext);
-  if (!value) throw new Error("StudioEventsProvider is missing");
-  return value;
 }

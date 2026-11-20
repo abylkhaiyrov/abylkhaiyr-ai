@@ -291,6 +291,12 @@ def create_studio_router(
     ) -> list[dict[str, float]]:
         return studio.metrics(run, max_points)
 
+    @router.get("/training/configs")
+    def training_configs(
+        _: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> list[dict[str, str]]:
+        return studio.catalog.config_list()
+
     @router.get("/runs")
     def runs(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
         return studio.catalog.runs()

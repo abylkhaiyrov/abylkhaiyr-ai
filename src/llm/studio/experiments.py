@@ -66,6 +66,16 @@ class ExperimentCatalog:
             self._configs, self._signature = found, signature
         return self._configs
 
+    def config_list(self) -> list[dict[str, str]]:
+        return [
+            {
+                "path": str(item.path.relative_to(self.root)),
+                "name": item.config.name,
+                "stage": item.config.train.stage,
+            }
+            for item in self.configs().values()
+        ]
+
     def runs(self) -> list[dict[str, Any]]:
         names = sorted(
             path.parent.name for path in (self.root / "experiments").glob("*/metrics.jsonl")

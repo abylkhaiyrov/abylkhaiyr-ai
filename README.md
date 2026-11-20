@@ -68,4 +68,4 @@ Vite откроет интерфейс на `http://127.0.0.1:5173` и напр�
 ## Проверка качества кода
 `scripts/check.sh` запускает ruff, black, mypy и pytest.
 
-Документация: `docs/mathematics.md`, `docs/architecture.md`.
+Документация: `docs/mathematics.md`, `docs/architecture.md`, `docs/data.md`, `docs/instruction_tuning.md`.

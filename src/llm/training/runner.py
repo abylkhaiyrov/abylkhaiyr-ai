@@ -11,7 +11,13 @@ from llm.core.profiles import (
     suggest_compact_profile,
     suggest_micro_batch,
 )
-from llm.data.binary import ConversationLoader, MixtureLoader, PackedTokenLoader, token_dtype
+from llm.data.binary import (
+    ConversationLoader,
+    MixtureLoader,
+    PackedConversationLoader,
+    PackedTokenLoader,
+    token_dtype,
+)
 from llm.data.preference import PreferenceLoader
 from llm.model.transformer import CausalLM
 from llm.optimization.memory import configure_threads
@@ -54,6 +60,7 @@ def _conversation_mixture(
     batch: int,
     tokenizer: BPETokenizer,
     seed: int,
+    pack: bool = False,
 ) -> MixtureLoader:
     dtype = token_dtype(tokenizer.vocab_size)
     loaders = {}
@@ -61,7 +68,8 @@ def _conversation_mixture(
         prefix = root / "sft_groups" / f"{split}.{name}"
         if prefix.parent.joinpath(f"{prefix.name}.ids.bin").is_file():
             shuffle = split == "train" and name not in CURRICULUM_GROUPS
-            loaders[name] = ConversationLoader(
+            loader_class = PackedConversationLoader if pack else ConversationLoader
+            loaders[name] = loader_class(
                 prefix, dtype, length + 1, batch, tokenizer.pad_id, seed, shuffle
             )
     return MixtureLoader(loaders, {name: weights[name] for name in loaders}, seed)
@@ -94,7 +102,9 @@ def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
         )
     if train.stage == "sft" and train.mixture:
         return tuple(
-            _conversation_mixture(root, split, train.mixture, length, batch, tokenizer, seed)
+            _conversation_mixture(
+                root, split, train.mixture, length, batch, tokenizer, seed, train.pack_sequences
+            )
             for split in ("train", "validation")
         )
     if train.stage == "sft":

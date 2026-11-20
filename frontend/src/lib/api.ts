@@ -93,6 +93,7 @@ export type RuntimeState = {
   pipeline: Pipeline | null;
   compute: { busy: boolean; holder: { kind: string; pid: number | null; stage: string | null } | null };
   models: Record<ModelRole, RoleModel | null>;
+  production: { checkpoint: string; stage: string | null; ready: boolean; pass_rate: number | null; limitations: string[] } | null;
   inference_model: string | null;
   events: StudioEvent[];
 };
@@ -259,6 +260,7 @@ export const api = {
   pauseTraining: (id: string) => request<Process>(`/training/${id}/pause`, json("POST")),
   stopTraining: (id: string) => request<Process>(`/training/${id}/stop`, json("POST")),
   stopPipeline: () => request<{ pid: number }>("/pipeline/stop", json("POST")),
+  trainingConfigs: () => request<{ path: string; name: string; stage: string }[]>("/training/configs"),
   runs: () => request<Run[]>("/runs"),
   run: (name: string) => request<RunDetail>(`/runs/${encodeURIComponent(name)}`),
   runMetrics: (name: string, maxPoints = 600) => request<Metric[]>(`/runs/${encodeURIComponent(name)}/metrics?max_points=${maxPoints}`),

@@ -105,3 +105,115 @@ def test_gradient_clipping_scales_to_max_norm():
     norm = clip_grad_norm([p], 1.0)
     assert norm.item() == pytest.approx(5.0)
     assert p.grad.norm().item() == pytest.approx(1.0, abs=1e-4)
+
+
+@pytest.mark.parametrize("foreach", [True, False])
+def test_adamw_multi_tensor_paths_match_torch_over_many_steps(foreach):
+    torch.manual_seed(0)
+    shapes = [(5, 3), (4,), (2, 2, 2)]
+    ours = [torch.randn(*shape, dtype=torch.float64, requires_grad=True) for shape in shapes]
+    theirs = [p.detach().clone().requires_grad_(True) for p in ours]
+    own = AdamW(
+        [{"params": ours[:2], "weight_decay": 0.1}, {"params": ours[2:], "weight_decay": 0.0}],
+        lr=1e-2,
+        foreach=foreach,
+    )
+    ref = torch.optim.AdamW(
+        [{"params": theirs[:2], "weight_decay": 0.1}, {"params": theirs[2:], "weight_decay": 0.0}],
+        lr=1e-2,
+    )
+    for step in range(20):
+        for left, right in zip(ours, theirs, strict=True):
+            grad = torch.randn_like(left)
+            left.grad, right.grad = grad.clone(), grad.clone()
+        ours[1].grad = None if step % 4 == 3 else ours[1].grad
+        theirs[1].grad = None if step % 4 == 3 else theirs[1].grad
+        own.step()
+        ref.step()
+    for left, right in zip(ours, theirs, strict=True):
+        assert torch.allclose(left, right, atol=1e-10)
+
+
+def test_rms_norm_matches_torch_reference_in_float64():
+    x = torch.randn(3, 7, 16, dtype=torch.float64)
+    weight = torch.randn(16, dtype=torch.float64)
+    expected = torch.nn.functional.rms_norm(x, (16,), weight, eps=1e-6)
+    assert torch.allclose(rms_norm(x, weight, 1e-6), expected, atol=1e-12)
+
+
+def test_rope_matches_complex_rotation_reference():
+    head_dim, positions = 8, 6
+    rotary = RotaryEmbedding(head_dim, positions, 10000.0)
+    q = torch.randn(1, 2, positions, head_dim)
+    k = torch.randn(1, 2, positions, head_dim)
+    rq, rk = rotary(q, k, torch.arange(positions).unsqueeze(0))
+    frequencies = 1.0 / (10000.0 ** (torch.arange(0, head_dim, 2).float() / head_dim))
+    angles = torch.outer(torch.arange(positions).float(), frequencies)
+    rotation = torch.polar(torch.ones_like(angles), angles)
+
+    def reference(x: torch.Tensor) -> torch.Tensor:
+        half = head_dim // 2
+        complex_x = torch.complex(x[..., :half], x[..., half:])
+        rotated = complex_x * rotation
+        return torch.cat((rotated.real, rotated.imag), dim=-1)
+
+    assert torch.allclose(rq, reference(q), atol=1e-5)
+    assert torch.allclose(rk, reference(k), atol=1e-5)
+
+
+def test_gradient_clipping_matches_torch_utility():
+    torch.manual_seed(0)
+    mine = [torch.nn.Parameter(torch.randn(5, 4)) for _ in range(3)]
+    theirs = [torch.nn.Parameter(p.detach().clone()) for p in mine]
+    for left, right in zip(mine, theirs, strict=True):
+        grad = torch.randn_like(left) * 5
+        left.grad, right.grad = grad.clone(), grad.clone()
+    norm = clip_grad_norm(mine, 1.0)
+    reference = torch.nn.utils.clip_grad_norm_(theirs, 1.0)
+    assert torch.allclose(norm, reference)
+    for left, right in zip(mine, theirs, strict=True):
+        assert torch.allclose(left.grad, right.grad, atol=1e-5)
+
+
+def test_dpo_loss_matches_closed_form_and_has_correct_gradient_signs():
+    from llm.training.losses import dpo_loss
+
+    chosen = torch.tensor([-1.0, -2.0], dtype=torch.float64, requires_grad=True)
+    rejected = torch.tensor([-3.0, -1.5], dtype=torch.float64, requires_grad=True)
+    ref_chosen = torch.tensor([-1.5, -2.0], dtype=torch.float64)
+    ref_rejected = torch.tensor([-2.5, -2.0], dtype=torch.float64)
+    beta = 0.3
+    margin = (chosen - rejected) - (ref_chosen - ref_rejected)
+    expected = torch.log1p(torch.exp(-beta * margin)).mean()
+    loss = dpo_loss(chosen, rejected, ref_chosen, ref_rejected, beta)
+    assert torch.allclose(loss, expected)
+    loss.backward()
+    assert (chosen.grad < 0).all() and (rejected.grad > 0).all()
+    assert torch.autograd.gradcheck(
+        lambda c, r: dpo_loss(c, r, ref_chosen, ref_rejected, beta), (chosen, rejected)
+    )
+
+
+def test_sequence_log_probs_ignore_masked_positions_and_match_manual_sum():
+    from llm.training.losses import IGNORE_INDEX, sequence_log_probs
+
+    logits = torch.randn(2, 4, 6, dtype=torch.float64)
+    targets = torch.tensor([[1, 2, IGNORE_INDEX, 3], [IGNORE_INDEX, IGNORE_INDEX, 5, 0]])
+    log_probs = torch.log_softmax(logits, dim=-1)
+    manual = torch.stack(
+        [
+            log_probs[0, 0, 1] + log_probs[0, 1, 2] + log_probs[0, 3, 3],
+            log_probs[1, 2, 5] + log_probs[1, 3, 0],
+        ]
+    )
+    assert torch.allclose(sequence_log_probs(logits, targets), manual)
+
+
+def test_sft_loss_is_invariant_to_how_a_step_is_split_into_micro_batches():
+    logits = torch.randn(4, 5, 7, dtype=torch.float64)
+    targets = torch.randint(0, 7, (4, 5))
+    targets[0, :3] = -100
+    full, count = causal_lm_loss_sum(logits, targets)
+    parts = [causal_lm_loss_sum(logits[i : i + 2], targets[i : i + 2]) for i in (0, 2)]
+    assert torch.allclose(full, sum(part[0] for part in parts))
+    assert count == sum(part[1] for part in parts)

@@ -294,3 +294,54 @@ def test_conversation_batches_pad_to_fixed_multiples_without_changing_targets(tm
     supervised = [int(t) for t in targets[0] if t != IGNORE_INDEX]
     assert supervised == [t for t in labels[1:] if t != IGNORE_INDEX]
     assert (inputs[0, len(ids) :] == tokenizer.pad_id).all()
+
+
+def _write_conversations(tmp_path, tokenizer, pairs):
+    import json
+
+    from llm.data.binary import tokenize_sft_split
+
+    source = tmp_path / "packed.jsonl"
+    rows = [
+        {"messages": [{"role": "user", "content": q}, {"role": "assistant", "content": a}]}
+        for q, a in pairs
+    ]
+    source.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    prefix = tmp_path / "packed"
+    tokenize_sft_split(source, prefix, tokenizer)
+    return prefix
+
+
+def test_packed_loader_keeps_every_conversation_whole_and_resumes_exactly(tmp_path, tokenizer):
+    import numpy as np
+    import torch
+
+    from llm.data.binary import PackedConversationLoader
+
+    pairs = [(f"question {i}", f"answer number {i} " * (1 + i % 3)) for i in range(20)]
+    prefix = _write_conversations(tmp_path, tokenizer, pairs)
+    dtype = np.dtype(np.uint16)
+
+    def make():
+        return PackedConversationLoader(prefix, dtype, 64, 2, tokenizer.pad_id, 0, True)
+
+    loader = make()
+    seen = 0
+    for _ in range(3):
+        inputs, _, segments = loader.next_batch()
+        for row in range(inputs.shape[0]):
+            for number in segments[row].unique().tolist():
+                if number == 0:
+                    continue
+                positions = (segments[row] == number).nonzero().flatten()
+                assert positions.tolist() == list(range(int(positions[0]), int(positions[-1]) + 1))
+                assert inputs[row, positions[0]] == tokenizer.bos_id
+                seen += 1
+    assert seen >= 6
+    state = loader.state_dict()
+    expected = [loader.next_batch() for _ in range(3)]
+    resumed = make()
+    resumed.load_state_dict(state)
+    for left, right in zip(expected, [resumed.next_batch() for _ in range(3)], strict=True):
+        for a, b in zip(left, right, strict=True):
+            assert torch.equal(a, b)

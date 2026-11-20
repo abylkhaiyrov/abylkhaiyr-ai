@@ -1,9 +1,31 @@
+import contextlib
+
 import torch
 from fastapi.testclient import TestClient
 
 from llm.api.server import create_app
 from llm.inference.engine import InferenceEngine
 from llm.model.transformer import CausalLM
+
+
+class GenerationSocket:
+    def __init__(self, ws):
+        self.ws = ws
+
+    def send_json(self, payload):
+        self.ws.send_json(payload)
+
+    def receive_json(self):
+        while True:
+            event = self.ws.receive_json()
+            if event["type"].startswith("generation.") or event["type"] == "error":
+                return event
+
+
+@contextlib.contextmanager
+def socket(client):
+    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+        yield GenerationSocket(ws)
 
 
 def studio_client(model_config, tokenizer, tmp_path):
@@ -13,13 +35,13 @@ def studio_client(model_config, tokenizer, tmp_path):
 
 def test_studio_requires_authentication(model_config, tokenizer, tmp_path):
     client = studio_client(model_config, tokenizer, tmp_path)
-    response = client.get("/api/dashboard")
+    response = client.get("/api/runtime")
     assert response.status_code == 401, response.text
 
 
 def test_training_start_rejects_active_pipeline(model_config, tokenizer, tmp_path, monkeypatch):
     client = studio_client(model_config, tokenizer, tmp_path)
-    monkeypatch.setattr(client.app.state.studio.runtime, "pipeline", lambda: {"pid": 42})
+    monkeypatch.setattr(client.app.state.studio.runtime, "training_active", lambda: True)
     client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
     token = client.cookies.get("abylkhaiyr_csrf")
     response = client.post(
@@ -30,16 +52,16 @@ def test_training_start_rejects_active_pipeline(model_config, tokenizer, tmp_pat
     assert response.status_code == 400
 
 
-def test_dashboard_does_not_report_old_metrics_as_active(model_config, tokenizer, tmp_path):
+def test_runtime_does_not_report_old_metrics_as_active(model_config, tokenizer, tmp_path):
     metrics_dir = tmp_path / "experiments" / "old"
     metrics_dir.mkdir(parents=True)
     (metrics_dir / "metrics.jsonl").write_text('{"step": 99, "train/loss": 1.2}\n')
     client = studio_client(model_config, tokenizer, tmp_path)
     client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
-    dashboard = client.get("/api/dashboard").json()
-    assert dashboard["inference_model"] == "test-model"
-    assert dashboard["training"]["step"] is None
-    assert dashboard["training"]["train_loss"] is None
+    runtime = client.get("/api/runtime").json()
+    assert runtime["inference_model"] == "test-model"
+    assert runtime["pipeline"] is None
+    assert runtime["compute"]["busy"] is False
 
 
 def test_studio_login_csrf_and_password_change(model_config, tokenizer, tmp_path):
@@ -49,7 +71,7 @@ def test_studio_login_csrf_and_password_change(model_config, tokenizer, tmp_path
     login = client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
     assert login.status_code == 200
     assert login.json()["requires_password_change"] is True
-    assert client.get("/api/dashboard").status_code == 200
+    assert client.get("/api/runtime").status_code == 200
     assert client.post("/api/auth/logout").status_code == 403
     csrf_token = client.cookies.get("abylkhaiyr_csrf")
     changed = client.put(
@@ -77,7 +99,7 @@ def test_websocket_streams_and_restores_history(model_config, tokenizer, tmp_pat
     csrf = client.cookies.get("abylkhaiyr_csrf")
     chat = client.post("/api/chats", headers={"X-CSRF-Token": csrf}, json={}).json()
     monkeypatch.setattr(InferenceEngine, "stream_chat", lambda *args: iter(["Привет", " мир"]))
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -137,7 +159,7 @@ def test_websocket_cancellation_keeps_partial_answer(
         yield "second"
 
     monkeypatch.setattr(InferenceEngine, "stream_chat", generate)
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -245,7 +267,7 @@ def test_websocket_persistent_idempotency_across_restart(
             pass
     client_two = studio_client(model_config, tokenizer, tmp_path)
     client_two.post("/api/auth/login", json={"username": "admin", "password": "admin"})
-    with client_two.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client_two) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -276,12 +298,12 @@ def test_scheduler_queue_cancel_and_ram_guard_during_training(
     client.post("/api/auth/login", json={"username": "admin", "password": "admin"})
     csrf = client.cookies.get("abylkhaiyr_csrf")
     chat = client.post("/api/chats", headers={"X-CSRF-Token": csrf}, json={}).json()
-    monkeypatch.setattr(client.app.state.studio.runtime, "pipeline", lambda: {"pid": 99})
+    monkeypatch.setattr(client.app.state.studio.runtime, "training_active", lambda: True)
     monkeypatch.setattr(
         "llm.studio.model_manager.psutil.virtual_memory",
         lambda: types.SimpleNamespace(available=32 * 1024 * 1024),
     )
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -300,7 +322,7 @@ def test_scheduler_queue_cancel_and_ram_guard_during_training(
         lambda: types.SimpleNamespace(available=8 * 1024 * 1024 * 1024),
     )
     monkeypatch.setattr(InferenceEngine, "stream_chat", lambda *args: iter(["cpu ", "reply"]))
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -335,7 +357,7 @@ def test_reasoning_mode_and_chat_edit_regenerate_continue(
         "chat",
         lambda *args, **kwargs: Generation("2 + 2 = <<2+2=4>>4\n#### 4", [1, 2, 3], "stop"),
     )
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -366,7 +388,7 @@ def test_reasoning_mode_and_chat_edit_regenerate_continue(
         "stream_chat_continuation",
         lambda *args, **kwargs: iter([" more"]),
     )
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -383,7 +405,7 @@ def test_reasoning_mode_and_chat_edit_regenerate_continue(
     assert continued.endswith(" more")
 
     monkeypatch.setattr(InferenceEngine, "stream_chat", lambda *args, **kwargs: iter(["edited!"]))
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -401,7 +423,7 @@ def test_reasoning_mode_and_chat_edit_regenerate_continue(
     assert [m["content"] for m in after_edit] == ["Updated question", "edited!"]
 
     monkeypatch.setattr(InferenceEngine, "stream_chat", lambda *args, **kwargs: iter(["regen!"]))
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {
@@ -434,7 +456,7 @@ def test_scheduler_cancels_queued_request(model_config, tokenizer, tmp_path, mon
         yield "part2"
 
     monkeypatch.setattr(InferenceEngine, "stream_chat", slow_generate)
-    with client.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+    with socket(client) as ws:
         ws.send_json({"type": "subscribe", "channels": ["chat"]})
         ws.send_json(
             {

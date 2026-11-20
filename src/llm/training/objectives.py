@@ -34,9 +34,9 @@ class CausalLMObjective:
         return {}
 
     def loss_sum(self, model: nn.Module, batch: Batch) -> Tensor:
-        inputs, targets = batch
+        inputs, targets, *segments = batch
         with autocast_context(self.device, self.dtype):
-            logits = model(inputs)
+            logits = model(inputs, segment_ids=segments[0]) if segments else model(inputs)
         return causal_lm_loss_sum(logits, targets)[0]
 
 
@@ -50,18 +50,20 @@ class DPOObjective:
         self.beta = beta
         self.device = device
         self.dtype = dtype
-        self._margin_sum = 0.0
-        self._correct = 0
+        self._margin_sum = torch.zeros((), device=device)
+        self._correct = torch.zeros((), device=device)
         self._pairs = 0
 
     def drain_stats(self) -> dict[str, float]:
         if self._pairs == 0:
             return {}
         stats = {
-            "dpo/reward_margin": self.beta * self._margin_sum / self._pairs,
-            "dpo/reward_accuracy": self._correct / self._pairs,
+            "dpo/reward_margin": self.beta * float(self._margin_sum.item()) / self._pairs,
+            "dpo/reward_accuracy": float(self._correct.item()) / self._pairs,
         }
-        self._margin_sum, self._correct, self._pairs = 0.0, 0, 0
+        self._margin_sum.zero_()
+        self._correct.zero_()
+        self._pairs = 0
         return stats
 
     def weight(self, batch: Batch) -> int:
@@ -81,7 +83,7 @@ class DPOObjective:
         policy_rejected = self._log_probs(model, rejected_in, rejected_tg)
         mean_loss = dpo_loss(policy_chosen, policy_rejected, ref_chosen, ref_rejected, self.beta)
         margin = ((policy_chosen - policy_rejected) - (ref_chosen - ref_rejected)).detach()
-        self._margin_sum += float(margin.sum().item())
-        self._correct += int((margin > 0).sum().item())
-        self._pairs += int(margin.numel())
+        self._margin_sum += margin.sum().float()
+        self._correct += (margin > 0).sum()
+        self._pairs += margin.numel()
         return mean_loss * chosen_in.shape[0]

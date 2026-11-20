@@ -50,7 +50,8 @@ def read_manifest(root: Path) -> dict[str, Any]:
 
 
 def production_checkpoint(root: Path) -> str | None:
-    checkpoint = read_manifest(root).get("production", {}).get("checkpoint")
+    production = read_manifest(root).get("production") or {}
+    checkpoint = production.get("checkpoint")
     return checkpoint if isinstance(checkpoint, str) and (root / checkpoint).exists() else None
 
 

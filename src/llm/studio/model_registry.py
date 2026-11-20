@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from llm.training.promotion import production_checkpoint, read_manifest
+
 ROLE_ORDER = ("production", "best_evaluated", "latest_trained", "loaded")
 
 
@@ -62,7 +64,7 @@ def role_assignments(
     ]
     latest = max(trained, key=lambda item: item["created_at"], default=None)
     return {
-        "production": final if exported else None,
+        "production": production_checkpoint(root) or (final if exported else None),
         "best_evaluated": final or best_pretrain,
         "latest_trained": None if latest is None else latest["id"],
         "loaded": loaded_id,
@@ -83,3 +85,16 @@ def annotate_models(
         model["verified"] = model["id"] in verified
         model["display_name"] = f"{model['name']} · {model.get('step') or '—'}"
     return assignments
+
+
+def production_info(root: Path) -> dict[str, Any] | None:
+    production = read_manifest(root).get("production")
+    if not isinstance(production, dict) or not production.get("checkpoint"):
+        return None
+    return {
+        "checkpoint": production["checkpoint"],
+        "stage": production.get("stage"),
+        "ready": bool(production.get("ready")),
+        "pass_rate": production.get("conv_pass_rate"),
+        "limitations": [str(item) for item in production.get("limitations", [])],
+    }

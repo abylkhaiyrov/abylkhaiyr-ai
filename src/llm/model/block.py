@@ -25,6 +25,8 @@ class TransformerBlock(nn.Module):
         position_ids: Tensor,
         mask: Tensor | None,
         cache: LayerKVCache | None = None,
+        is_causal: bool = False,
     ) -> Tensor:
-        x = x + self.dropout(self.attention(self.attention_norm(x), position_ids, mask, cache))
+        attended = self.attention(self.attention_norm(x), position_ids, mask, cache, is_causal)
+        x = x + self.dropout(attended)
         return x + self.feed_forward(self.ffn_norm(x))

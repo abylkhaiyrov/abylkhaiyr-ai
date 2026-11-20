@@ -101,7 +101,7 @@ class PreferenceLoader:
         self.chosen.set_batch_size(batch_size)
         self.rejected.set_batch_size(batch_size)
 
-    def next_batch(self) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    def next_batch(self) -> tuple[Tensor, ...]:
         return (*self.chosen.next_batch(), *self.rejected.next_batch())
 
     def state_dict(self) -> dict[str, int]:

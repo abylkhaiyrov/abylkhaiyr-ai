@@ -1,10 +1,11 @@
 from torch import Tensor, nn
+from torch.nn import functional
 
 from llm.core.config import ModelConfig
 
 
 def silu(x: Tensor) -> Tensor:
-    return x * x.sigmoid()
+    return functional.silu(x)
 
 
 def swiglu(gate: Tensor, value: Tensor) -> Tensor:

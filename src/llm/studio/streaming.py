@@ -17,7 +17,7 @@ class DeltaBuffer:
         self.flush_characters = flush_characters
         self._pieces: list[str] = []
         self._size = 0
-        self._last_flush = time.monotonic()
+        self._last_flush = float("-inf")
 
     def add(self, piece: str) -> str | None:
         self._pieces.append(piece)

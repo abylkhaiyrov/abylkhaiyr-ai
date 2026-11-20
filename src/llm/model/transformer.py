@@ -5,11 +5,27 @@ from torch import Tensor, nn
 from torch.utils.checkpoint import checkpoint
 
 from llm.core.config import ModelConfig
-from llm.model.attention import build_attention_mask
+from llm.model.attention import CausalSelfAttention, build_attention_mask
 from llm.model.block import TransformerBlock
 from llm.model.cache import KVCache
 from llm.model.norm import RMSNorm
 from llm.model.rope import RotaryEmbedding
+
+
+def segment_positions(segment_ids: Tensor) -> Tensor:
+    length = segment_ids.shape[1]
+    index = torch.arange(length, device=segment_ids.device).unsqueeze(0).expand_as(segment_ids)
+    starts = torch.ones_like(segment_ids, dtype=torch.bool)
+    starts[:, 1:] = segment_ids[:, 1:] != segment_ids[:, :-1]
+    return index - torch.where(starts, index, torch.zeros_like(index)).cummax(dim=1).values
+
+
+def segment_mask(segment_ids: Tensor) -> Tensor:
+    length = segment_ids.shape[1]
+    causal = build_attention_mask(length, length, segment_ids.device)
+    same = segment_ids.unsqueeze(2) == segment_ids.unsqueeze(1)
+    return causal & same.unsqueeze(1)
+
 
 RESIDUAL_SCALE_EXEMPT = ("o_proj.weight", "down_proj.weight")
 
@@ -19,6 +35,8 @@ class CausalLM(nn.Module):
         super().__init__()
         self.config = config
         self.activation_checkpointing = False
+        self.fast_causal = False
+        self.use_reference_attention = use_reference_attention
         self.embedding = nn.Embedding(config.vocab_size, config.hidden_size)
         rotary = RotaryEmbedding(config.head_dim, config.max_position_embeddings, config.rope_theta)
         self.blocks = nn.ModuleList(
@@ -42,11 +60,17 @@ class CausalLM(nn.Module):
             if name.endswith(RESIDUAL_SCALE_EXEMPT):
                 nn.init.normal_(parameter, mean=0.0, std=std)
 
+    def configure_attention(self, native_gqa: bool, fast_causal: bool) -> None:
+        self.fast_causal = fast_causal
+        for module in self.modules():
+            if isinstance(module, CausalSelfAttention):
+                module.native_gqa = native_gqa
+
     def num_parameters(self) -> int:
         return sum(parameter.numel() for parameter in self.parameters())
 
     def new_cache(self) -> KVCache:
-        return KVCache(self.config.num_hidden_layers)
+        return KVCache(self.config.num_hidden_layers, self.config.max_position_embeddings)
 
     def forward(
         self,
@@ -54,25 +78,42 @@ class CausalLM(nn.Module):
         attention_mask: Tensor | None = None,
         position_ids: Tensor | None = None,
         cache: KVCache | None = None,
+        segment_ids: Tensor | None = None,
     ) -> Tensor:
         batch, length = input_ids.shape
         past = cache.length if cache is not None else 0
         if past + length > self.config.max_position_embeddings:
             raise ValueError("sequence exceeds max_position_embeddings")
+        if segment_ids is not None:
+            position_ids = segment_positions(segment_ids)
         if position_ids is None:
             if attention_mask is not None:
                 position_ids = (attention_mask.long().cumsum(-1) - 1).clamp(min=0)[:, past:]
             else:
                 position_ids = torch.arange(past, past + length, device=input_ids.device)
                 position_ids = position_ids.unsqueeze(0).expand(batch, -1)
-        mask = self._mask(length, past + length, input_ids.device, attention_mask, cache)
+        causal_only = (
+            self.fast_causal
+            and not self.use_reference_attention
+            and attention_mask is None
+            and cache is None
+            and segment_ids is None
+        )
+        if segment_ids is not None:
+            mask: Tensor | None = segment_mask(segment_ids)
+        elif causal_only:
+            mask = None
+        else:
+            mask = self._mask(length, past + length, input_ids.device, attention_mask, cache)
         hidden = self.embedding(input_ids)
         for index, block in enumerate(self.blocks):
             layer_cache = cache.layers[index] if cache is not None else None
             if self.activation_checkpointing and self.training and cache is None:
-                hidden = checkpoint(block, hidden, position_ids, mask, use_reentrant=False)
+                hidden = checkpoint(
+                    block, hidden, position_ids, mask, None, causal_only, use_reentrant=False
+                )
             else:
-                hidden = block(hidden, position_ids, mask, layer_cache)
+                hidden = block(hidden, position_ids, mask, layer_cache, causal_only)
         return self.lm_head(self.final_norm(hidden))
 
     @staticmethod

@@ -28,6 +28,7 @@ def build_trainer(tmp_path, model_config, steps, accumulation=2, micro=4, name="
     valid = PackedTokenLoader(
         tmp_path / "train.bin", np.dtype(np.uint16), 16, micro, 0, shuffle=False
     )
+    extra.setdefault("max_ram_fraction", 1.0)
     config = TrainConfig(
         max_steps=steps,
         micro_batch_size=micro,

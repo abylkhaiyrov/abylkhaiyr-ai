@@ -1,148 +1,224 @@
-import type { ReactNode } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BadgeCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState, ErrorState, LoadingState, PageHeader, Panel, Stat } from "@/components/data-state";
 import { StatusBadge } from "@/components/status-badge";
-import { formatBytes, formatNumber } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Tabs } from "@/components/ui/tabs";
+import { useFormat } from "@/hooks/use-format";
+import { useMetricFormat } from "@/hooks/use-metric-format";
+import { useModelRegistry } from "@/hooks/use-runtime";
+import { api, ApiError, type Model, type ModelRole } from "@/lib/api";
+import { useToastStore } from "@/store/toast-store";
 
-function DataPage({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <div className="grid gap-5"><div><h1 className="text-xl font-semibold">{title}</h1><p className="text-sm text-muted-foreground">{description}</p></div>{children}</div>;
+const ROLES: ModelRole[] = ["production", "best_evaluated", "latest_trained", "loaded"];
+
+function Query<T>({ query, children }: { query: { isPending: boolean; isError: boolean; error: Error | null; data: T | undefined; refetch: () => unknown }; children: (data: T) => React.ReactNode }) {
+  if (query.isPending) return <LoadingState />;
+  if (query.isError || query.data === undefined) return <ErrorState error={query.error ?? new Error("unknown")} retry={() => void query.refetch()} />;
+  return <>{children(query.data)}</>;
 }
 
-export function ProcessesPage() {
-  const query = useQuery({ queryKey: ["processes"], queryFn: api.processes });
-  if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
-  return <DataPage title="Process Manager" description="Only processes recognised as Abylkhaiyr AI CLI jobs are listed and controllable."><div className="grid gap-3">{query.data.length === 0 ? <EmptyState title="No project processes" description="Start a training or data job to see it here." /> : query.data.map((process) => <Card key={process.id}><CardContent className="grid gap-2 p-4 sm:grid-cols-4"><div><p className="text-xs text-muted-foreground">Process</p><p>{process.kind} · {process.pid ?? "unknown PID"}</p></div><div><p className="text-xs text-muted-foreground">Status</p><StatusBadge value={process.status} /></div><div><p className="text-xs text-muted-foreground">Resources</p><p>{formatNumber(process.cpu_percent)}% CPU · {formatBytes(process.memory_bytes)}</p></div><div><p className="text-xs text-muted-foreground">Configuration</p><p className="truncate">{process.config_path ?? "Not recorded"}</p></div></CardContent></Card>)}</div></DataPage>;
+function modelReason(model: Model, t: (key: string) => string) {
+  if (!model.compatible) return t(`modelIssue.${model.compatibility_issues[0] ?? "incompatible_model"}`);
+  if (!model.available && model.availability_reason) return t(`modelIssue.${model.availability_reason.split(" ")[0]}`);
+  return null;
 }
 
 export function ModelsPage() {
   const { t } = useTranslation();
+  const format = useFormat();
+  const metric = useMetricFormat();
   const client = useQueryClient();
-  const query = useQuery({ queryKey: ["models"], queryFn: api.models });
-  const switchModel = useMutation({
-    mutationFn: (checkpointId: string) => api.switchModel(checkpointId),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["models"] });
-      void client.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-  });
-  const unloadModel = useMutation({
-    mutationFn: api.unloadModel,
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["models"] });
-      void client.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-  });
-  if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
+  const push = useToastStore((state) => state.push);
+  const query = useModelRegistry();
+  const settle = () => void client.invalidateQueries({ queryKey: ["models"] });
+  const fail = (error: Error) => push("error", error instanceof ApiError && error.message === "generation_active" ? t("models.generationActive") : error.message);
+  const load = useMutation({ mutationFn: (id: string) => api.switchModel(id), onSuccess: settle, onError: fail });
+  const unload = useMutation({ mutationFn: api.unloadModel, onSuccess: settle, onError: fail });
   return (
-    <DataPage title={t("resources.models.title")} description={t("resources.models.subtitle")}>
-      <div className="grid gap-3">
-        {query.data.length === 0 ? (
-          <EmptyState title={t("resources.models.empty")} description={t("resources.models.subtitle")} />
-        ) : (
-          query.data.map((model) => (
-            <Card key={model.id}>
-              <CardContent className="grid gap-3 p-4 sm:grid-cols-4 sm:items-center">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{model.checkpoint_id}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span className="rounded bg-muted px-1.5 py-0.5 uppercase text-foreground">
-                      {t(`resources.models.stages.${model.stage}`, { defaultValue: model.stage })}
-                    </span>
-                    {model.step !== null && model.step !== undefined ? (
-                      <span>#{formatNumber(model.step, 0)}</span>
-                    ) : null}
-                    <span>{formatBytes(model.weights_bytes)}</span>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm">
-                    {formatNumber(model.parameters, 0)} {t("resources.models.parameters")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t("resources.models.vocabulary")} {formatNumber(model.vocab_size, 0)} ·{" "}
-                    {t("resources.models.context")} {formatNumber(model.context_length, 0)}
-                  </p>
-                </div>
-                <div>
-                  <div className="flex flex-wrap gap-1.5 text-xs">
-                    <StatusBadge value={model.loaded ? "active" : model.available ? "ready" : "failed"} />
-                    <span className="rounded border px-1.5 py-0.5">
-                      {model.compatible
-                        ? t("resources.models.compatible")
-                        : t("resources.models.incompatible")}
-                    </span>
-                    {model.device ? (
-                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono uppercase">
-                        {model.device}
-                      </span>
-                    ) : null}
-                  </div>
-                  {model.availability_reason ? (
-                    <p className="mt-1 text-xs text-destructive">{model.availability_reason}</p>
-                  ) : null}
-                </div>
-                <div className="flex justify-start gap-2 sm:justify-end">
-                  {model.loaded ? (
-                    <Button
-                      variant="outline"
-                      disabled={unloadModel.isPending}
-                      onClick={() => unloadModel.mutate()}
-                    >
-                      {t("resources.models.unload")}
-                    </Button>
-                  ) : (
-                    <Button
-                      disabled={!model.compatible || !model.available || switchModel.isPending}
-                      onClick={() => switchModel.mutate(model.checkpoint_id)}
-                    >
-                      {t("resources.models.load")}
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))
+    <div className="grid gap-4">
+      <PageHeader title={t("models.title")} subtitle={t("models.subtitle")} />
+      <Query query={query}>
+        {(registry) => (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {ROLES.map((role) => {
+                const model = registry.models.find((item) => item.id === registry.roles[role]);
+                return (
+                  <Panel key={role}>
+                    <p className="label-caps">{t(`role.${role}`)}</p>
+                    <p className="mt-1 truncate text-base font-semibold" title={model?.id}>{model?.display_name ?? t("roles.none")}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{t(`roleHelp.${role}`)}</p>
+                  </Panel>
+                );
+              })}
+            </div>
+            {registry.models.length === 0 ? <EmptyState title={t("models.empty")} /> : (
+              <div className="overflow-x-auto rounded-xl border bg-card">
+                <table className="data-table">
+                  <thead><tr><th>{t("models.model")}</th><th>{t("models.stage")}</th><th>{t("models.roles")}</th><th>{t("models.parameters")}</th><th>{t("models.context")}</th><th>{t("models.size")}</th><th>{t("models.status")}</th><th /></tr></thead>
+                  <tbody>
+                    {registry.models.map((model) => {
+                      const blocked = modelReason(model, t);
+                      return (
+                        <tr key={model.id}>
+                          <td className="max-w-64"><p className="truncate font-medium" title={model.id}>{model.display_name}</p><p className="truncate text-xs text-muted-foreground" title={model.id}>{model.id}</p></td>
+                          <td><span className="rounded bg-muted px-1.5 py-0.5 text-xs uppercase">{t(`modelStage.${model.stage}`, { defaultValue: model.stage })}</span>{model.verified ? <BadgeCheck size={14} className="ml-1.5 inline text-success" aria-label={t("roles.verified")} /> : null}</td>
+                          <td><div className="flex flex-wrap gap-1">{model.roles.map((role) => <span key={role} className="rounded border px-1.5 py-0.5 text-xs">{t(`role.${role}`)}</span>)}</div></td>
+                          <td className="tabular-nums">{format.compact(model.parameters)}</td>
+                          <td className="tabular-nums">{format.number(model.context_length, 0)}</td>
+                          <td className="tabular-nums">{format.bytes(model.weights_bytes)}</td>
+                          <td>
+                            <StatusBadge value={model.loaded ? "active" : blocked ? "failed" : "ready"} />
+                            {blocked ? <p className="mt-1 text-xs text-destructive">{blocked}</p> : null}
+                            {model.metrics?.["validation/loss"] !== undefined ? <p className="mt-1 text-xs text-muted-foreground">{metric.label("validation_loss")} {metric.value("validation_loss", model.metrics["validation/loss"])}</p> : null}
+                          </td>
+                          <td className="text-right">
+                            {model.loaded ? <Button size="sm" variant="outline" disabled={unload.isPending} onClick={() => unload.mutate()}>{t("models.unload")}</Button> : <Button size="sm" disabled={blocked !== null || load.isPending} title={blocked ?? undefined} onClick={() => load.mutate(model.id)}>{t("models.load")}</Button>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
-      </div>
-    </DataPage>
+      </Query>
+    </div>
+  );
+}
+
+export function ProcessesPage() {
+  const { t } = useTranslation();
+  const format = useFormat();
+  const query = useQuery({ queryKey: ["processes"], queryFn: api.processes, staleTime: 30_000 });
+  return (
+    <div className="grid gap-4">
+      <PageHeader title={t("processes.title")} subtitle={t("processes.subtitle")} />
+      <Query query={query}>
+        {(items) => items.length === 0 ? <EmptyState title={t("processes.empty")} /> : (
+          <div className="overflow-x-auto rounded-xl border bg-card">
+            <table className="data-table">
+              <thead><tr><th>{t("processes.kind")}</th><th>PID</th><th>{t("processes.status")}</th><th>{t("processes.started")}</th><th>CPU</th><th>{t("processes.memory")}</th></tr></thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="font-medium">{t(`stage.${item.kind}`, { defaultValue: t(`modelStage.${item.kind}`, { defaultValue: item.kind }) })}{item.model_name ? <span className="ml-2 text-xs text-muted-foreground">{item.model_name}</span> : null}</td>
+                    <td className="font-mono text-xs">{item.pid ?? "—"}</td>
+                    <td><StatusBadge value={item.status} /></td>
+                    <td>{format.dateTime(item.started_at)}</td>
+                    <td className="tabular-nums">{format.percent(item.cpu_percent, 0)}</td>
+                    <td className="tabular-nums">{format.bytes(item.memory_bytes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Query>
+    </div>
   );
 }
 
 export function DatasetsPage() {
-  const query = useQuery({ queryKey: ["datasets"], queryFn: api.datasets });
-  if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
-  return <DataPage title="Dataset Manager" description="Dataset manifests are read on the server; corpus contents are never loaded into the browser."><div className="grid gap-3">{query.data.length === 0 ? <EmptyState title="No manifests found" description="Processed datasets with a manifest.json will appear here." /> : query.data.map((dataset) => <Card key={dataset.path}><CardContent className="p-4"><p className="font-medium">{dataset.name}</p><p className="text-sm text-muted-foreground">{dataset.path} · {formatBytes(dataset.size_bytes)}</p><pre className="mt-3 overflow-auto rounded bg-muted p-3 text-xs">{JSON.stringify(dataset.manifest, null, 2)}</pre></CardContent></Card>)}</div></DataPage>;
+  const { t } = useTranslation();
+  const format = useFormat();
+  const query = useQuery({ queryKey: ["datasets"], queryFn: api.datasets, staleTime: 120_000 });
+  return (
+    <div className="grid gap-4">
+      <PageHeader title={t("datasets.title")} subtitle={t("datasets.subtitle")} />
+      <Query query={query}>
+        {(items) => items.length === 0 ? <EmptyState title={t("datasets.empty")} /> : (
+          <div className="grid gap-4">
+            {items.map((dataset) => {
+              const sources = Object.entries((dataset.manifest.sources ?? {}) as Record<string, { dataset?: string; kept?: number; seen?: number; license?: string }>);
+              return (
+                <Panel key={dataset.path} title={dataset.name} actions={<span className="text-xs text-muted-foreground">{format.bytes(dataset.size_bytes)}</span>}>
+                  <div className="overflow-x-auto">
+                    <table className="data-table">
+                      <thead><tr><th>{t("datasets.source")}</th><th>{t("datasets.origin")}</th><th>{t("datasets.kept")}</th><th>{t("datasets.seen")}</th><th>{t("datasets.license")}</th></tr></thead>
+                      <tbody>{sources.map(([name, item]) => <tr key={name}><td className="font-medium">{name}</td><td>{item.dataset ?? "—"}</td><td className="tabular-nums">{format.number(item.kept, 0)}</td><td className="tabular-nums">{format.number(item.seen, 0)}</td><td>{item.license ?? "—"}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                </Panel>
+              );
+            })}
+          </div>
+        )}
+      </Query>
+    </div>
+  );
 }
 
 export function ExperimentsPage() {
-  const query = useQuery({ queryKey: ["experiments"], queryFn: api.experiments });
-  if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
-  return <DataPage title="Experiment Manager" description="History comes directly from experiments/registry.jsonl.">{query.data.length === 0 ? <EmptyState title="No experiments recorded" description="Run a sweep or evaluation to record results." /> : <div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="bg-muted text-xs text-muted-foreground"><tr><th className="p-3">Name</th><th className="p-3">Validation loss</th><th className="p-3">Perplexity</th><th className="p-3">Tokens/s</th></tr></thead><tbody>{query.data.map((experiment) => {
-    const valLoss = experiment.results.validation_loss ?? experiment.results.test_loss;
-    const ppl = experiment.results.test_perplexity ?? (valLoss !== undefined ? Math.exp(valLoss) : undefined);
-    const speed = experiment.results.tokens_per_second ?? experiment.results.generation_tokens_per_second;
-    return <tr className="border-t" key={experiment.name}><td className="p-3">{experiment.name}</td><td className="p-3">{formatNumber(valLoss, 4)}</td><td className="p-3">{formatNumber(ppl, 2)}</td><td className="p-3">{formatNumber(speed, 1)}</td></tr>;
-  })}</tbody></table></div>}</DataPage>;
+  const { t } = useTranslation();
+  const format = useFormat();
+  const query = useQuery({ queryKey: ["experiments"], queryFn: api.experiments, staleTime: 60_000 });
+  return (
+    <div className="grid gap-4">
+      <PageHeader title={t("experiments.title")} subtitle={t("experiments.subtitle")} />
+      <Query query={query}>
+        {(items) => items.length === 0 ? <EmptyState title={t("experiments.empty")} /> : (
+          <div className="overflow-x-auto rounded-xl border bg-card">
+            <table className="data-table">
+              <thead><tr><th>{t("experiments.name")}</th><th>{t("metric.validation_loss")}</th><th>{t("metric.validation_perplexity")}</th><th>{t("metric.generation_tokens_per_second")}</th></tr></thead>
+              <tbody>
+                {items.map((item) => {
+                  const loss = item.results.validation_loss ?? item.results.test_loss;
+                  const speed = item.results.tokens_per_second ?? item.results.generation_tokens_per_second;
+                  return <tr key={`${item.name}-${String(item.checkpoint ?? "")}`}><td className="font-medium">{item.name}</td><td className="tabular-nums">{format.number(loss, 4)}</td><td className="tabular-nums">{format.number(item.results.test_perplexity ?? (loss === undefined ? undefined : Math.exp(loss)), 2)}</td><td className="tabular-nums">{format.number(speed, 0)}</td></tr>;
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Query>
+    </div>
+  );
 }
 
 export function EvaluationPage() {
-  const query = useQuery({ queryKey: ["evaluation"], queryFn: api.evaluations });
-  if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
-  return <DataPage title="Evaluation Center" description="Recorded evaluation output is displayed without invented benchmark scores."><div className="grid gap-3">{query.data.length === 0 ? <EmptyState title="No evaluation results" description="Run the existing evaluate command to record a result." /> : query.data.map((evaluation) => <Card key={evaluation.path}><CardHeader><CardTitle>{evaluation.path}</CardTitle></CardHeader><CardContent><dl className="grid gap-2 sm:grid-cols-3">{Object.entries(evaluation.results).map(([key, value]) => <div key={key}><dt className="text-xs text-muted-foreground">{key}</dt><dd>{formatNumber(value, 4)}</dd></div>)}</dl></CardContent></Card>)}</div></DataPage>;
+  const { t } = useTranslation();
+  const metric = useMetricFormat();
+  const query = useQuery({ queryKey: ["evaluation"], queryFn: api.evaluations, staleTime: 60_000 });
+  return (
+    <div className="grid gap-4">
+      <PageHeader title={t("evaluation.title")} subtitle={t("evaluation.subtitle")} />
+      <Query query={query}>
+        {(items) => items.length === 0 ? <EmptyState title={t("evaluation.empty")} /> : (
+          <div className="grid gap-4">
+            {items.map((item) => (
+              <Panel key={item.path} title={item.path}>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+                  {Object.entries(item.results).slice(0, 15).map(([key, value]) => <Stat key={key} label={metric.label(key)} value={metric.value(key, value)} />)}
+                </dl>
+              </Panel>
+            ))}
+          </div>
+        )}
+      </Query>
+    </div>
+  );
 }
 
 export function LogsPage() {
-  const query = useQuery({ queryKey: ["logs"], queryFn: api.logs });
-  if (query.isPending) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
-  return <DataPage title="Logs and Events" description={`${query.data.total} records. Sensitive key-value values are redacted on the server.`}><Card><CardContent className="max-h-[70vh] overflow-auto p-0"><ul className="divide-y font-mono text-xs">{query.data.items.map((item, index) => <li className="p-3" key={`${item.source}-${index}`}><span className="mr-3 text-muted-foreground">{item.source}</span>{item.message}</li>)}</ul></CardContent></Card></DataPage>;
+  const { t } = useTranslation();
+  const [category, setCategory] = useState<"all" | "pipeline" | "training">("all");
+  const query = useQuery({ queryKey: ["logs", category], queryFn: () => api.logs(category === "all" ? undefined : category), staleTime: 15_000 });
+  return (
+    <div className="grid gap-4">
+      <PageHeader title={t("logs.title")} subtitle={t("logs.subtitle")} actions={<Tabs value={category} onChange={setCategory} items={(["all", "pipeline", "training"] as const).map((value) => ({ value, label: t(`logs.${value}`) }))} />} />
+      <Query query={query}>
+        {(data) => data.items.length === 0 ? <EmptyState title={t("logs.empty")} /> : (
+          <ul className="max-h-[70vh] divide-y overflow-auto rounded-xl border bg-card font-mono text-xs">
+            {data.items.slice(0, 300).map((item, index) => <li key={index} className="grid gap-0.5 px-3 py-1.5 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-3"><span className="truncate text-muted-foreground">{item.source.replace("experiments/", "")}</span><span className="break-words">{item.message}</span></li>)}
+          </ul>
+        )}
+      </Query>
+    </div>
+  );
 }

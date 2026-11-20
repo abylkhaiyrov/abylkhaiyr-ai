@@ -158,7 +158,7 @@ def train_stage_info(stage: dict[str, Any], root: Path, config: StageConfig, now
     fresh = False
     if isinstance(tracker, dict):
         updated = parse_time(tracker.get("updated_at"))
-        fresh = bool(updated) and (now - updated).total_seconds() < PROGRESS_FRESH_SECONDS
+        fresh = updated is not None and (now - updated).total_seconds() < PROGRESS_FRESH_SECONDS
         if stage["status"] == "running" and fresh:
             stage["phase"] = tracker.get("detail", {}).get("phase")
             stage["detail"] = tracker.get("detail", {})
@@ -182,7 +182,7 @@ def eval_stage_info(stage: dict[str, Any], tracked: dict[str, Any] | None, now: 
     updated = parse_time(tracked.get("updated_at"))
     stale = (
         stage["status"] == "running"
-        and bool(updated)
+        and updated is not None
         and (now - updated).total_seconds() > PROGRESS_FRESH_SECONDS * 4
     )
     stage["done"] = tracked.get("done")
@@ -234,7 +234,7 @@ def stage_results_from_entry(spec: StageSpec, entry: dict[str, Any]) -> dict[str
         return eval_results(entry)
     if spec.kind == "select":
         keys = ("test_perplexity", "baseline_perplexity")
-        results = {
+        results: dict[str, Any] = {
             key: finite(entry.get(key)) for key in keys if finite(entry.get(key)) is not None
         }
         if entry.get("selected"):

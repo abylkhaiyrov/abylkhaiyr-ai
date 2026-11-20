@@ -1,4 +1,4 @@
-import type { Metric, ModelRegistry, ReasoningStageEvent, RuntimeState, SystemSnapshot } from "@/lib/api";
+import type { ChatMessage, Metric, ModelRegistry, ReasoningStageEvent, RuntimeState, SystemSnapshot } from "@/lib/api";
 
 type Envelope = { seq: number; ts: number };
 type GenerationBase = {
@@ -36,6 +36,9 @@ export type GenerationEvent = Envelope &
     elapsed_ms?: number;
     first_token_ms?: number | null;
     tokens_per_second?: number;
+    user?: ChatMessage | null;
+    assistant?: ChatMessage;
+    generating_seconds?: number;
     stage?: string;
     stage_status?: string;
     stage_data?: Record<string, unknown>;

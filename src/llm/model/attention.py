@@ -41,9 +41,21 @@ def reference_attention(q: Tensor, k: Tensor, v: Tensor, mask: Tensor | None) ->
 
 
 def sdpa_attention(
-    q: Tensor, k: Tensor, v: Tensor, mask: Tensor | None, dropout_p: float = 0.0
+    q: Tensor,
+    k: Tensor,
+    v: Tensor,
+    mask: Tensor | None,
+    dropout_p: float = 0.0,
+    is_causal: bool = False,
+    enable_gqa: bool = False,
 ) -> Tensor:
-    return functional.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=dropout_p)
+    if enable_gqa:
+        return functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=mask, dropout_p=dropout_p, is_causal=is_causal, enable_gqa=True
+        )
+    return functional.scaled_dot_product_attention(
+        q, k, v, attn_mask=mask, dropout_p=dropout_p, is_causal=is_causal
+    )
 
 
 def repeat_kv(x: Tensor, groups: int) -> Tensor:
@@ -66,6 +78,7 @@ class CausalSelfAttention(nn.Module):
         self.groups = config.num_kv_groups
         self.dropout = config.dropout
         self.use_reference = use_reference
+        self.native_gqa = False
         self.rotary = rotary
         self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias=False)
         self.k_proj = nn.Linear(config.hidden_size, self.num_kv_heads * self.head_dim, bias=False)
@@ -82,6 +95,7 @@ class CausalSelfAttention(nn.Module):
         position_ids: Tensor,
         mask: Tensor | None,
         cache: LayerKVCache | None = None,
+        is_causal: bool = False,
     ) -> Tensor:
         batch, length, _ = x.shape
         q = self._split(self.q_proj(x), self.num_heads)
@@ -90,9 +104,13 @@ class CausalSelfAttention(nn.Module):
         q, k = self.rotary(q, k, position_ids)
         if cache is not None:
             k, v = cache.update(k, v)
-        k, v = repeat_kv(k, self.groups), repeat_kv(v, self.groups)
+        native = self.native_gqa and not self.use_reference and self.groups > 1
+        if not native:
+            k, v = repeat_kv(k, self.groups), repeat_kv(v, self.groups)
         if self.use_reference:
             context = reference_attention(q, k, v, mask)
         else:
-            context = sdpa_attention(q, k, v, mask, self.dropout if self.training else 0.0)
+            context = sdpa_attention(
+                q, k, v, mask, self.dropout if self.training else 0.0, is_causal, native
+            )
         return self.o_proj(context.transpose(1, 2).reshape(batch, length, -1))
