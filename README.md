@@ -4,6 +4,8 @@ Decoder-only Transformer (RoPE, GQA, RMSNorm, SwiGLU, KV cache), Byte-Level BPE 
 Training Engine (pretrain, SFT, DPO), Inference Engine, Reasoning Engine, Evaluation Engine и локальный
 OpenAI-совместимый API. Всё написано на PyTorch без Transformers и готовых весов.
 
+[Технический аудит Core](docs/technical-audit.md) содержит измеренные результаты, ограничения модели и команды для повторения проверок. Экспорт создаёт экспериментальный пакет для inference. Публикация production-модели требует отдельного решения по результатам оценки.
+
 ## Установка
 ```bash
 uv venv --python 3.12 .venv
