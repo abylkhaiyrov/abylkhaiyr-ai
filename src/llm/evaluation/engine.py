@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 import numpy as np
 import torch
@@ -14,6 +15,12 @@ from llm.core.errors import DataError
 from llm.data.binary import read_jsonl
 from llm.data.mathgen import MATH_BENCH_FILE, answer_is_correct, read_dataset
 from llm.evaluation import suites
+from llm.evaluation.conversation import (
+    WordList,
+    engine_responder,
+    run_conversation_benchmark,
+)
+from llm.evaluation.hooks import EvaluationHooks, NullHooks
 from llm.evaluation.metrics import (
     pass_at_k,
     perplexity_from,
@@ -32,12 +39,14 @@ from llm.reasoning.tools import (
 )
 from llm.tokenizer.bpe import Message
 
+_T = TypeVar("_T")
 CODE_SAMPLES = 4
 CODE_MAX_TOKENS = 160
 ANSWER_MAX_TOKENS = 64
 GSM8K_MAX_TOKENS = 200
 WINDOW_COUNT = 64
 SPEED_TOKENS = 64
+CONVERSATION_PARAMS = SamplingParams(greedy=True, max_new_tokens=96, repetition_penalty=1.1)
 
 
 @dataclass
@@ -51,16 +60,29 @@ class EvaluationConfig:
     math_bench_cases: int = 60
 
 
+BASE_SUITE_COUNT = 13
+
+
+def suite_count(include_dataset_suites: bool) -> int:
+    return BASE_SUITE_COUNT + int(include_dataset_suites)
+
+
 def greedy(max_new_tokens: int, **kwargs) -> SamplingParams:
     return SamplingParams(greedy=True, max_new_tokens=max_new_tokens, **kwargs)
 
 
 class Evaluator:
-    def __init__(self, engine: InferenceEngine, config: EvaluationConfig) -> None:
+    def __init__(
+        self,
+        engine: InferenceEngine,
+        config: EvaluationConfig,
+        hooks: EvaluationHooks | None = None,
+    ) -> None:
         self.engine = engine
         self.config = config
         self.tokenizer = engine.tokenizer
         self.device = engine.device
+        self.hooks: EvaluationHooks = hooks or NullHooks()
 
     def _answer(self, prompt: str, max_tokens: int) -> str:
         return self.engine.chat([Message("user", prompt)], greedy(max_tokens)).text
@@ -78,7 +100,10 @@ class Evaluator:
             torch.from_numpy(tokens[i * length : i * length + length + 1].astype(np.int64))
             for i in range(count)
         ]
-        total, n, correct = score_token_stream(self.engine.model, windows, self.device)
+        self.hooks.items_planned(len(windows))
+        total, n, correct = score_token_stream(
+            self.engine.model, windows, self.device, self.hooks.item_done
+        )
         return {
             "test_loss": total / n,
             "test_perplexity": perplexity_from(total, n),
@@ -101,16 +126,22 @@ class Evaluator:
             ]
             if len(ids) > 8:
                 by_language.setdefault(language, []).append(torch.tensor(ids))
+        self.hooks.items_planned(sum(len(windows) for windows in by_language.values()))
         for language, windows in by_language.items():
-            total, n, _ = score_token_stream(self.engine.model, windows, self.device)
+            total, n, _ = score_token_stream(
+                self.engine.model, windows, self.device, self.hooks.item_done
+            )
             results[f"perplexity_{language}"] = perplexity_from(total, n)
         return results
 
     def arithmetic(self) -> dict[str, float]:
         cases = suites.arithmetic_cases(self.config.arithmetic_cases, self.config.seed)
+        self.hooks.items_planned(len(cases))
         hits = sum(
-            answers_match(
-                extract_final_answer(self._answer(c.prompt, ANSWER_MAX_TOKENS)), c.reference
+            self._tick(
+                answers_match(
+                    extract_final_answer(self._answer(c.prompt, ANSWER_MAX_TOKENS)), c.reference
+                )
             )
             for c in cases
         )
@@ -121,10 +152,14 @@ class Evaluator:
 
         rows = list(load_dataset("openai/gsm8k", "main", split=f"test[:{self.config.gsm8k_cases}]"))
         hits = 0
+        self.hooks.items_planned(len(rows))
         for row in rows:
             reference = row["answer"].split("####")[-1].strip()
-            hits += answers_match(
-                extract_final_answer(self._answer(row["question"], GSM8K_MAX_TOKENS)), reference
+            hits += self._tick(
+                answers_match(
+                    extract_final_answer(self._answer(row["question"], GSM8K_MAX_TOKENS)),
+                    reference,
+                )
             )
         return {"gsm8k_exact_match": hits / len(rows)}
 
@@ -139,6 +174,7 @@ class Evaluator:
         )
         model_hits = tool_hits = 0
         by_level: dict[int, list[bool]] = {}
+        self.hooks.items_planned(len(problems))
         for problem in problems:
             reply = self._answer(problem.question, GSM8K_MAX_TOKENS)
             extracted = (
@@ -153,6 +189,7 @@ class Evaluator:
             tool_hit = answer_is_correct(problem, solution.answer)
             model_hits, tool_hits = model_hits + hit, tool_hits + tool_hit
             by_level.setdefault(problem.level, []).append(hit)
+            self.hooks.item_done()
         results = {
             "math_bench_model_accuracy": model_hits / len(problems),
             "math_bench_tool_accuracy": tool_hits / len(problems),
@@ -163,7 +200,10 @@ class Evaluator:
         return results
 
     def factual(self) -> dict[str, float]:
-        answers = [(c, self._answer(c.prompt, ANSWER_MAX_TOKENS)) for c in suites.FACTUAL_CASES]
+        self.hooks.items_planned(len(suites.FACTUAL_CASES))
+        answers = [
+            (c, self._tick(self._answer(c.prompt, ANSWER_MAX_TOKENS))) for c in suites.FACTUAL_CASES
+        ]
         hits = sum(c.reference in a.lower() for c, a in answers)
         return {
             "factual_accuracy": hits / len(answers),
@@ -172,13 +212,16 @@ class Evaluator:
 
     def instruction_following(self) -> dict[str, float]:
         cases = suites.instruction_cases()
+        self.hooks.items_planned(len(cases))
         hits = sum(
-            suites.check_constraint(c, self._answer(c.prompt, ANSWER_MAX_TOKENS)) for c in cases
+            self._tick(suites.check_constraint(c, self._answer(c.prompt, ANSWER_MAX_TOKENS)))
+            for c in cases
         )
         return {"instruction_following_accuracy": hits / len(cases)}
 
     def multiturn_dialogue(self) -> dict[str, float]:
         hits = 0
+        self.hooks.items_planned(len(suites.MULTITURN_CASES))
         for case in suites.MULTITURN_CASES:
             history: list[Message] = []
             for user_text, assistant_text in case.turns:
@@ -186,14 +229,15 @@ class Evaluator:
                 history.append(Message("assistant", assistant_text))
             history.append(Message("user", case.final_prompt))
             reply = self.engine.chat(history, greedy(ANSWER_MAX_TOKENS)).text
-            hits += case.expected_substring in reply.lower()
+            hits += self._tick(case.expected_substring in reply.lower())
         return {"multiturn_dialogue_accuracy": hits / len(suites.MULTITURN_CASES)}
 
     def context_usage(self) -> dict[str, float]:
         hits = 0
+        self.hooks.items_planned(len(suites.CONTEXT_CASES))
         for case in suites.CONTEXT_CASES:
             reply = self._answer(case.prompt, ANSWER_MAX_TOKENS)
-            hits += case.reference in reply.lower()
+            hits += self._tick(case.reference in reply.lower())
         return {"context_retrieval_accuracy": hits / len(suites.CONTEXT_CASES)}
 
     def logical_reasoning(self) -> dict[str, float]:
@@ -202,12 +246,14 @@ class Evaluator:
             max_candidates=3, max_retries=0, max_new_tokens_per_candidate=ANSWER_MAX_TOKENS
         )
         model_hits = tool_hits = 0
+        self.hooks.items_planned(len(suites.LOGIC_CASES))
         for case in suites.LOGIC_CASES:
             raw_reply = self._answer(case.prompt, ANSWER_MAX_TOKENS)
             model_hits += case.expected.lower() in raw_reply.lower()
             solution = reasoner.solve(Problem(case.prompt, "logic"), budget)
             tool_answer = (solution.answer or solution.text).lower()
             tool_hits += case.expected.lower() in tool_answer
+            self.hooks.item_done()
         total = len(suites.LOGIC_CASES)
         return {
             "logic_model_accuracy": model_hits / total,
@@ -217,7 +263,9 @@ class Evaluator:
     def coherence(self) -> dict[str, float]:
         non_empty = 0
         distinct_ratios: list[float] = []
+        self.hooks.items_planned(len(suites.MULTILINGUAL_PROMPTS))
         for prompt in suites.MULTILINGUAL_PROMPTS.values():
+            self.hooks.item_done()
             text = self.engine.generate(prompt, greedy(SPEED_TOKENS)).text.strip()
             words = text.split()
             if len(words) >= 4:
@@ -232,6 +280,15 @@ class Evaluator:
             "coherence_distinct_bigram": float(np.mean(distinct_ratios)),
         }
 
+    def conversation(self) -> dict[str, float]:
+        corpus = Path(self.config.data_dir) / "corpus" / "validation.jsonl"
+        words = WordList.from_jsonl(corpus) if corpus.is_file() else None
+        report = run_conversation_benchmark(
+            engine_responder(self.engine, CONVERSATION_PARAMS), words
+        )
+        self.conversation_samples = report.samples()
+        return report.metrics
+
     def code_generation(self) -> dict[str, float]:
         passes: dict[int, list[float]] = {1: [], CODE_SAMPLES: []}
         reasoner = ReasoningEngine(self.engine)
@@ -239,6 +296,7 @@ class Evaluator:
             max_candidates=2, max_retries=1, max_new_tokens_per_candidate=CODE_MAX_TOKENS
         )
         tool_hits = 0
+        self.hooks.items_planned(len(suites.CODE_CASES))
         for case in suites.CODE_CASES:
             correct = 0
             for index in range(CODE_SAMPLES):
@@ -251,6 +309,7 @@ class Evaluator:
                 scores.append(pass_at_k(CODE_SAMPLES, correct, k))
             solution = reasoner.solve(Problem(case.prompt, "code", tests=case.tests), budget)
             tool_hits += int(solution.verified)
+            self.hooks.item_done()
         results = {f"code_pass_at_{k}": float(np.mean(v)) for k, v in passes.items()}
         results["code_tool_pass_rate"] = tool_hits / len(suites.CODE_CASES)
         return results
@@ -288,12 +347,15 @@ class Evaluator:
 
     def repetition(self) -> dict[str, float]:
         ratios = []
+        self.hooks.items_planned(len(suites.MULTILINGUAL_PROMPTS))
         for prompt in suites.MULTILINGUAL_PROMPTS.values():
+            self.hooks.item_done()
             ids = self.engine.generate(prompt, greedy(SPEED_TOKENS * 2)).token_ids
             ratios.append(repeated_ngram_ratio(ids))
         return {"repeated_trigram_ratio_greedy": float(np.mean(ratios))}
 
     def speed_and_memory(self) -> dict[str, float]:
+        self.hooks.items_planned(1)
         self.engine.generate("Warm up", greedy(8))
         started = time.perf_counter()
         generated = len(
@@ -302,14 +364,14 @@ class Evaluator:
             ).token_ids
         )
         elapsed = time.perf_counter() - started
+        self.hooks.item_done()
         return {
             "generation_tokens_per_second": generated / elapsed,
             "ram_gb": ram_used_gb(),
             "device_memory_gb": device_memory_used_gb(self.device),
         }
 
-    def run(self, include_dataset_suites: bool = True) -> dict[str, float]:
-        results: dict[str, float] = {}
+    def suites_for_run(self, include_dataset_suites: bool = True) -> list:
         stages = [
             self.language_modeling,
             self.multilingual_perplexity,
@@ -321,15 +383,29 @@ class Evaluator:
             self.multiturn_dialogue,
             self.context_usage,
             self.coherence,
+            self.conversation,
             self.code_generation,
             self.repetition,
             self.speed_and_memory,
         ]
         if include_dataset_suites:
             stages.insert(3, self.gsm8k)
-        for stage in stages:
-            results.update(stage())
+        return stages
+
+    def run(self, include_dataset_suites: bool = True) -> dict[str, float]:
+        results: dict[str, float] = {}
+        stages = self.suites_for_run(include_dataset_suites)
+        for index, stage in enumerate(stages):
+            self.hooks.suite_started(stage.__name__, index, len(stages))
+            started = time.monotonic()
+            metrics = stage()
+            results.update(metrics)
+            self.hooks.suite_finished(stage.__name__, metrics, time.monotonic() - started)
         return results
+
+    def _tick(self, value: _T) -> _T:
+        self.hooks.item_done()
+        return value
 
     def save(self, results: dict[str, float], path: str | Path) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)

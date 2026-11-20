@@ -16,6 +16,7 @@ from llm.core.config import ModelConfig, load_experiment_config
 from llm.core.errors import CheckpointError, ConfigError, TokenizerError
 from llm.core.hardware import resolve_device
 from llm.inference.engine import InferenceEngine
+from llm.studio.model_registry import annotate_models
 from llm.studio.runtime import RuntimeState
 from llm.studio.telemetry import latest_metrics
 from llm.tokenizer.bpe import BPETokenizer
@@ -60,6 +61,7 @@ class ModelManager:
         self.tokenizer_path = (tokenizer_path or (self.root / "data" / "tokenizer")).resolve()
         self._lock = threading.RLock()
         self._active: LoadedModelState | None = None
+        self._catalog_cache: tuple[tuple[Any, ...], list[dict[str, Any]]] | None = None
         if initial_engine is not None:
             resolved_checkpoint = initial_checkpoint_id or self._match_initial_checkpoint(
                 initial_model_id
@@ -112,14 +114,51 @@ class ModelManager:
                 "architecture": config,
             }
 
+    def registry(self) -> dict[str, Any]:
+        models = self.list_models()
+        active = self.active
+        assignments = annotate_models(
+            self.root,
+            self.runtime.pipeline(),
+            models,
+            active.checkpoint_id if active is not None else None,
+        )
+        return {"roles": assignments, "models": models}
+
     def list_models(self) -> list[dict[str, Any]]:
+        signature = self._catalog_signature()
+        cached = self._catalog_cache
+        if cached is not None and cached[0] == signature:
+            return [dict(item) for item in cached[1]]
+        models = self._scan_models()
+        self._catalog_cache = (signature, models)
+        return [dict(item) for item in models]
+
+    def catalog_signature(self) -> tuple[Any, ...]:
+        return self._catalog_signature()
+
+    def _catalog_signature(self) -> tuple[Any, ...]:
+        checkpoints_root = self.root / "checkpoints"
+        stamps = tuple(
+            sorted(
+                (str(path), path.stat().st_mtime_ns)
+                for path in checkpoints_root.glob("**/meta.json")
+            )
+        )
+        active = self._active
+        return (
+            stamps,
+            None if active is None else (active.checkpoint_id, active.device),
+            self.runtime.training_active(),
+        )
+
+    def _scan_models(self) -> list[dict[str, Any]]:
         metrics_by_run = {
             path.parent.name: latest_metrics(self.root, path.parent.name)
             for path in (self.root / "experiments").glob("*/metrics.jsonl")
         }
         tokenizer = self._load_tokenizer()
-        pipeline = self.runtime.pipeline()
-        training_active = pipeline is not None
+        training_active = self.runtime.training_active()
         active = self.active
         results: list[dict[str, Any]] = []
         seen_resolved: set[Path] = set()
@@ -234,9 +273,7 @@ class ModelManager:
             raise ModelManagerError("incompatible_model", "; ".join(issues))
         weight_path = directory / MODEL_FILE
         weights_bytes = weight_path.stat().st_size if weight_path.is_file() else None
-        target_device = self._select_device(
-            device, weights_bytes, meta.get("model_config", {})
-        )
+        target_device = self._select_device(device, weights_bytes, meta.get("model_config", {}))
         try:
             model, config, meta = load_model_for_inference(directory)
             engine = InferenceEngine(model, tokenizer, target_device)
@@ -289,9 +326,7 @@ class ModelManager:
                 raise ModelManagerError("model_not_loaded", "No inference model is loaded")
             if self._active.device == "cpu":
                 return self._active
-            can_cpu, available_ram, required_ram = self.can_run_on_cpu(
-                None, self._active.config
-            )
+            can_cpu, available_ram, required_ram = self.can_run_on_cpu(None, self._active.config)
             if not can_cpu:
                 raise ModelManagerError(
                     "insufficient_memory_during_training",
@@ -350,7 +385,7 @@ class ModelManager:
                     f"Insufficient RAM for CPU inference ({available_ram} < {required_ram})",
                 )
             return torch.device("cpu")
-        training_active = self.runtime.pipeline() is not None
+        training_active = self.runtime.training_active()
         auto_device = resolve_device(requested or "auto")
         if training_active and auto_device.type == "mps":
             can_cpu, available_ram, required_ram = self.can_run_on_cpu(weights_bytes, config)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import math
@@ -12,9 +13,11 @@ from typing import Any
 from llm.core.config import ExperimentConfig, load_experiment_config
 from llm.core.errors import TrainingError
 from llm.core.hardware import resolve_device
-from llm.evaluation.engine import EvaluationConfig, Evaluator
+from llm.evaluation.engine import EvaluationConfig, Evaluator, suite_count
+from llm.evaluation.hooks import EvaluationHooks, StageEvaluationHooks
 from llm.evaluation.registry import record_experiment
 from llm.inference.engine import InferenceEngine
+from llm.progress import ProgressTracker
 from llm.tokenizer.bpe import BPETokenizer
 from llm.training.checkpoint import CheckpointManager, load_model_for_inference
 from llm.training.release import export_release
@@ -72,13 +75,14 @@ def _default_eval(
     device: str,
     offline: bool,
     name: str,
+    hooks: EvaluationHooks | None = None,
 ) -> tuple[dict[str, float], list[dict[str, str]]]:
     ckpt_path = Path(checkpoint)
     resolved = CheckpointManager(ckpt_path, keep=1).latest_valid() or ckpt_path
     model, _, _ = load_model_for_inference(resolved)
     tokenizer = BPETokenizer.load(tokenizer_path)
     engine = InferenceEngine(model, tokenizer, resolve_device(device))
-    evaluator = Evaluator(engine, EvaluationConfig(data_dir=data_dir))
+    evaluator = Evaluator(engine, EvaluationConfig(data_dir=data_dir), hooks)
     metrics = evaluator.run(include_dataset_suites=not offline)
     samples = evaluator.qualitative_samples()
     record_experiment(name, {"checkpoint": str(resolved)}, metrics)
@@ -130,6 +134,7 @@ class TrainingPipeline:
         self.state_path = self.state_dir / "state.json"
         self.log_path = self.state_dir / "pipeline.log"
         self.logger = self._setup_logger()
+        self.progress = ProgressTracker(self.state_dir)
         self.state = self._load_state()
 
     def _setup_logger(self) -> logging.Logger:
@@ -181,6 +186,39 @@ class TrainingPipeline:
         self._set_stage(stage, status, **result)
         self.logger.info("finished stage %s (status=%s)", stage, status)
 
+    def _call_eval(
+        self, checkpoint: str, name: str, hooks: EvaluationHooks
+    ) -> tuple[dict[str, float], list[dict[str, str]]]:
+        arguments = (
+            checkpoint,
+            self.config.tokenizer_path,
+            self.config.data_dir,
+            self.config.device,
+            self.config.offline_eval,
+            name,
+        )
+        if "hooks" in inspect.signature(self.eval_fn).parameters:
+            return self.eval_fn(*arguments, hooks=hooks)  # type: ignore[call-arg]
+        return self.eval_fn(*arguments)
+
+    def _evaluate_tracked(
+        self, stage: str, jobs: list[tuple[str, str]]
+    ) -> list[tuple[dict[str, float], list[dict[str, str]]]]:
+        suites = suite_count(not self.config.offline_eval)
+        handle = self.progress.begin(stage, "benchmarks", total=len(jobs) * suites)
+        hooks = StageEvaluationHooks(handle, len(jobs), suites)
+        outcomes: list[tuple[dict[str, float], list[dict[str, str]]]] = []
+        try:
+            for index, (checkpoint, name) in enumerate(jobs):
+                hooks.begin_checkpoint(Path(checkpoint).name, index)
+                outcomes.append(self._call_eval(checkpoint, name, hooks))
+                hooks.end_checkpoint()
+        except Exception as error:
+            handle.fail(str(error))
+            raise
+        handle.finish(checkpoints=len(jobs))
+        return outcomes
+
     def _stage_pretrain(self) -> dict[str, Any]:
         cfg = load_experiment_config(self.config.pretrain_config)
         result = self.train_fn(cfg, True)
@@ -189,29 +227,17 @@ class TrainingPipeline:
         return {"metrics": result}
 
     def _stage_eval_pretrain(self) -> dict[str, Any]:
-        baseline_metrics, baseline_samples = self.eval_fn(
-            self.config.baseline_checkpoint,
-            self.config.tokenizer_path,
-            self.config.data_dir,
-            self.config.device,
-            self.config.offline_eval,
-            "baseline_tiny_session",
-        )
         cfg = load_experiment_config(self.config.pretrain_config)
         candidates = _candidate_checkpoints(
             Path(cfg.train.checkpoint_dir), cfg.train.checkpoint_alias
         )
+        jobs = [(self.config.baseline_checkpoint, "baseline_tiny_session")]
+        jobs.extend((str(path), f"pretrain_{path.name}") for path in candidates)
+        outcomes = self._evaluate_tracked("eval_pretrain", jobs)
+        baseline_metrics, baseline_samples = outcomes[0]
         evaluated: dict[str, dict[str, float]] = {}
         samples_by_ckpt: dict[str, list[dict[str, str]]] = {}
-        for path in candidates:
-            metrics, samples = self.eval_fn(
-                str(path),
-                self.config.tokenizer_path,
-                self.config.data_dir,
-                self.config.device,
-                self.config.offline_eval,
-                f"pretrain_{path.name}",
-            )
+        for path, (metrics, samples) in zip(candidates, outcomes[1:], strict=True):
             evaluated[str(path)] = metrics
             samples_by_ckpt[str(path)] = samples
         self.state["artifacts"]["baseline_metrics"] = baseline_metrics
@@ -257,14 +283,7 @@ class TrainingPipeline:
 
     def _stage_eval_sft(self) -> dict[str, Any]:
         ckpt = self.state["artifacts"]["sft_checkpoint"]
-        metrics, samples = self.eval_fn(
-            ckpt,
-            self.config.tokenizer_path,
-            self.config.data_dir,
-            self.config.device,
-            self.config.offline_eval,
-            "sft_tiny_v2",
-        )
+        ((metrics, samples),) = self._evaluate_tracked("eval_sft", [(ckpt, "sft_tiny_v2")])
         self.state["artifacts"]["sft_metrics"] = metrics
         self.state["artifacts"]["sft_samples"] = samples
         return {"checkpoint": ckpt, "metrics": metrics}
@@ -313,13 +332,8 @@ class TrainingPipeline:
         sft_metrics = self.state["artifacts"]["sft_metrics"]
         sft_samples = self.state["artifacts"].get("sft_samples", [])
         if dpo_ckpt:
-            dpo_metrics, dpo_samples = self.eval_fn(
-                dpo_ckpt,
-                self.config.tokenizer_path,
-                self.config.data_dir,
-                self.config.device,
-                self.config.offline_eval,
-                "dpo_tiny_v2",
+            ((dpo_metrics, dpo_samples),) = self._evaluate_tracked(
+                "eval_final", [(dpo_ckpt, "dpo_tiny_v2")]
             )
             self.state["artifacts"]["dpo_metrics"] = dpo_metrics
             dpo_ok = (

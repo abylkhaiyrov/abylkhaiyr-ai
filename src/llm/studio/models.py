@@ -20,9 +20,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(512))
     requires_password_change: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class SessionRecord(Base):
@@ -46,6 +44,7 @@ class Chat(Base):
     checkpoint: Mapped[str | None] = mapped_column(String(1024))
     system_prompt: Mapped[str] = mapped_column(Text, default="")
     generation_settings: Mapped[str] = mapped_column(Text, default="{}")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow, index=True
@@ -149,9 +148,7 @@ class ApplicationSetting(Base):
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=utcnow, onupdate=utcnow
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 Index("ix_messages_chat_created", MessageRecord.chat_id, MessageRecord.created_at)

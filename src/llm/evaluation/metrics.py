@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Hashable, Sequence
+from collections.abc import Callable, Hashable, Sequence
 
 import torch
 from torch import Tensor
@@ -45,11 +45,16 @@ def perplexity_from(total_loss: float, count: int) -> float:
 
 @torch.inference_mode()
 def score_token_stream(
-    model: torch.nn.Module, windows: list[Tensor], device: torch.device
+    model: torch.nn.Module,
+    windows: list[Tensor],
+    device: torch.device,
+    on_window: Callable[[int], None] | None = None,
 ) -> tuple[float, int, int]:
     total, count, correct = 0.0, 0, 0
     for window in windows:
         batch = window.unsqueeze(0).to(device)
         loss, tokens, hits = batch_loss_and_accuracy(model(batch[:, :-1]), batch[:, 1:])
         total, count, correct = total + loss, count + tokens, correct + hits
+        if on_window is not None:
+            on_window(1)
     return total, count, correct

@@ -38,7 +38,16 @@ def evaluate_expression(expression: str) -> sympy.Expr | None:
             global_dict={"__builtins__": {}},
             transformations=TRANSFORMATIONS,
         )
-    except (sympy.SympifyError, SyntaxError, TypeError, ValueError, TokenError):
+    except (
+        sympy.SympifyError,
+        SyntaxError,
+        TypeError,
+        ValueError,
+        TokenError,
+        IndexError,
+        ArithmeticError,
+        AttributeError,
+    ):
         return None
 
 

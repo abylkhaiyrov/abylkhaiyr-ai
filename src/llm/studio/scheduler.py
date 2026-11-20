@@ -13,6 +13,7 @@ from llm.inference.sampling import SamplingParams
 from llm.reasoning.engine import Budget, ReasoningEngine, classify_task
 from llm.studio.model_manager import LoadedModelState, ModelManager, ModelManagerError
 from llm.studio.service import StudioService
+from llm.studio.streaming import PERSIST_INTERVAL_SECONDS, DeltaBuffer
 from llm.tokenizer.bpe import Message
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,10 @@ class GenerationState:
     checkpoint_id: str | None = None
     device: str | None = None
     reasoning_events: list[dict[str, Any]] = field(default_factory=list)
+    started_at: float = 0.0
+    first_token_ms: int | None = None
+    persisted_at: float = 0.0
+    prompt_tokens: int = 0
 
 
 PublishCallback = Callable[[GenerationState, str, dict[str, Any]], Awaitable[None]]
@@ -117,7 +122,7 @@ class GenerationScheduler:
                 "code": "model_not_loaded",
                 "detail": "No inference model is loaded. Select a checkpoint to start chatting.",
             }
-        training_active = await asyncio.to_thread(self.studio.runtime.pipeline) is not None
+        training_active = await asyncio.to_thread(self.studio.runtime.training_active)
         queue_reason: str | None = None
         if training_active:
             config = active_model.config if active_model is not None else {}
@@ -192,9 +197,7 @@ class GenerationScheduler:
             self.worker = asyncio.create_task(self._worker_loop())
         return "queued", state
 
-    async def cancel(
-        self, user_id: int, request_id: str, publish: PublishCallback
-    ) -> bool:
+    async def cancel(self, user_id: int, request_id: str, publish: PublishCallback) -> bool:
         key = (user_id, request_id)
         state = self.states.get(key)
         if state is None:
@@ -259,11 +262,15 @@ class GenerationScheduler:
                 self.active_state = None
 
     async def _resolve_loaded_model(
-        self, state: GenerationState, request: GenerationRequest, chat: dict[str, Any], publish: PublishCallback
+        self,
+        state: GenerationState,
+        request: GenerationRequest,
+        chat: dict[str, Any],
+        publish: PublishCallback,
     ) -> LoadedModelState:
         target_checkpoint = request.checkpoint_id or chat.get("checkpoint")
         active = self.model_manager.active
-        training_active = await asyncio.to_thread(self.studio.runtime.pipeline) is not None
+        training_active = await asyncio.to_thread(self.studio.runtime.training_active)
         if target_checkpoint and (active is None or active.checkpoint_id != target_checkpoint):
             await self._record_stage(
                 publish,
@@ -352,12 +359,19 @@ class GenerationScheduler:
                     "text": state.text,
                 },
             )
-            messages = [Message("system", chat["system_prompt"])] if chat["system_prompt"] else []
-            messages.extend(Message(item["role"], item["content"]) for item in history_records)
-            prompt_ids = engine.tokenizer.encode_conversation(messages, add_generation_prompt=True)
-            if continuation_prefix:
-                prompt_ids.extend(engine.tokenizer.encode(continuation_prefix))
-            input_tokens = len(engine.fit_prompt(prompt_ids, params.max_new_tokens))
+            history = [Message("system", chat["system_prompt"])] if chat["system_prompt"] else []
+            history.extend(Message(item["role"], item["content"]) for item in history_records)
+            prefix_tokens = (
+                len(engine.tokenizer.encode(continuation_prefix)) if continuation_prefix else 0
+            )
+            messages, dropped_messages = engine.fit_messages(
+                history, params.max_new_tokens + prefix_tokens
+            )
+            input_tokens = (
+                len(engine.tokenizer.encode_conversation(messages, add_generation_prompt=True))
+                + prefix_tokens
+            )
+            state.prompt_tokens = input_tokens
             last_user_text = next(
                 (item["content"] for item in reversed(history_records) if item["role"] == "user"),
                 request.content or "",
@@ -376,9 +390,12 @@ class GenerationScheduler:
             )
             loop = asyncio.get_running_loop()
             started = time.monotonic()
+            state.started_at = started
+            state.persisted_at = started
             generated_chars_start = len(state.text)
 
             if request.mode == "reasoning" and request.action != "continue":
+
                 def run_reasoning() -> tuple[str, int]:
                     def on_reasoning_event(event: dict[str, Any]) -> None:
                         future = asyncio.run_coroutine_threadsafe(
@@ -440,10 +457,20 @@ class GenerationScheduler:
                         "input_tokens": input_tokens,
                         "context_limit": engine.max_positions,
                         "message_count": len(messages),
+                        "dropped_messages": dropped_messages,
                     },
                 )
 
                 def run_stream() -> None:
+                    buffer = DeltaBuffer()
+
+                    def flush(text: str | None) -> None:
+                        if text:
+                            asyncio.run_coroutine_threadsafe(
+                                self._delta(publish, state, text, engine.tokenizer.encode),
+                                loop,
+                            ).result()
+
                     with self.inference_lock:
                         iterator = (
                             engine.stream_chat_continuation(messages, continuation_prefix, params)
@@ -453,10 +480,8 @@ class GenerationScheduler:
                         for piece in iterator:
                             if state.cancel.is_set():
                                 break
-                            future = asyncio.run_coroutine_threadsafe(
-                                self._delta(publish, state, piece), loop
-                            )
-                            future.result()
+                            flush(buffer.add(piece))
+                        flush(buffer.drain())
 
                 await asyncio.to_thread(run_stream)
                 new_text = state.text[generated_chars_start:]
@@ -504,6 +529,7 @@ class GenerationScheduler:
                 f"generation.{state.status}",
                 {
                     "elapsed_ms": elapsed_ms,
+                    "first_token_ms": state.first_token_ms,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "tokens_per_second": tps,
@@ -562,24 +588,39 @@ class GenerationScheduler:
             )
 
     async def _delta(
-        self, publish: PublishCallback, state: GenerationState, piece: str
+        self,
+        publish: PublishCallback,
+        state: GenerationState,
+        piece: str,
+        encode: Callable[[str], list[int]] | None = None,
     ) -> None:
-        updated_text = state.text + piece
-        await asyncio.to_thread(
-            self.studio.update_message_content,
-            state.user_id,
-            state.chat_id,
-            state.message_id,
-            updated_text,
-        )
-        state.text = updated_text
-        await self._emit(publish, state, "generation.delta", {"text": piece})
-        await asyncio.to_thread(
-            self.studio.update_generation_job,
-            state.request_id,
-            sequence_id=state.sequence,
-            partial_text=state.text,
-        )
+        now = time.monotonic()
+        if state.first_token_ms is None and state.started_at:
+            state.first_token_ms = int((now - state.started_at) * 1000)
+        state.text += piece
+        data: dict[str, Any] = {"text": piece, "first_token_ms": state.first_token_ms}
+        if encode is not None and state.started_at:
+            produced = len(encode(state.text))
+            generating = max(now - state.started_at - (state.first_token_ms or 0) / 1000, 1e-3)
+            data["output_tokens"] = produced
+            data["tokens_per_second"] = round(produced / max(now - state.started_at, 1e-3), 2)
+            data["generating_seconds"] = round(generating, 3)
+        await self._emit(publish, state, "generation.delta", data)
+        if now - state.persisted_at >= PERSIST_INTERVAL_SECONDS:
+            state.persisted_at = now
+            await asyncio.to_thread(
+                self.studio.update_message_content,
+                state.user_id,
+                state.chat_id,
+                state.message_id,
+                state.text,
+            )
+            await asyncio.to_thread(
+                self.studio.update_generation_job,
+                state.request_id,
+                sequence_id=state.sequence,
+                partial_text=state.text,
+            )
 
     async def _record_stage(
         self,
@@ -655,8 +696,12 @@ class GenerationScheduler:
             if request.temperature is not None
             else saved.get("temperature", default_temp)
         )
-        top_p = float(request.top_p if request.top_p is not None else saved.get("top_p", default_top_p))
-        top_k = int(request.top_k if request.top_k is not None else saved.get("top_k", default_top_k))
+        top_p = float(
+            request.top_p if request.top_p is not None else saved.get("top_p", default_top_p)
+        )
+        top_k = int(
+            request.top_k if request.top_k is not None else saved.get("top_k", default_top_k)
+        )
         repetition_penalty = float(
             request.repetition_penalty
             if request.repetition_penalty is not None

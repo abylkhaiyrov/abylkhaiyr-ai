@@ -3,6 +3,8 @@ from __future__ import annotations
 import signal
 import subprocess
 import sys
+import threading
+import time
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -16,6 +18,7 @@ from llm.studio.models import ManagedProcess, ProcessEvent
 
 RESOURCE_INTENSIVE_KINDS = {"pretrain", "sft", "dpo", "evaluation", "sweep"}
 RUNNING_STATUSES = {"pending", "running", "pausing", "paused"}
+LIST_TTL_SECONDS = 2.0
 
 
 class ProcessError(Exception):
@@ -26,15 +29,27 @@ class ProcessManager:
     def __init__(self, session_factory, root: Path) -> None:
         self.session_factory = session_factory
         self.root = root.resolve()
+        self._cache: tuple[float, list[dict]] = (0.0, [])
+        self._cache_lock = threading.Lock()
+
+    def invalidate(self) -> None:
+        with self._cache_lock:
+            self._cache = (0.0, [])
 
     def list(self) -> list[dict]:
-        self._refresh_managed_processes()
-        self._discover_cli_processes()
-        with self.session_factory() as database:
-            rows = database.scalars(
-                select(ManagedProcess).order_by(ManagedProcess.started_at.desc())
-            ).all()
-            return [self._serialize(row) for row in rows]
+        with self._cache_lock:
+            stamp, cached = self._cache
+            if time.monotonic() - stamp < LIST_TTL_SECONDS:
+                return [dict(item) for item in cached]
+            self._refresh_managed_processes()
+            self._discover_cli_processes()
+            with self.session_factory() as database:
+                rows = database.scalars(
+                    select(ManagedProcess).order_by(ManagedProcess.started_at.desc())
+                ).all()
+                serialized = [self._serialize(row) for row in rows]
+            self._cache = (time.monotonic(), serialized)
+            return [dict(item) for item in serialized]
 
     def start_training(self, config_path: str, stage: str | None = None) -> dict:
         config_file = self._safe_config_path(config_path)
@@ -69,6 +84,7 @@ class ProcessManager:
             database.add(
                 ProcessEvent(process_id=record.id, level="info", message="Process started")
             )
+        self.invalidate()
         return self._serialize(record)
 
     def pause(self, process_id: str) -> dict:
@@ -90,6 +106,7 @@ class ProcessManager:
             if process is None:
                 raise ProcessError("The managed process is no longer running")
             process.send_signal(signum)
+            self.invalidate()
             record.status = "pausing" if status == "paused" else status
             database.add(ProcessEvent(process_id=record.id, level="info", message=message))
             database.flush()

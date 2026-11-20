@@ -13,6 +13,7 @@ from llm.optimization.memory import (
     ram_used_gb,
     swap_used_gb,
 )
+from llm.progress import ProgressTracker, StageHandle
 
 METRICS_FILE = "metrics.jsonl"
 PERPLEXITY_CAP = 20.0
@@ -32,10 +33,38 @@ class TrainingMonitor:
         self.total_steps = total_steps
         self.started = time.monotonic()
         self.start_step = 0
+        self.tracker = ProgressTracker(self.directory)
+        self.handle: StageHandle | None = None
 
     def begin(self, step: int) -> None:
         self.start_step = step
         self.started = time.monotonic()
+        self.handle = self.tracker.begin("train", "steps", self.total_steps, phase="training")
+        self.handle.set_manual_eta()
+        self.handle.set_done(step)
+
+    def report(self, step: int, **detail: float | str | None) -> None:
+        if self.handle is None:
+            return
+        eta = self.eta_seconds(step)
+        self.handle.set_eta(eta if math.isfinite(eta) else None)
+        self.handle.set_done(step, **detail)
+
+    def phase(self, name: str, **detail: float | str | None) -> None:
+        if self.handle is not None:
+            self.handle.update(phase=name, **detail)
+
+    def finish(self, interrupted: bool, **results: float | str | None) -> None:
+        if self.handle is None:
+            return
+        if interrupted:
+            self.handle.stop()
+        else:
+            self.handle.finish(**results)
+
+    def fail(self, error: str) -> None:
+        if self.handle is not None:
+            self.handle.fail(error)
 
     def system_metrics(self) -> dict[str, float]:
         elapsed = time.monotonic() - self.started

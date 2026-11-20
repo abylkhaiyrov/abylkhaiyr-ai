@@ -16,6 +16,9 @@ MESSAGE_MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
+CHAT_MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (("pinned", "BOOLEAN DEFAULT 0 NOT NULL"),)
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -36,16 +39,23 @@ def create_sqlite_engine(path: Path) -> Engine:
     return engine
 
 
+def _add_missing_columns(engine: Engine, table: str, columns: tuple[tuple[str, str], ...]) -> None:
+    inspector = inspect(engine)
+    if table not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns(table)}
+    with engine.begin() as connection:
+        for column_name, column_ddl in columns:
+            if column_name not in existing:
+                connection.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {column_name} {column_ddl}")
+                )
+
+
 def ensure_studio_schema(engine: Engine) -> None:
     Base.metadata.create_all(engine)
-    inspector = inspect(engine)
-    if "messages" not in inspector.get_table_names():
-        return
-    existing = {column["name"] for column in inspector.get_columns("messages")}
-    with engine.begin() as connection:
-        for column_name, column_ddl in MESSAGE_MIGRATION_COLUMNS:
-            if column_name not in existing:
-                connection.execute(text(f"ALTER TABLE messages ADD COLUMN {column_name} {column_ddl}"))
+    _add_missing_columns(engine, "messages", MESSAGE_MIGRATION_COLUMNS)
+    _add_missing_columns(engine, "chats", CHAT_MIGRATION_COLUMNS)
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:

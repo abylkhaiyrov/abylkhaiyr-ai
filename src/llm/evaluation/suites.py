@@ -312,3 +312,16 @@ CODE_CASES = [
         "run_length_encode",
     ),
 ]
+
+
+def all_prompts() -> list[str]:
+    texts = [case.prompt for case in FACTUAL_CASES]
+    texts.extend(MULTILINGUAL_PROMPTS.values())
+    texts.extend(case.prompt for case in instruction_cases())
+    texts.extend(case.prompt for case in CONTEXT_CASES)
+    texts.extend(case.prompt for case in LOGIC_CASES)
+    texts.extend(case.prompt for case in CODE_CASES)
+    for turn_case in MULTITURN_CASES:
+        texts.extend(user for user, _ in turn_case.turns)
+        texts.append(turn_case.final_prompt)
+    return texts

@@ -2,6 +2,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, WebSocket, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +50,7 @@ class ChatUpdateRequest(BaseModel):
     checkpoint: str | None = Field(default=None, max_length=1024)
     system_prompt: str | None = Field(default=None, max_length=20000)
     generation_settings: dict[str, Any] | None = None
+    pinned: bool | None = None
 
 
 class ModelLoadRequest(BaseModel):
@@ -103,6 +105,10 @@ def create_studio_router(
     @router.websocket("/ws")
     async def websocket_endpoint(socket: WebSocket) -> None:
         await websocket_manager.handle(socket)
+
+    def reject_during_generation() -> None:
+        if inference_lock.locked():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="generation_active")
 
     def current_identity(
         session_token: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
@@ -206,9 +212,11 @@ def create_studio_router(
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
 
-    @router.get("/dashboard")
-    def dashboard(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> dict[str, Any]:
-        return studio.dashboard()
+    @router.get("/runtime")
+    def runtime_state(
+        _: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> dict[str, Any]:
+        return studio.runtime_state()
 
     @router.get("/settings")
     def settings(identity: Annotated[tuple[Any, str], Depends(current_identity)]) -> dict[str, Any]:
@@ -240,13 +248,20 @@ def create_studio_router(
         _: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
         try:
-            if studio.runtime.pipeline() is not None:
-                raise ProcessError("Another resource-intensive process is already active")
-            return studio.processes.start_training(payload.config_path, payload.stage)
+            return studio.start_training_checked(payload.config_path, payload.stage)
         except (ProcessError, ValueError) as error:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
             ) from error
+
+    @router.post("/pipeline/stop")
+    def stop_pipeline(
+        _: Annotated[tuple[Any, str], Depends(require_csrf)],
+    ) -> dict[str, Any]:
+        try:
+            return studio.stop_pipeline()
+        except ProcessError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
     @router.post("/training/{process_id}/pause")
     def pause_training(
@@ -272,13 +287,54 @@ def create_studio_router(
     def training_metrics(
         _: Annotated[tuple[Any, str], Depends(current_identity)],
         run: str | None = None,
-        limit: int = 1000,
+        max_points: int = 600,
     ) -> list[dict[str, float]]:
-        return studio.metrics(run, limit)
+        return studio.metrics(run, max_points)
+
+    @router.get("/runs")
+    def runs(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
+        return studio.catalog.runs()
+
+    @router.get("/runs/{name}")
+    def run_detail(
+        name: str, _: Annotated[tuple[Any, str], Depends(current_identity)]
+    ) -> dict[str, Any]:
+        detail = studio.catalog.detail(name)
+        if detail is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+        return detail
+
+    @router.get("/runs/{name}/metrics")
+    def run_metrics(
+        name: str,
+        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        max_points: int = 600,
+    ) -> list[dict[str, float]]:
+        rows = studio.catalog.metrics(name, min(max(max_points, 10), 3000))
+        if rows is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+        return rows
+
+    @router.get("/runs/{name}/logs")
+    def run_logs(
+        name: str,
+        _: Annotated[tuple[Any, str], Depends(current_identity)],
+        limit: int = 300,
+    ) -> list[str]:
+        lines = studio.catalog.logs(name, max(limit, 1))
+        if lines is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+        return lines
 
     @router.get("/models")
     def models(_: Annotated[tuple[Any, str], Depends(current_identity)]) -> list[dict[str, Any]]:
         return studio.models()
+
+    @router.get("/models/registry")
+    def model_registry(
+        _: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> dict[str, Any]:
+        return model_manager.registry()
 
     @router.get("/models/active")
     def active_model(
@@ -291,6 +347,7 @@ def create_studio_router(
         payload: ModelLoadRequest,
         _: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
+        reject_during_generation()
         try:
             return model_manager.load(payload.checkpoint_id, payload.device)
         except ModelManagerError as error:
@@ -306,6 +363,7 @@ def create_studio_router(
         payload: ModelLoadRequest,
         _: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
+        reject_during_generation()
         try:
             return model_manager.switch(payload.checkpoint_id, payload.device)
         except ModelManagerError as error:
@@ -320,6 +378,7 @@ def create_studio_router(
     def unload_model(
         _: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
+        reject_during_generation()
         return model_manager.unload()
 
     @router.get("/checkpoints")
@@ -398,10 +457,27 @@ def create_studio_router(
             checkpoint=payload.checkpoint,
             system_prompt=payload.system_prompt,
             generation_settings=payload.generation_settings,
+            pinned=payload.pinned,
         )
         if chat is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
         return chat
+
+    @router.get("/chats/{chat_id}/export")
+    def export_chat(
+        chat_id: str,
+        identity: Annotated[tuple[Any, str], Depends(current_identity)],
+        format: Literal["md", "json"] = "md",
+    ) -> Response:
+        exported = studio.export_chat(identity[0].id, chat_id, format)
+        if exported is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+        filename, media_type, body = exported
+        return Response(
+            body,
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        )
 
     @router.delete("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_chat(

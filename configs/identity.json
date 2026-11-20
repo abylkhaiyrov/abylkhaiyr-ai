@@ -1,0 +1,10 @@
+{
+  "name": "Abylkhaiyr AI",
+  "developer": {
+    "ru": "разработчик проекта Abylkhaiyr AI",
+    "en": "the developer of the Abylkhaiyr AI project",
+    "kk": "Abylkhaiyr AI жобасының әзірлеушісі"
+  },
+  "context_tokens": 512,
+  "hardware": "Apple M2 Pro"
+}

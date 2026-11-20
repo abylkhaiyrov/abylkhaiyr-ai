@@ -52,6 +52,23 @@ class InferenceEngine:
         keep_bos = prompt_ids[:1] if prompt_ids[0] == self.tokenizer.bos_id else []
         return keep_bos + prompt_ids[len(prompt_ids) - (budget - len(keep_bos)) :]
 
+    def fit_messages(
+        self, messages: list[Message], reserved_tokens: int
+    ) -> tuple[list[Message], int]:
+        budget = max(self.max_positions - reserved_tokens, 1)
+        kept = list(messages)
+        dropped = 0
+        while len(self.tokenizer.encode_conversation(kept, True)) > budget:
+            removable = [index for index, item in enumerate(kept) if item.role != "system"]
+            if len(removable) <= 1:
+                break
+            kept.pop(removable[0])
+            dropped += 1
+            if kept[removable[0]].role == "assistant":
+                kept.pop(removable[0])
+                dropped += 1
+        return kept, dropped
+
     def _generator(self, params: SamplingParams) -> torch.Generator | None:
         if params.seed is None:
             return None
@@ -149,20 +166,24 @@ class InferenceEngine:
     def generate(self, prompt: str, params: SamplingParams) -> Generation:
         return self.generate_ids(self.tokenizer.encode(prompt, add_bos=True), params)
 
+    def _chat_ids(self, messages: list[Message], reserved_tokens: int) -> list[int]:
+        fitted, _ = self.fit_messages(messages, reserved_tokens)
+        return self.tokenizer.encode_conversation(fitted, add_generation_prompt=True)
+
     def chat(self, messages: list[Message], params: SamplingParams) -> Generation:
-        ids = self.tokenizer.encode_conversation(messages, add_generation_prompt=True)
+        ids = self._chat_ids(messages, params.max_new_tokens)
         return self.generate_ids(ids, params, stop_token_ids=self._chat_stop_tokens())
 
     def stream_chat(self, messages: list[Message], params: SamplingParams) -> Iterator[str]:
-        ids = self.tokenizer.encode_conversation(messages, add_generation_prompt=True)
+        ids = self._chat_ids(messages, params.max_new_tokens)
         return self.stream_text(ids, params, stop_token_ids=self._chat_stop_tokens())
 
     def stream_chat_continuation(
         self, messages: list[Message], prefix: str, params: SamplingParams
     ) -> Iterator[str]:
-        ids = self.tokenizer.encode_conversation(messages, add_generation_prompt=True)
-        if prefix:
-            ids.extend(self.tokenizer.encode(prefix))
+        prefix_ids = self.tokenizer.encode(prefix) if prefix else []
+        ids = self._chat_ids(messages, params.max_new_tokens + len(prefix_ids))
+        ids.extend(prefix_ids)
         return self.stream_text(ids, params, stop_token_ids=self._chat_stop_tokens())
 
     @torch.inference_mode()

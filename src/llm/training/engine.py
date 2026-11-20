@@ -206,15 +206,20 @@ class Trainer:
         self.validation_source.load_state_dict({"epoch": 0, "cursor": 0})
         self.validation_source.set_batch_size(self.state.micro_batch_size)
         total, count = 0.0, 0
-        for _ in range(self.config.eval_batches):
+        for index in range(self.config.eval_batches):
+            self.monitor.phase(
+                "validation", validation_done=index, validation_total=self.config.eval_batches
+            )
             batch = self._to_device(self.validation_source.next_batch())
             total += float(self._forward_loss(batch).item())
             count += self.objective.weight(batch)
         self.validation_source.load_state_dict(saved)
+        self.objective.drain_stats()
         self.model.train(was_training)
         return total / max(count, 1)
 
     def save_checkpoint(self, label: str | None = None) -> None:
+        self.monitor.phase("checkpoint", checkpoint_step=self.state.step)
         self.checkpoints.save(
             self.model,
             self.model_config,
@@ -228,6 +233,13 @@ class Trainer:
         )
 
     def train(self, stop_step: int | None = None) -> TrainingResult:
+        try:
+            return self._train(stop_step)
+        except Exception as error:
+            self.monitor.fail(str(error))
+            raise
+
+    def _train(self, stop_step: int | None = None) -> TrainingResult:
         config = self.config
         limit = min(config.max_steps, stop_step or config.max_steps)
         self.model.train()
@@ -271,7 +283,15 @@ class Trainer:
                         "perf/eta_seconds": self.monitor.eta_seconds(self.state.step),
                         "perf/micro_batch_size": float(self.state.micro_batch_size),
                         **{f"system/{k}": v for k, v in self.monitor.system_metrics().items()},
+                        **self.objective.drain_stats(),
                     },
+                )
+                self.monitor.report(
+                    self.state.step,
+                    phase="training",
+                    tokens_seen=self.state.tokens_seen,
+                    train_loss=mean_loss,
+                    tokens_per_second=window_tokens / elapsed,
                 )
                 self.logger.info(
                     "step %d/%d loss %.4f lr %.2e gnorm %.2f %.0f tok/s eta %.1f min",
@@ -311,6 +331,12 @@ class Trainer:
             self.save_checkpoint()
         if interrupted:
             self.logger.warning("interrupted at step %d; checkpoint saved", self.state.step)
+        self.monitor.finish(
+            interrupted,
+            final_step=self.state.step,
+            tokens_seen=self.state.tokens_seen,
+            best_validation_loss=self.state.best_validation_loss,
+        )
         self.monitor.close()
         return TrainingResult(
             self.state.step,

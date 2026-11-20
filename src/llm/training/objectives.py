@@ -19,6 +19,7 @@ Batch = tuple[Tensor, ...]
 class Objective(Protocol):
     def weight(self, batch: Batch) -> int: ...
     def loss_sum(self, model: nn.Module, batch: Batch) -> Tensor: ...
+    def drain_stats(self) -> dict[str, float]: ...
 
 
 class CausalLMObjective:
@@ -28,6 +29,9 @@ class CausalLMObjective:
 
     def weight(self, batch: Batch) -> int:
         return int((batch[1] != IGNORE_INDEX).sum().item())
+
+    def drain_stats(self) -> dict[str, float]:
+        return {}
 
     def loss_sum(self, model: nn.Module, batch: Batch) -> Tensor:
         inputs, targets = batch
@@ -46,6 +50,19 @@ class DPOObjective:
         self.beta = beta
         self.device = device
         self.dtype = dtype
+        self._margin_sum = 0.0
+        self._correct = 0
+        self._pairs = 0
+
+    def drain_stats(self) -> dict[str, float]:
+        if self._pairs == 0:
+            return {}
+        stats = {
+            "dpo/reward_margin": self.beta * self._margin_sum / self._pairs,
+            "dpo/reward_accuracy": self._correct / self._pairs,
+        }
+        self._margin_sum, self._correct, self._pairs = 0.0, 0, 0
+        return stats
 
     def weight(self, batch: Batch) -> int:
         return batch[0].shape[0]
@@ -63,4 +80,8 @@ class DPOObjective:
         policy_chosen = self._log_probs(model, chosen_in, chosen_tg)
         policy_rejected = self._log_probs(model, rejected_in, rejected_tg)
         mean_loss = dpo_loss(policy_chosen, policy_rejected, ref_chosen, ref_rejected, self.beta)
+        margin = ((policy_chosen - policy_rejected) - (ref_chosen - ref_rejected)).detach()
+        self._margin_sum += float(margin.sum().item())
+        self._correct += int((margin > 0).sum().item())
+        self._pairs += int(margin.numel())
         return mean_loss * chosen_in.shape[0]
