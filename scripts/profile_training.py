@@ -23,6 +23,8 @@ VARIANTS = {
     "gqa_causal": Variant("gqa_causal", native_gqa=True, fast_causal=True),
     "exact_pad": Variant("exact_pad", pad_multiple=1),
     "packed": Variant("packed", pack=True),
+    "padded_mb4": Variant("padded_mb4", micro_batch=4, accumulation=2, fast_causal=True),
+    "packed_mb4": Variant("packed_mb4", micro_batch=4, accumulation=2, pack=True, fast_causal=True),
     "packed_gqa_causal": Variant("packed_gqa_causal", pack=True, native_gqa=True),
     "bf16": Variant("bf16", precision="bf16"),
     "fp16": Variant("fp16", precision="fp16"),

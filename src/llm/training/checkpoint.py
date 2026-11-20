@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import random
@@ -18,6 +17,7 @@ import torch
 from safetensors.torch import load_file, save_file
 from torch import nn
 
+from llm.core.checksums import file_sha256
 from llm.core.config import ModelConfig
 from llm.core.errors import CheckpointError
 from llm.model.transformer import CausalLM
@@ -29,7 +29,6 @@ STEP_PREFIX = "step-"
 STEP_DIGITS = 8
 TEMP_SUFFIX = ".tmp"
 BACKUP_SUFFIX = ".old"
-HASH_CHUNK = 1 << 20
 TIED_HEAD_KEY = "lm_head.weight"
 
 
@@ -51,14 +50,6 @@ class TrainingState:
     metrics: list[dict[str, float]] = field(default_factory=list)
     micro_batch_size: int = 1
     gradient_accumulation_steps: int = 1
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(HASH_CHUNK):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def capture_rng_state(device: torch.device) -> dict[str, Any]:

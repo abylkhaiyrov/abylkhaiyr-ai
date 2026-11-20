@@ -1,0 +1,33 @@
+name: small_plus_v4_cuda
+model:
+  vocab_size: 16384
+  hidden_size: 768
+  num_hidden_layers: 16
+  num_attention_heads: 12
+  num_key_value_heads: 4
+  intermediate_size: 2112
+  max_position_embeddings: 1024
+tokenizer:
+  vocab_size: 16384
+  path: experiments/v4/bpe-16384
+train:
+  stage: pretrain
+  data_dir: data/v4/scaling_16384
+  output_dir: experiments/v4/small_plus_cuda
+  checkpoint_dir: checkpoints/small_plus_v4_cuda
+  device: cuda
+  precision: bf16
+  micro_batch_size: 2
+  gradient_accumulation_steps: 16
+  sequence_length: 512
+  fast_causal: true
+  max_steps: 6104
+  eval_interval: 61
+  eval_batches: 12
+  checkpoint_interval: 61
+  keep_checkpoints: 3
+  protected_steps: [305, 1221, 3052, 6104]
+  dynamic_batch_size: false
+  mixture: {en: 1.0, kk: 1.0, ru: 1.0}
+  dataset_version: v4-expanded-bpe16384
+  optimizer: {learning_rate: 0.0003, warmup_steps: 100, foreach: true}
