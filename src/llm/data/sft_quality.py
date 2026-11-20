@@ -15,7 +15,7 @@ KAZAKH_ONLY = frozenset("әғқұіһӘҒҚҰІҺ")
 TURKIC_SHARED = frozenset("үөңҮӨҢ")
 TERMINAL = (".", "!", "?", "…", "»", '"', ")", "]", "”", "`", "。")
 GSM8K_ARTIFACT = re.compile(r"(=\s*)>(?=\d)")
-EQUATION = re.compile(r"(?P<lhs>[\d\s.,+\-*/()x×÷]+?)=\s*(?P<rhs>-?\d[\d,]*\.?\d*)")
+EQUATION = re.compile(r"(?P<lhs>[\d\s.,+\-*/()x×÷]+?)=\s*(?P<rhs>-?\d[\d,]*\.?\d*(?:/\d+)?)")
 WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 NORMALIZE = re.compile(r"\s+")
 IDENTITY_CONFLICT = re.compile(

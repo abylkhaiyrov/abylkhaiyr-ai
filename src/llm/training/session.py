@@ -13,6 +13,7 @@ from typing import IO
 
 from llm.core.config import ExperimentConfig
 from llm.core.errors import LLMError, ResourceError
+from llm.evaluation.registry import REGISTRY_FILE, record_experiment, training_record
 from llm.training.engine import TrainingResult
 from llm.training.runner import build_trainer
 
@@ -79,7 +80,10 @@ def run_training(
             with graceful_shutdown(trainer.stop_event):
                 try:
                     logger.info("starting at step %d", trainer.state.step)
-                    return trainer.train(stop_step=stop_step)
+                    result = trainer.train(stop_step=stop_step)
+                    registry = Path(config.train.output_dir).parent / REGISTRY_FILE.name
+                    record_experiment(config.name, *training_record(config, result), path=registry)
+                    return result
                 except LLMError as error:
                     if attempt >= max_restarts or not isinstance(error, ResourceError):
                         raise

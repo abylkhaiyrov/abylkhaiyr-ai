@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import random
+import re
+from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
 
 from llm.core.hardware import resolve_device
+from llm.data.binary import read_jsonl
 from llm.evaluation.conversation import (
     CASES,
     BenchmarkReport,
@@ -16,9 +20,10 @@ from llm.evaluation.conversation import (
     engine_responder,
     run_conversation_benchmark,
 )
+from llm.evaluation.metrics import repeated_ngram_ratio
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
-from llm.tokenizer.bpe import BPETokenizer
+from llm.tokenizer.bpe import BPETokenizer, Message
 from llm.training.checkpoint import CheckpointManager, load_model_for_inference
 
 FIXED_PARAMS = SamplingParams(greedy=True, max_new_tokens=96, repetition_penalty=1.1)
@@ -186,6 +191,95 @@ def sweep_sampling(
                     float(np.mean([m["conv_completion_rate"] for m in reports])),
                     float(np.mean([m["conv_repetition_ratio"] for m in reports])),
                     float(np.mean([m["conv_language_stability"] for m in reports])),
+                )
+            )
+    return result
+
+
+VALIDATION_GROUPS: dict[str, tuple[str, ...]] = {
+    "dialogue": ("dialog", "identity"),
+    "explanation": ("chat",),
+    "skills": ("skills",),
+    "math": ("math", "word_math"),
+    "code": ("code",),
+}
+WORD = re.compile(r"[^\W\d_]+|\d+", re.UNICODE)
+
+
+@dataclass(frozen=True)
+class ValidationCase:
+    messages: tuple[Message, ...]
+    reference: str
+
+
+def token_f1(prediction: str, reference: str) -> float:
+    predicted, expected = (
+        Counter(WORD.findall(prediction.lower())),
+        Counter(WORD.findall(reference.lower())),
+    )
+    overlap = sum((predicted & expected).values())
+    if not overlap:
+        return 0.0
+    precision, recall = overlap / sum(predicted.values()), overlap / sum(expected.values())
+    return 2 * precision * recall / (precision + recall)
+
+
+def read_validation_group(root: Path, group: str) -> list[dict]:
+    path = root / f"validation.{group}.jsonl"
+    return list(read_jsonl(path)) if path.is_file() else []
+
+
+def validation_cases(
+    data_dir: str, per_group: int = 40, seed: int = 0
+) -> dict[str, list[ValidationCase]]:
+    root = Path(data_dir) / "sft_groups"
+    rng = random.Random(seed)
+    cases: dict[str, list[ValidationCase]] = {}
+    for task, groups in VALIDATION_GROUPS.items():
+        rows = [row for group in groups for row in read_validation_group(root, group)]
+        rng.shuffle(rows)
+        cases[task] = [
+            ValidationCase(
+                tuple(Message(m["role"], m["content"]) for m in row["messages"][:-1]),
+                row["messages"][-1]["content"],
+            )
+            for row in rows[:per_group]
+        ]
+    return {task: items for task, items in cases.items() if items}
+
+
+def sweep_validation(
+    engine: InferenceEngine,
+    variants: Iterable[SamplingVariant],
+    cases: Mapping[str, list[ValidationCase]],
+    seeds: tuple[int, ...] = (0,),
+) -> SweepResult:
+    result = SweepResult()
+    for variant in variants:
+        seeded = (
+            [variant.params]
+            if variant.params.greedy
+            else [replace(variant.params, seed=seed) for seed in seeds]
+        )
+        for task, items in cases.items():
+            f1: list[float] = []
+            finished: list[bool] = []
+            repetition: list[float] = []
+            for params in seeded:
+                for item in items:
+                    generation = engine.chat(list(item.messages), params)
+                    tokens = WORD.findall(generation.text.lower())
+                    f1.append(token_f1(generation.text, item.reference))
+                    finished.append(generation.finish_reason == "stop")
+                    repetition.append(repeated_ngram_ratio(tokens, 3) if len(tokens) >= 6 else 0.0)
+            result.rows.append(
+                SweepRow(
+                    variant.name,
+                    task,
+                    float(np.mean(f1)),
+                    float(np.mean(finished)),
+                    float(np.mean(repetition)),
+                    1.0,
                 )
             )
     return result

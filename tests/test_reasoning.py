@@ -82,7 +82,7 @@ def test_reasoning_prefers_verified_answer_over_majority_of_wrong_ones():
         "<<2+2=4>> #### 4",
         "<<2+2=5>> #### 5",
     ]
-    engine = ReasoningEngine(ScriptedEngine(replies))
+    engine = ReasoningEngine(ScriptedEngine(replies), use_solvers=False)
     solution = engine.solve(Problem("2+2?"), Budget(max_candidates=4, max_retries=0))
     assert solution.answer == "4" and solution.verified
 
@@ -90,7 +90,7 @@ def test_reasoning_prefers_verified_answer_over_majority_of_wrong_ones():
 def test_reasoning_retries_after_failure_then_stops_when_verified():
     replies = ["no idea", "still unsure", "<<3*3=9>> #### 9", "unused"]
     scripted = ScriptedEngine(replies)
-    solution = ReasoningEngine(scripted).solve(
+    solution = ReasoningEngine(scripted, use_solvers=False).solve(
         Problem("3*3?"), Budget(max_candidates=2, max_retries=2)
     )
     assert solution.answer == "9" and solution.verified and scripted.calls == 3
@@ -98,7 +98,7 @@ def test_reasoning_retries_after_failure_then_stops_when_verified():
 
 def test_reasoning_respects_token_budget():
     scripted = ScriptedEngine(["a b c d e f g h"])
-    solution = ReasoningEngine(scripted).solve(
+    solution = ReasoningEngine(scripted, use_solvers=False).solve(
         Problem("q"), Budget(max_candidates=10, max_new_tokens_total=16)
     )
     assert solution.stopped_by_budget and scripted.calls == 2
@@ -107,9 +107,17 @@ def test_reasoning_respects_token_budget():
 def test_code_problem_uses_sandbox_tests():
     problem = Problem("write add", kind="code", tests="assert add(1, 2) == 3")
     good = ScriptedEngine(["def add(a, b):\n    return a + b"])
-    assert ReasoningEngine(good).solve(problem, Budget(max_candidates=1, max_retries=0)).verified
+    assert (
+        ReasoningEngine(good, use_solvers=False)
+        .solve(problem, Budget(max_candidates=1, max_retries=0))
+        .verified
+    )
     bad = ScriptedEngine(["def add(a, b):\n    return 0"])
-    assert not ReasoningEngine(bad).solve(problem, Budget(max_candidates=1, max_retries=0)).verified
+    assert (
+        not ReasoningEngine(bad, use_solvers=False)
+        .solve(problem, Budget(max_candidates=1, max_retries=0))
+        .verified
+    )
 
 
 def test_math_verifier_without_annotations_is_unverified():
@@ -175,6 +183,6 @@ def test_logic_verifier_requires_answer_from_the_question():
 
 
 def test_solve_auto_picks_strategy():
-    engine = ReasoningEngine(ScriptedEngine(["<<2+2=5>> #### 5"]))
+    engine = ReasoningEngine(ScriptedEngine(["<<2+2=5>> #### 5"]), use_solvers=False)
     solution = engine.solve_auto("Compute 2 + 2.")
     assert solution.answer == "4" and solution.verified

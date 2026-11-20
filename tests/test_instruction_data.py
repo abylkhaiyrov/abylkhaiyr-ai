@@ -313,3 +313,54 @@ def test_sampling_sweep_picks_best_variant_per_group(model, tokenizer):
     reports = {"m": run_conversation_benchmark(lambda item: ("x y z", True), None)}
     assert "conv_pass_rate" in markdown_table(reports)
     assert "greeting" in category_table(reports)
+
+
+def test_suite_count_matches_the_suites_actually_run(model, tokenizer):
+    import torch
+
+    from llm.evaluation.engine import EvaluationConfig, Evaluator, suite_count
+    from llm.inference.engine import InferenceEngine
+    from llm.model.transformer import CausalLM
+
+    engine = InferenceEngine(CausalLM(model.config), tokenizer, torch.device("cpu"))
+    evaluator = Evaluator(engine, EvaluationConfig(data_dir="unused"))
+    for online in (False, True):
+        assert len(evaluator.suites_for_run(online)) == suite_count(online)
+
+
+def test_equation_check_handles_fraction_results():
+    assert equations_hold("3/2 * 1 = <<(3/2)*(1/1)=3/2>>3/2.")
+    assert equations_hold("4/3 - 8/5 = -4/15")
+    assert not equations_hold("1/2 + 1/3 = 2/5")
+
+
+def test_validation_sweep_scores_overlap_completion_and_repetition(model, tokenizer, tmp_path):
+    import json
+
+    import torch
+
+    from llm.evaluation.comparison import (
+        SamplingVariant,
+        sweep_validation,
+        token_f1,
+        validation_cases,
+    )
+    from llm.inference.engine import InferenceEngine
+    from llm.inference.sampling import SamplingParams
+    from llm.model.transformer import CausalLM
+
+    assert token_f1("the cat sat", "the cat sat") == 1.0
+    assert token_f1("a b", "c d") == 0.0
+    assert 0 < token_f1("the cat", "the cat sat") < 1
+    groups = tmp_path / "sft_groups"
+    groups.mkdir()
+    row = {
+        "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+    }
+    (groups / "validation.dialog.jsonl").write_text(json.dumps(row) + "\n")
+    cases = validation_cases(str(tmp_path), per_group=5)
+    assert list(cases) == ["dialogue"]
+    engine = InferenceEngine(CausalLM(model.config), tokenizer, torch.device("cpu"))
+    variants = [SamplingVariant("g", SamplingParams(greedy=True, max_new_tokens=3))]
+    result = sweep_validation(engine, variants, cases)
+    assert len(result.rows) == 1 and 0 <= result.rows[0].pass_rate <= 1

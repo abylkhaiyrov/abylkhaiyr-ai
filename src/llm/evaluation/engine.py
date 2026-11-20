@@ -31,6 +31,7 @@ from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.optimization.memory import device_memory_used_gb, ram_used_gb
 from llm.reasoning.engine import Budget, Problem, ReasoningEngine, classify_task
+from llm.reasoning.solvers import solve_with_tools
 from llm.reasoning.tools import (
     answers_match,
     extract_final_answer,
@@ -60,11 +61,28 @@ class EvaluationConfig:
     math_bench_cases: int = 60
 
 
-BASE_SUITE_COUNT = 13
+BASE_SUITES = (
+    "language_modeling",
+    "multilingual_perplexity",
+    "arithmetic",
+    "math_benchmark",
+    "tool_solvers",
+    "logical_reasoning",
+    "factual",
+    "instruction_following",
+    "multiturn_dialogue",
+    "context_usage",
+    "coherence",
+    "conversation",
+    "code_generation",
+    "repetition",
+    "speed_and_memory",
+)
+DATASET_SUITE_POSITION = 3
 
 
 def suite_count(include_dataset_suites: bool) -> int:
-    return BASE_SUITE_COUNT + int(include_dataset_suites)
+    return len(BASE_SUITES) + int(include_dataset_suites)
 
 
 def greedy(max_new_tokens: int, **kwargs) -> SamplingParams:
@@ -168,11 +186,12 @@ class Evaluator:
         if not path.is_file():
             raise DataError(f"math benchmark not found: {path}")
         problems = read_dataset(path)[: self.config.math_bench_cases]
-        reasoner = ReasoningEngine(self.engine)
+        verifier_only = ReasoningEngine(self.engine, use_solvers=False)
+        with_tools = ReasoningEngine(self.engine)
         budget = Budget(
             max_candidates=3, max_retries=0, max_new_tokens_per_candidate=GSM8K_MAX_TOKENS
         )
-        model_hits = tool_hits = 0
+        model_hits = verifier_hits = tool_hits = 0
         by_level: dict[int, list[bool]] = {}
         self.hooks.items_planned(len(problems))
         for problem in problems:
@@ -183,21 +202,41 @@ class Evaluator:
                 else extract_final_answer(reply)
             )
             hit = answer_is_correct(problem, extracted)
-            solution = reasoner.solve(
-                Problem(problem.question, classify_task(problem.question)), budget
-            )
-            tool_hit = answer_is_correct(problem, solution.answer)
-            model_hits, tool_hits = model_hits + hit, tool_hits + tool_hit
+            task = Problem(problem.question, classify_task(problem.question))
+            verifier_hit = answer_is_correct(problem, verifier_only.solve(task, budget).answer)
+            tool_hit = answer_is_correct(problem, with_tools.solve(task, budget).answer)
+            model_hits += hit
+            verifier_hits += verifier_hit
+            tool_hits += tool_hit
             by_level.setdefault(problem.level, []).append(hit)
             self.hooks.item_done()
         results = {
             "math_bench_model_accuracy": model_hits / len(problems),
+            "math_bench_verifier_accuracy": verifier_hits / len(problems),
             "math_bench_tool_accuracy": tool_hits / len(problems),
         }
         results.update(
             {f"math_bench_level_{k}": float(np.mean(v)) for k, v in sorted(by_level.items())}
         )
         return results
+
+    def tool_solvers(self) -> dict[str, float]:
+        metrics: dict[str, float] = {}
+        for name, cases in (
+            ("dev", suites.TOOL_CASES),
+            ("holdout", suites.TOOL_HOLDOUT_CASES),
+        ):
+            answered = correct = 0
+            for case in cases:
+                solution = solve_with_tools(case.prompt)
+                answered += solution is not None
+                correct += solution is not None and (
+                    answers_match(solution.answer, case.reference)
+                    or solution.answer.strip().lower() == case.reference.lower()
+                )
+            metrics[f"tool_{name}_accuracy"] = correct / len(cases)
+            metrics[f"tool_{name}_coverage"] = answered / len(cases)
+        return metrics
 
     def factual(self) -> dict[str, float]:
         self.hooks.items_planned(len(suites.FACTUAL_CASES))
@@ -372,25 +411,10 @@ class Evaluator:
         }
 
     def suites_for_run(self, include_dataset_suites: bool = True) -> list:
-        stages = [
-            self.language_modeling,
-            self.multilingual_perplexity,
-            self.arithmetic,
-            self.math_benchmark,
-            self.logical_reasoning,
-            self.factual,
-            self.instruction_following,
-            self.multiturn_dialogue,
-            self.context_usage,
-            self.coherence,
-            self.conversation,
-            self.code_generation,
-            self.repetition,
-            self.speed_and_memory,
-        ]
+        names = list(BASE_SUITES)
         if include_dataset_suites:
-            stages.insert(3, self.gsm8k)
-        return stages
+            names.insert(DATASET_SUITE_POSITION, "gsm8k")
+        return [getattr(self, name) for name in names]
 
     def run(self, include_dataset_suites: bool = True) -> dict[str, float]:
         results: dict[str, float] = {}

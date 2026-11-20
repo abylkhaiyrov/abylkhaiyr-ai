@@ -10,6 +10,7 @@ from llm.evaluation.metrics import repeated_ngram_ratio
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.reasoning.intent import classify_intent, classify_task
+from llm.reasoning.solvers import ToolSolution, solve_with_tools
 from llm.reasoning.tools import (
     answers_match,
     extract_code,
@@ -27,6 +28,7 @@ STEP_PREFIX_CHARS = ".)- 0123456789"
 FAILED_ANSWER = None
 LONG_QUESTION_CHARS = 200
 GENERAL_CANDIDATES = 2
+TOOL_KINDS = frozenset({"math", "logic"})
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ class Solution:
     subtasks: list[str] = field(default_factory=list)
     tokens_used: int = 0
     stopped_by_budget: bool = False
+    tool: str | None = None
 
 
 GENERAL_MIN_QUALITY = 0.7
@@ -111,15 +114,41 @@ class GeneralVerifier:
 
 class ReasoningEngine:
     def __init__(
-        self, engine: InferenceEngine, verifiers: dict[str, Verifier] | None = None
+        self,
+        engine: InferenceEngine,
+        verifiers: dict[str, Verifier] | None = None,
+        use_solvers: bool = True,
     ) -> None:
         self.engine = engine
+        self.use_solvers = use_solvers
         self.verifiers = verifiers or {
             "math": MathVerifier(),
             "code": CodeVerifier(),
             "logic": LogicVerifier(),
             "general": GeneralVerifier(),
         }
+
+    def _solve_with_tool(
+        self,
+        problem: Problem,
+        on_event: Callable[[dict[str, Any]], None] | None,
+    ) -> Solution | None:
+        if not self.use_solvers or problem.kind not in TOOL_KINDS:
+            return None
+        self._emit(on_event, "tool_execution", "running", tool="solver")
+        tool: ToolSolution | None = solve_with_tools(problem.question)
+        self._emit(
+            on_event,
+            "tool_execution",
+            "completed",
+            tool=tool.tool if tool else "solver",
+            solved=tool is not None,
+        )
+        if tool is None:
+            return None
+        text = tool.text()
+        candidate = Candidate(text, tool.answer, 1.0, True)
+        return Solution(tool.answer, text, True, [candidate], tool=tool.tool)
 
     def decompose(self, problem: Problem, budget: Budget) -> list[str]:
         params = SamplingParams(
@@ -216,6 +245,19 @@ class ReasoningEngine:
             message_count=len(prompt_messages),
             max_candidates=budget.max_candidates,
         )
+        tooled = self._solve_with_tool(problem, on_event)
+        if tooled is not None:
+            self._emit(
+                on_event,
+                "answer_formation",
+                "completed",
+                verified=True,
+                candidates=1,
+                tokens_used=0,
+                stopped_by_budget=False,
+                tool=tooled.tool,
+            )
+            return tooled
         if decompose and not (cancel is not None and cancel.is_set()):
             self._emit(on_event, "decomposition", "running")
             solution.subtasks = self.decompose(problem, budget)

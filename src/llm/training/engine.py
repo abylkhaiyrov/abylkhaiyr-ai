@@ -17,6 +17,7 @@ from llm.core.errors import ResourceError, TrainingError
 from llm.core.hardware import free_disk_gb
 from llm.model.transformer import CausalLM
 from llm.optimization.adamw import AdamW
+from llm.optimization.benchmark import peak_device_gb
 from llm.optimization.grad import clip_grad_norm
 from llm.optimization.memory import (
     ensure_ram_budget,
@@ -71,6 +72,10 @@ class TrainingResult:
     best_validation_loss: float
     stopped_early: bool
     interrupted: bool = False
+    final_train_loss: float = float("nan")
+    tokens_per_second: float = 0.0
+    duration_seconds: float = 0.0
+    device_memory_gb: float = 0.0
 
 
 class Trainer:
@@ -251,7 +256,8 @@ class Trainer:
         self.model.train()
         self.monitor.begin(self.state.step)
         window_loss, window_tokens, window_steps = 0.0, 0, 0
-        window_start = time.monotonic()
+        window_start = run_start = time.monotonic()
+        session_tokens, last_train_loss = 0, float("nan")
         skips, last_validation, stopped_early, interrupted = 0, float("nan"), False, False
         while self.state.step < limit:
             if self.stop_event.is_set():
@@ -270,6 +276,8 @@ class Trainer:
             skips = 0
             self.state.step += 1
             self.state.tokens_seen += tokens
+            session_tokens += tokens
+            last_train_loss = loss
             window_loss += loss * tokens
             window_tokens += tokens
             window_steps += 1
@@ -344,6 +352,7 @@ class Trainer:
             best_validation_loss=self.state.best_validation_loss,
         )
         self.monitor.close()
+        duration = time.monotonic() - run_start
         return TrainingResult(
             self.state.step,
             self.state.tokens_seen,
@@ -351,6 +360,10 @@ class Trainer:
             self.state.best_validation_loss,
             stopped_early,
             interrupted,
+            last_train_loss,
+            session_tokens / max(duration, 1e-9),
+            duration,
+            peak_device_gb(self.device),
         )
 
     def _should_stop(self, validation_loss: float) -> bool:

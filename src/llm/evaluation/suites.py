@@ -325,3 +325,55 @@ def all_prompts() -> list[str]:
         texts.extend(user for user, _ in turn_case.turns)
         texts.append(turn_case.final_prompt)
     return texts
+
+
+TOOL_CASES = [
+    PromptCase("What is 15% of 240?", "36"),
+    PromptCase("Calculate (12 + 8) * 3 - 5", "55"),
+    PromptCase("Find x if 4x - 7 = 21.", "7"),
+    PromptCase("Solve x^2 - 5x + 6 = 0 and give the larger root.", "3"),
+    PromptCase("What is the derivative of x^3 + 2x at x = 2?", "14"),
+    PromptCase("Evaluate the integral of 2x from 0 to 3.", "9"),
+    PromptCase("What is the average of 4, 8, 15, 16, 23, 42?", "18"),
+    PromptCase("The median of 7, 1, 3, 9, 5 is what?", "5"),
+    PromptCase("Alice is older than Bob. Bob is older than Carol. Who is the youngest?", "Carol"),
+    PromptCase(
+        "A jar contains 4 green and 6 yellow marbles. What is the probability of picking a green marble?",
+        "2/5",
+    ),
+    PromptCase("What is the determinant of [[1, 2], [3, 4]]?", "-2"),
+    PromptCase("Simplify 3/4 + 1/6 as a fraction.", "11/12"),
+    PromptCase("What is 2^10?", "1024"),
+    PromptCase("What is the largest integer x with 3x + 2 < 20?", "5"),
+    PromptCase("Сколько будет 25% от 480?", "120"),
+    PromptCase("Вычисли 7 * 8 + 12", "68"),
+    PromptCase("Реши уравнение: 5x + 3 = 28", "5"),
+    PromptCase("Найди значение выражения (100 - 36) / 8", "8"),
+    PromptCase("Чему равно среднее арифметическое чисел 2, 4, 6, 8?", "5"),
+    PromptCase("Вычисли интеграл от 3*x^2 от 0 до 2", "8"),
+    PromptCase("Аня выше Бори. Боря выше Веры. Кто самый низкий?", "Вера"),
+    PromptCase("Есепте: 45 + 55", "100"),
+    PromptCase("480-нің 25 пайызы неше?", "120"),
+    PromptCase("3x + 1 = 16 теңдеуін шеш.", "5"),
+    PromptCase("Мына сандардың орташа мәні қандай: 10, 20, 30", "20"),
+]
+
+
+TOOL_HOLDOUT_CASES = [
+    PromptCase("What is 18 percent of 250?", "45"),
+    PromptCase("Compute 9 * 9 - 4 * 5", "61"),
+    PromptCase("Solve 2x + 5 = 17 for x.", "6"),
+    PromptCase("Find the roots of x^2 - 9 = 0 and report the positive root.", "3"),
+    PromptCase("Differentiate x^4 and evaluate the result at x = 1.", "4"),
+    PromptCase("What is the integral of x^2 from 1 to 2?", "7/3"),
+    PromptCase("Find the mean of 3, 5, 10.", "6"),
+    PromptCase("Tom is heavier than Sam. Sam is heavier than Max. Who is the lightest?", "Max"),
+    PromptCase("What is the determinant of [[2, 1], [5, 3]]?", "1"),
+    PromptCase("Compute log base 3 of 81", "4"),
+    PromptCase("Найди 10% от 350", "35"),
+    PromptCase("Реши: 3x - 4 = 11", "5"),
+    PromptCase("Какое число получится: 144 / 12 + 7?", "19"),
+    PromptCase("Чему равна медиана чисел 5, 1, 9, 3, 7?", "5"),
+    PromptCase("100-дің 15 пайызын тап.", "15"),
+    PromptCase("2x + 4 = 10 теңдеуін шеш", "3"),
+]

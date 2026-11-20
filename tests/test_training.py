@@ -213,3 +213,49 @@ def build_trainer_for_runner(tmp_path, model_config):
     tokenizer.save(tmp_path / "tok")
     trainer = build_trainer(tmp_path, model_config, steps=6, name="runner")
     return trainer
+
+
+def test_training_result_and_registry_record_capture_run_metadata(tmp_path, model_config):
+    from llm.core.config import ExperimentConfig
+    from llm.evaluation.registry import load_registry, record_experiment, training_record
+
+    trainer = build_trainer(tmp_path, model_config, steps=6)
+    result = trainer.train()
+    assert result.tokens_per_second > 0 and result.duration_seconds > 0
+    assert result.final_train_loss == result.final_train_loss
+    experiment = ExperimentConfig(name="meta", model=model_config, train=trainer.config)
+    details, results = training_record(experiment, result, {"conv_pass_rate": 0.5})
+    path = tmp_path / "registry.jsonl"
+    record_experiment("meta", details, results, path)
+    entry = load_registry(path)[0]
+    for key in (
+        "architecture",
+        "parameters",
+        "seed",
+        "dataset_version",
+        "tokens_processed",
+        "duration_seconds",
+        "train_config",
+    ):
+        assert key in entry
+    for key in (
+        "train_loss",
+        "validation_loss",
+        "perplexity",
+        "tokens_per_second",
+        "device_memory_gb",
+        "conv_pass_rate",
+    ):
+        assert key in entry["results"]
+
+
+def test_trainer_reports_real_progress_phases(tmp_path, model_config):
+    from llm.progress import read_progress
+
+    trainer = build_trainer(tmp_path, model_config, steps=10)
+    trainer.train()
+    stage = read_progress(tmp_path / "exp_run")["train"]
+    assert stage["status"] == "completed"
+    assert stage["total"] == 10
+    assert stage["done"] == 10
+    assert stage["results"]["final_step"] == 10
