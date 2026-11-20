@@ -12,7 +12,7 @@ import numpy as np
 
 from llm.data.binary import read_jsonl, with_extension
 from llm.data.cleaning import detect_language
-from llm.data.sft_builder import SPLITS
+from llm.data.sft_builder import SPLITS, user_prompt_keys
 from llm.data.sft_quality import PromptBlocklist, equations_hold, normalize
 from llm.evaluation.prompts import evaluation_prompts
 
@@ -118,9 +118,9 @@ def audit_corpus(
             "duplicate_prompt_rate": duplicate_rate(train),
             "top_prefix_shares": top_prefix_shares(train),
             "python_validity": python_validity(train),
-            "arithmetic_validity": arithmetic_validity(train)
-            if group in {"math", "word_math"}
-            else None,
+            "arithmetic_validity": (
+                arithmetic_validity(train) if group in {"math", "word_math"} else None
+            ),
             "curriculum_monotonicity": curriculum_monotonicity(train),
         }
         groups_report[group] = entry
@@ -128,7 +128,7 @@ def audit_corpus(
             rows = read_group_rows(groups_dir, split, group)
             eval_overlap += sum(blocklist.blocks(row) for row in rows)
             prompts_by_split.setdefault(split, set()).update(
-                normalize(row["messages"][0]["content"]) for row in rows
+                prompt for row in rows for prompt in user_prompt_keys(row)
             )
     split_overlap = len(prompts_by_split["train"] & prompts_by_split["test"]) + len(
         prompts_by_split["train"] & prompts_by_split["validation"]

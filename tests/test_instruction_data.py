@@ -1,3 +1,4 @@
+import json
 import re
 
 import pytest
@@ -12,6 +13,8 @@ from llm.data.identity import (
     load_identity_facts,
 )
 from llm.data.instructgen import CATEGORIES, build_instruction_dataset
+from llm.data.instruction_corpus import real_rows
+from llm.data.sft_builder import split_of, write_group_files
 from llm.data.sft_quality import (
     PromptBlocklist,
     QualityRules,
@@ -30,6 +33,7 @@ from llm.evaluation.conversation import (
     evaluate_check,
     run_conversation_benchmark,
 )
+from llm.evaluation.dialogue_v4 import PROBES, benchmark_cases
 from llm.evaluation.prompts import evaluation_prompts
 from llm.reasoning.tools import evaluate_expression
 
@@ -57,6 +61,34 @@ def row(user: str, assistant: str, source: str = "dolly_sft", group: str = "chat
             {"role": "assistant", "content": assistant},
         ],
     }
+
+
+def test_instruction_corpus_only_imports_source_training_rows(tmp_path):
+    groups = tmp_path / "sft_groups"
+    groups.mkdir()
+    for split in ("train", "validation", "test"):
+        record = row(f"Prompt from {split}.", "A response with enough context.")
+        (groups / f"{split}.chat.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    assert [item["messages"][0]["content"] for item in real_rows(tmp_path)] == [
+        "Prompt from train."
+    ]
+
+
+def test_group_writer_keeps_normalized_followups_out_of_training(tmp_path):
+    seed = 1
+    train_prompt = next(
+        prompt
+        for prompt in (f"Distinct task {index}" for index in range(100))
+        if split_of(prompt.lower(), seed) == "train"
+    )
+    training = row(train_prompt, "A response.", group="chat")
+    training["messages"] += row(" Held  OUT detail ", "A follow-up.")["messages"]
+    heldout = row("Held out detail", "A reference answer.", group="code")
+    counts = write_group_files(
+        [training, heldout], tmp_path, seed, set(), pinned_test_prompts={"held out detail"}
+    )
+    assert counts["chat"]["train"] == 0
+    assert counts["code"]["test"] == 1
 
 
 def test_identity_facts_come_from_model_config(facts):
@@ -141,6 +173,19 @@ def test_synthetic_prompts_never_match_independent_benchmark_after_blocklist(fac
     prompts = {p.strip().lower() for p in benchmark_prompts()}
     assert kept
     assert all(r["messages"][0]["content"].strip().lower() not in prompts for r in kept)
+
+
+def test_decontamination_reserves_dialogue_v4_probes_and_history():
+    reserved = set(evaluation_prompts())
+    probes = {
+        message.content
+        for conversation in PROBES.values()
+        for message in conversation
+        if message.role == "user"
+    }
+    histories = {question for case in benchmark_cases() for question, _ in case.history}
+    assert probes and probes <= reserved
+    assert histories and histories <= reserved
 
 
 def test_blocklist_catches_benchmark_prompt_and_paraphrase_ngrams():

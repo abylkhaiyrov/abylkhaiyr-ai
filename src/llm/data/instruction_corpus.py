@@ -12,7 +12,7 @@ from llm.data.cleaning import detect_language
 from llm.data.codegen import build_code_dataset
 from llm.data.identity import build_identity_dataset, load_identity_facts
 from llm.data.instructgen import build_instruction_dataset
-from llm.data.sft_builder import SPLITS, write_group_files
+from llm.data.sft_builder import SPLITS, user_prompt_keys, write_group_files
 from llm.data.sft_quality import (
     PromptBlocklist,
     QualityRules,
@@ -74,11 +74,10 @@ class InstructionBuildConfig:
         return replace(self.rules, source_caps=caps, prefix_cap=self.prefix_cap)
 
 
-def read_group(source_dir: Path, group: str) -> Iterator[dict]:
-    for split in SPLITS:
-        path = source_dir / "sft_groups" / f"{split}.{group}.jsonl"
-        if path.is_file():
-            yield from read_jsonl(path)
+def read_group(source_dir: Path, group: str, split: str) -> Iterator[dict]:
+    path = source_dir / "sft_groups" / f"{split}.{group}.jsonl"
+    if path.is_file():
+        yield from read_jsonl(path)
 
 
 def reassign(row: dict) -> dict | None:
@@ -102,7 +101,7 @@ def reassign(row: dict) -> dict | None:
 
 def real_rows(source_dir: Path) -> Iterator[dict]:
     for group in REAL_GROUPS:
-        for row in read_group(source_dir, group):
+        for row in read_group(source_dir, group, "train"):
             if row.get("source", "").startswith(GENERATED_CODE_PREFIX):
                 continue
             updated = reassign(row)
@@ -142,13 +141,20 @@ def build_instruction_corpus(
     groups_dir.mkdir(parents=True, exist_ok=True)
     quality = SFTQualityFilter(config.quality_rules(), tokenizer)
     blocklist = PromptBlocklist(evaluation_prompts(config.benchmark_dir))
+    source_holdout = {
+        prompt
+        for split in ("test", "validation")
+        for group in REAL_GROUPS
+        for row in read_group(source, group, split)
+        for prompt in user_prompt_keys(row)
+    }
     candidates = [*real_rows(source), *synthetic_rows(config, model)]
     admitted: list[dict] = []
     contaminated = 0
     for row in candidates:
         if row["group"] == "rejected_gsm8k":
             quality.rejected[f"{GSM8K_SOURCE}:wrong_arithmetic"] += 1
-        elif blocklist.blocks(row):
+        elif not source_holdout.isdisjoint(user_prompt_keys(row)) or blocklist.blocks(row):
             contaminated += 1
         elif quality.admit(row):
             admitted.append(row)

@@ -23,6 +23,7 @@ from llm.data.mathgen import (
     write_dataset,
 )
 from llm.data.preference import tokenize_preference_split
+from llm.data.sft_quality import normalize
 from llm.tokenizer.bpe import BPETokenizer
 
 SPLITS = ("train", "validation", "test")
@@ -79,7 +80,13 @@ def math_conversations(
 
 
 def _prompt_key(row: dict) -> str:
-    return row["messages"][0]["content"].strip().lower()
+    return normalize(row["messages"][0]["content"])
+
+
+def user_prompt_keys(row: dict) -> set[str]:
+    return {
+        normalize(message["content"]) for message in row["messages"] if message["role"] == "user"
+    }
 
 
 def _dialogue_key(row: dict) -> str:
@@ -150,6 +157,21 @@ def write_group_files(
         prompt_key = _prompt_key(row)
         split = "test" if prompt_key in pinned else split_of(prompt_key, seed)
         buckets.setdefault((row["group"], split), []).append(row)
+    reserved: set[str] = set()
+    for split in reversed(SPLITS):
+        split_prompts: set[str] = set()
+        for group, current in buckets:
+            if current != split:
+                continue
+            key = (group, split)
+            kept = []
+            for row in buckets[key]:
+                prompts = user_prompt_keys(row)
+                if reserved.isdisjoint(prompts):
+                    kept.append(row)
+                    split_prompts.update(prompts)
+            buckets[key] = kept
+        reserved.update(split_prompts)
     for (group, split), items in buckets.items():
         if group not in keep_order:
             random.Random(seed).shuffle(items)
