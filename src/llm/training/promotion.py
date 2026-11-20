@@ -95,8 +95,7 @@ def quality_failures(candidate: Candidate, reference: Mapping[str, float]) -> li
         failures.append("conversational_improvement_or_repetition_gate_failed")
     if candidate.pass_rate < READY_PASS_RATE:
         failures.append("conversational_pass_rate_below_0.5")
-    if "dialogue_v4_cases" in candidate.metrics:
-        failures.extend(dialogue_v4_failures(candidate.metrics, reference))
+    failures.extend(dialogue_v4_failures(candidate.metrics, reference))
     for key in ("test_perplexity", "perplexity_en", "perplexity_ru", "perplexity_kk"):
         baseline = reference.get(key, float("nan"))
         value = candidate.metrics.get(key, float("nan"))
@@ -133,6 +132,18 @@ def dialogue_v4_failures(
         if not (math.isfinite(before) and math.isfinite(after)) or after < before:
             failures.append(f"missing_or_regressed_{key}")
     return failures
+
+
+def model_status(
+    candidate: Candidate, failures: list[str], reference_pass_rate: float, production: str | None
+) -> str:
+    if candidate.checkpoint == production:
+        return "production"
+    if any(failure.startswith("regression_") for failure in failures):
+        return "rejected"
+    if not failures:
+        return "validated"
+    return "candidate" if eligible(candidate, reference_pass_rate) else "experimental"
 
 
 def select_production(
@@ -180,6 +191,12 @@ def promote(
             item.checkpoint: {
                 "stage": item.stage,
                 "metrics": dict(item.metrics),
+                "status": model_status(
+                    item,
+                    checks[item.checkpoint],
+                    baseline_rate,
+                    chosen.checkpoint if chosen else current_path,
+                ),
                 "quality_failures": checks[item.checkpoint],
             }
             for item in candidates

@@ -1,5 +1,6 @@
 from llm.training.promotion import (
     Candidate,
+    model_status,
     production_checkpoint,
     promote,
     read_manifest,
@@ -62,8 +63,22 @@ def test_promotion_requires_held_out_language_metrics(tmp_path):
     assert promote(tmp_path, [missing], reference_metrics=reference)["production"] is None
     degraded = Candidate(path, "sft", {**reference, **missing.metrics, "perplexity_kk": 40.0})
     assert promote(tmp_path, [degraded], reference_metrics=reference)["production"] is None
+    undialogued = Candidate(path, "sft", {**reference, **missing.metrics})
+    assert promote(tmp_path, [undialogued], reference_metrics=reference)["production"] is None
 
-    improved = Candidate(path, "sft", {**reference, **missing.metrics})
+    dialogue = {
+        "dialogue_v4_cases": 600,
+        "basic_dialogue_manual": 0.95,
+        "instruction_exact": 0.9,
+        "multi_turn_exact": 0.85,
+        "incoherent_manual": 0.01,
+        "prompt_echo": 0.0,
+        "dialogue_v4_ru": 0.9,
+        "dialogue_v4_en": 0.9,
+        "dialogue_v4_kk": 0.9,
+    }
+    reference = {**reference, "dialogue_v4_ru": 0.5, "dialogue_v4_en": 0.5, "dialogue_v4_kk": 0.5}
+    improved = Candidate(path, "sft", {**reference, **missing.metrics, **dialogue})
     assert promote(tmp_path, [improved], reference_metrics=reference)["production"]["ready"] is True
     assert production_checkpoint(tmp_path) == path
     assert (
@@ -79,3 +94,14 @@ def test_promotion_requires_held_out_language_metrics(tmp_path):
     assert production_checkpoint(tmp_path) == second
     assert rollback(tmp_path) == path
     assert production_checkpoint(tmp_path) == path
+
+
+def test_model_status_separates_experimental_candidate_rejected_and_production():
+    reference = 0.2
+    weak = candidate("sft", 0.1)
+    better = candidate("sft", 0.4, name="checkpoints/a/step-1")
+    assert model_status(weak, ["x"], reference, None) == "experimental"
+    assert model_status(better, ["x"], reference, None) == "candidate"
+    assert model_status(better, ["regression_perplexity_ru"], reference, None) == "rejected"
+    assert model_status(better, [], reference, None) == "validated"
+    assert model_status(better, [], reference, better.checkpoint) == "production"

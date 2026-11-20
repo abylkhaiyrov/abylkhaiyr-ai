@@ -17,6 +17,7 @@ def main() -> int:
     parser.add_argument("--corpus-dir", default="data/v2")
     parser.add_argument("--checkpoints", default="checkpoints/tiny_v32_sft")
     parser.add_argument("--output", default="experiments/sft_budget.json")
+    parser.add_argument("--mixture", default=None, help="group=weight,group=weight")
     parser.add_argument(
         "trials", nargs="+", help="name:learning_rate:budget_tokens:replay_fraction"
     )
@@ -29,6 +30,11 @@ def main() -> int:
             )
         }
     )
+    mixture = (
+        {k: float(v) for k, v in (item.split("=") for item in args.mixture.split(","))}
+        if args.mixture
+        else base.train.mixture
+    )
     tokenizer = BPETokenizer.load(base.tokenizer.path)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -40,7 +46,7 @@ def main() -> int:
         decay = float(extra[2]) if len(extra) > 2 else 1.0
         variant = EfficiencyVariant(
             name,
-            base.train.mixture,
+            mixture,
             pack=True,
             learning_rate=float(rate),
             replay_fraction=float(replay),
