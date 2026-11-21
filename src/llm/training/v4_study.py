@@ -26,7 +26,7 @@ CURRICULUM_START = {
     "math": 0.01,
     "code": 0.01,
 }
-VARIANTS = ("balanced", "curriculum", "replay")
+VARIANTS = ("balanced", "curriculum", "replay", "dialogue_reading")
 
 
 @dataclass
@@ -62,15 +62,17 @@ def study_config(
         raise ValueError("SFT steps must be positive")
     if not init.is_dir():
         raise ValueError(f"checkpoint directory does not exist: {init}")
+    mixture = BALANCED_MIXTURE.copy()
+    if variant == "dialogue_reading":
+        del mixture["semantic_kk"]
     groups = root / "sft_groups"
-    for name in BALANCED_MIXTURE:
+    for name in mixture:
         for split in ("train", "validation"):
             if not (groups / f"{split}.{name}.ids.bin").is_file():
                 raise ValueError(f"missing SFT split {split}.{name}")
     optimizer = base.train.optimizer.model_copy(
         update={"learning_rate": 2e-4, "warmup_steps": min(10, steps // 10)}
     )
-    mixture = BALANCED_MIXTURE.copy()
     has_curriculum = variant == "curriculum"
     grad_accum = 2
     train = base.train.model_copy(

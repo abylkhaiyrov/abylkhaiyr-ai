@@ -37,18 +37,22 @@ def evaluate(engine: InferenceEngine, rows: list[dict]) -> dict:
             batch = cases[offset : offset + 8]
             inputs = [
                 engine.tokenizer.encode_conversation(
-                    engine.fit_messages(messages, 1)[0], add_generation_prompt=True,
+                    engine.fit_messages(messages, 1)[0],
+                    add_generation_prompt=True,
                 )
                 for messages, _ in batch
             ]
             lengths = torch.tensor([len(ids) - 1 for ids in inputs], device=engine.device)
             ids = torch.nn.utils.rnn.pad_sequence(
-                [torch.tensor(item) for item in inputs], batch_first=True,
+                [torch.tensor(item) for item in inputs],
+                batch_first=True,
                 padding_value=engine.tokenizer.pad_id,
             ).to(engine.device)
             logits = engine.model(ids)[torch.arange(len(batch), device=engine.device), lengths]
             choices = logits[:, column].argmax(dim=1).tolist()
-            matched += sum(choice == answer for choice, (_, answer) in zip(choices, batch, strict=True))
+            matched += sum(
+                choice == answer for choice, (_, answer) in zip(choices, batch, strict=True)
+            )
         results[language] = proportion(matched, len(cases))
     total = sum(result["n"] for result in results.values())
     hit = sum(result["successes"] for result in results.values())
@@ -64,7 +68,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     rows = [
-        row for row in read_jsonl(args.cases)
+        row
+        for row in read_jsonl(args.cases)
         if row["category"] == "reading" and row["source"].startswith("belebele_")
     ]
     results = {
