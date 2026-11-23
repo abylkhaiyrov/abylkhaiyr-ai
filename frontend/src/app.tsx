@@ -18,7 +18,7 @@ const MonitoringPage = lazy(() => import("@/pages/monitoring-page").then((module
 const ChatPage = lazy(() => import("@/pages/chat-page").then((module) => ({ default: module.ChatPage })));
 const HistoryPage = lazy(() => import("@/pages/history-page").then((module) => ({ default: module.HistoryPage })));
 const ProcessesPage = lazy(() => import("@/pages/processes-page").then((module) => ({ default: module.ProcessesPage })));
-const ModelsPage = lazy(() => import("@/pages/resource-pages").then((module) => ({ default: module.ModelsPage })));
+const ModelsPage = lazy(() => import("@/pages/models-page").then((module) => ({ default: module.ModelsPage })));
 const DatasetsPage = lazy(() => import("@/pages/resource-pages").then((module) => ({ default: module.DatasetsPage })));
 const ExperimentsPage = lazy(() => import("@/pages/resource-pages").then((module) => ({ default: module.ExperimentsPage })));
 const EvaluationPage = lazy(() => import("@/pages/evaluation-page").then((module) => ({ default: module.EvaluationPage })));

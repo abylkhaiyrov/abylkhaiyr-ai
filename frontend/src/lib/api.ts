@@ -440,6 +440,8 @@ export const api = {
   catalogRun: (id: string) => http<{ run: RunEntry; pipeline: Pipeline | null; detail: RunDetail | null }>(`/catalog/runs/${runPath(id)}`, {}, shape({ run: runEntry })),
   catalogRuns: (query: RunQuery = {}) =>
     http<RunPage>(`/catalog/runs?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape<RunPage>({ items: arrayOf(runEntry), total: number })),
+  modelCheckpoints: (query: { q?: string; status?: CheckpointStatus; stage?: string; limit?: number; offset?: number } = {}) =>
+    http<{ items: Model[]; total: number }>(`/models/checkpoints?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape({ items: arrayOf(shape({ id: string, status: string })), total: number })),
   modelCatalog: () => http<CatalogModel[]>("/models/catalog", {}, listOf<CatalogModel>(catalogModel)),
   setAllowedModels: (ids: string[]) => http<CatalogModel[]>("/models/allowed", body("PUT", { ids }), listOf<CatalogModel>(catalogModel)),
   inferenceProfiles: () => http<InferenceProfile[]>("/inference/profiles", {}, listOf<InferenceProfile>(shape({ id: string, available: boolean, allowed: boolean }))),

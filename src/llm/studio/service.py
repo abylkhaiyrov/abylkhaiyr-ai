@@ -25,7 +25,12 @@ from llm.studio.inference_profiles import (
     ProfileAccessPolicy,
     profile_view,
 )
-from llm.studio.model_catalog import ModelAccessPolicy, build_catalog, user_view
+from llm.studio.model_catalog import (
+    ModelAccessPolicy,
+    build_catalog,
+    checkpoint_page,
+    user_view,
+)
 from llm.studio.model_manager import ModelManager
 from llm.studio.model_registry import production_info
 from llm.studio.models import Chat, GenerationJob, MessageRecord, ProcessEvent, SystemMetric
@@ -316,6 +321,16 @@ class StudioService:
 
     def user_models(self) -> list[dict[str, Any]]:
         return user_view(self.model_catalog())
+
+    def checkpoint_page(
+        self, query: str | None, status: str | None, stage: str | None, offset: int, limit: int
+    ) -> dict[str, Any]:
+        registry = (
+            self.model_manager.registry() if self.model_manager is not None else {"models": []}
+        )
+        return checkpoint_page(
+            registry["models"], query=query, status=status, stage=stage, offset=offset, limit=limit
+        )
 
     def resolve_user_checkpoint(self, model_id: str) -> str | None:
         entry = next((item for item in self.model_catalog() if item["id"] == model_id), None)

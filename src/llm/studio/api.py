@@ -307,6 +307,17 @@ def create_studio_router(
     ) -> dict[str, Any]:
         return model_manager.registry()
 
+    @router.get("/models/checkpoints")
+    def model_checkpoints(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        status_filter: Annotated[str | None, Query(alias="status", max_length=32)] = None,
+        stage: Annotated[str | None, Query(max_length=32)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        return studio.checkpoint_page(q, status_filter, stage, offset, limit)
+
     @router.get("/models/catalog")
     def model_catalog(
         _: Annotated[tuple[Any, str], Depends(admin_identity)],

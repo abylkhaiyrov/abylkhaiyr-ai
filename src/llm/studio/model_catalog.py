@@ -128,3 +128,24 @@ class ModelAccessPolicy(AccessPolicy):
         if unknown or rejected:
             raise ModelPolicyError(json.dumps({"unknown": unknown, "rejected": rejected}))
         return self.store(set(identifiers))
+
+
+def checkpoint_page(
+    models: Iterable[dict[str, Any]],
+    *,
+    query: str | None,
+    status: str | None,
+    stage: str | None,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    needle = (query or "").strip().lower()
+    matched = [
+        item
+        for item in models
+        if (status is None or item["status"] == status)
+        and (stage is None or item["stage"] == stage)
+        and (not needle or needle in f"{item['id']} {item['name']}".lower())
+    ]
+    matched.sort(key=lambda item: (item["created_at"] or "", item["id"]), reverse=True)
+    return {"items": matched[offset : offset + limit], "total": len(matched)}

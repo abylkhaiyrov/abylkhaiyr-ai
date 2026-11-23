@@ -132,3 +132,46 @@ def test_users_can_only_pick_models_the_admin_allowed(app):
     missing = user.post("/api/chats", headers=headers, json={"model_name": "missing"})
     assert missing.json()["model_name"] is None
     assert user.post("/api/chats", headers=headers, json={}).status_code == 201
+
+
+def test_checkpoint_page_filters_sorts_and_paginates():
+    from llm.studio.model_catalog import checkpoint_page
+
+    models = [
+        {
+            "id": f"checkpoints/m{i}/step-1",
+            "name": f"m{i}",
+            "status": "validated" if i % 2 else "experimental",
+            "stage": "sft",
+            "created_at": f"2026-01-0{i + 1}",
+        }
+        for i in range(6)
+    ]
+    page = checkpoint_page(models, query=None, status=None, stage=None, offset=0, limit=4)
+    assert page["total"] == 6
+    assert [item["name"] for item in page["items"]] == ["m5", "m4", "m3", "m2"]
+    rest = checkpoint_page(models, query=None, status=None, stage=None, offset=4, limit=4)
+    assert [item["name"] for item in rest["items"]] == ["m1", "m0"]
+    assert (
+        checkpoint_page(models, query="M3", status=None, stage=None, offset=0, limit=10)["total"]
+        == 1
+    )
+    assert (
+        checkpoint_page(models, query=None, status="validated", stage=None, offset=0, limit=10)[
+            "total"
+        ]
+        == 3
+    )
+    assert (
+        checkpoint_page(models, query=None, status=None, stage="dpo", offset=0, limit=10)["items"]
+        == []
+    )
+
+
+def test_checkpoint_endpoint_is_admin_only_and_paginated(app):
+    admin = sign_in(app, "admin", "admin")
+    user, _ = register(app)
+    assert user.get("/api/models/checkpoints").status_code == 403
+    page = admin.get("/api/models/checkpoints", params={"limit": 1}).json()
+    assert len(page["items"]) <= 1 and page["total"] >= 1
+    assert admin.get("/api/models/checkpoints", params={"limit": 0}).status_code == 422

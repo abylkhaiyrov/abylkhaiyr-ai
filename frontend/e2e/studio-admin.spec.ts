@@ -28,5 +28,12 @@ test("models page separates the catalog from the checkpoint registry", async ({ 
   await expect(page.getByText("Visible to users").first()).toBeVisible();
   await page.getByRole("tab", { name: "Checkpoint registry" }).click();
   await expect(page.getByRole("columnheader", { name: "Stage" })).toBeVisible();
+  await expect(page.getByText(/Showing 50 of \d+/)).toBeVisible();
+  const before = await page.locator("tbody tr").count();
+  await page.getByRole("button", { name: "Show more" }).click();
+  await expect.poll(() => page.locator("tbody tr").count()).toBeGreaterThan(before);
+  await page.getByLabel("Search by name or model").fill("tiny_v31");
+  await expect(page.getByText(/Showing \d+ of \d+/)).toBeVisible();
+  expect(await page.locator("tbody tr").count()).toBeLessThan(before);
   await page.screenshot({ path: info.outputPath("models.png"), fullPage: true });
 });
