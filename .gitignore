@@ -39,3 +39,5 @@ data/v4_expanded/
 graphufy-out/
 graphify-out/
 data/v4_1/
+frontend/test-results/
+frontend/playwright-report/

@@ -7,6 +7,7 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { api } from "@/lib/api";
+import { Select } from "@/components/ui/select";
 import { useUiStore } from "@/store/ui-store";
 
 function UserMenu() {
@@ -60,10 +61,10 @@ export function HeaderActions() {
   const { theme, locale, setTheme, setLocale } = useUiStore();
   return (
     <div className="flex items-center gap-0.5">
-      <select aria-label={t("settings.language")} className="h-8 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:bg-muted" value={locale} onChange={(event) => setLocale(event.target.value as "ru" | "en")}>
+      <Select compact aria-label={t("settings.language")} value={locale} onChange={(event) => setLocale(event.target.value as "ru" | "en")}>
         <option value="ru">RU</option>
         <option value="en">EN</option>
-      </select>
+      </Select>
       <Button variant="ghost" size="icon" aria-label={t("settings.theme")} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</Button>
       <NotificationBell />
       <UserMenu />

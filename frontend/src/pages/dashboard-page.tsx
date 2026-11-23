@@ -9,6 +9,7 @@ import { ModelRolesCard } from "@/components/dashboard/model-roles-card";
 import { ErrorState, LoadingState, PageHeader, Panel } from "@/components/data-state";
 import { PipelineTimeline } from "@/components/pipeline/pipeline-timeline";
 import { api } from "@/lib/api";
+import { Select } from "@/components/ui/select";
 import { useRuntime } from "@/hooks/use-runtime";
 
 export function DashboardPage() {
@@ -26,10 +27,10 @@ export function DashboardPage() {
     <div className="grid gap-8">
       <PageHeader title={t("dashboard.title")} subtitle={t("dashboard.subtitle")} actions={history.data?.length ? (
         <label className="grid gap-1 text-xs">{t("evaluation.experiment")}
-          <select className="field" value={selected} onChange={(event) => setSelected(event.target.value)}>
+          <Select value={selected} onChange={(event) => setSelected(event.target.value)}>
             <option value="">{t("dashboard.currentExperiment")}</option>
             {history.data.map((item) => <option key={item.id} value={item.id}>{item.model_name}</option>)}
-          </select>
+          </Select>
         </label>
       ) : null} />
       <HeroCard pipeline={pipeline} />

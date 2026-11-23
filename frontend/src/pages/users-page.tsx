@@ -13,6 +13,7 @@ import { useFormat } from "@/hooks/use-format";
 import { fieldOf } from "@/lib/account-errors";
 import { api, type Role, type User } from "@/lib/api";
 import { firstError, validateEmail, validateName, validateUsername } from "@/lib/validation";
+import { Select } from "@/components/ui/select";
 import { useToastStore } from "@/store/toast-store";
 
 const PAGE = 15;
@@ -51,10 +52,10 @@ function UserDialog({ user, self, onClose }: { user: User; self: boolean; onClos
           <TextField label={t("auth.email")} type="email" value={form.email} onChange={set("email")} error={fieldError("email")} />
           <TextField label={t("auth.username")} value={form.username} onChange={set("username")} error={fieldError("username")} />
           <label className="grid gap-1.5 text-[13px] font-medium">{t("users.role")}
-            <select className="field h-9" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as Role })}>
+            <Select className="h-9" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as Role })}>
               <option value="USER">{t("role.account.USER")}</option>
               <option value="ADMIN">{t("role.account.ADMIN")}</option>
-            </select>
+            </Select>
           </label>
           {save.error && !fieldOf(save.error) ? <p role="alert" className="text-[13px] text-destructive">{describe(save.error)}</p> : null}
         </div>
@@ -101,16 +102,16 @@ export function UsersPage() {
           <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input type="search" aria-label={t("users.search")} placeholder={t("users.search")} className="field pl-8" value={search} onChange={(event) => { setSearch(event.target.value); reset(); }} />
         </div>
-        <select aria-label={t("users.role")} className="field w-auto" value={role} onChange={(event) => { setRole(event.target.value as Role | ""); reset(); }}>
+        <Select inline aria-label={t("users.role")} value={role} onChange={(event) => { setRole(event.target.value as Role | ""); reset(); }}>
           <option value="">{t("users.allRoles")}</option>
           <option value="ADMIN">{t("role.account.ADMIN")}</option>
           <option value="USER">{t("role.account.USER")}</option>
-        </select>
-        <select aria-label={t("users.status")} className="field w-auto" value={status} onChange={(event) => { setStatus(event.target.value as typeof status); reset(); }}>
+        </Select>
+        <Select inline aria-label={t("users.status")} value={status} onChange={(event) => { setStatus(event.target.value as typeof status); reset(); }}>
           <option value="">{t("users.allStatuses")}</option>
           <option value="active">{t("status.active")}</option>
           <option value="blocked">{t("users.blocked")}</option>
-        </select>
+        </Select>
       </div>
       {users.isPending ? <div role="status" aria-busy="true" className="grid gap-2">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted" />)}</div>
         : users.isError ? <ErrorState error={users.error} retry={() => void users.refetch()} />

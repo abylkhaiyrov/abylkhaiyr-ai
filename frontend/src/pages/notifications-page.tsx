@@ -6,6 +6,7 @@ import { NotificationList } from "@/components/notifications/notification-list";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { useNotificationActions, useNotificationList } from "@/hooks/use-notifications";
+import { Select } from "@/components/ui/select";
 import type { NotificationType } from "@/lib/api";
 
 const PAGE = 20;
@@ -30,10 +31,10 @@ export function NotificationsPage() {
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={filter} onChange={(value) => { setFilter(value); setPage(0); }} items={[{ value: "all", label: t("notification.filterAll") }, { value: "unread", label: t("notification.filterUnread") }]} />
-        <select aria-label={t("notification.type")} className="field w-auto" value={type} onChange={(event) => { setType(event.target.value as NotificationType | ""); setPage(0); }}>
+        <Select inline aria-label={t("notification.type")} value={type} onChange={(event) => { setType(event.target.value as NotificationType | ""); setPage(0); }}>
           <option value="">{t("notification.allTypes")}</option>
           {TYPES.map((item) => <option key={item} value={item}>{t(`notification.types.${item}`)}</option>)}
-        </select>
+        </Select>
       </div>
       <NotificationList query={list} />
       {pages > 1 ? (

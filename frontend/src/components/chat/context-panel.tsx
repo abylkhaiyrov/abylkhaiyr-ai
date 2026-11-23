@@ -3,6 +3,7 @@ import { Gauge, SquarePen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { Select } from "@/components/ui/select";
 import { useFormat } from "@/hooks/use-format";
 
 const WINDOWS = [0, 2, 4, 8, 16];
@@ -49,9 +50,9 @@ export function ContextPanel({ used, limit, messageCount, window: windowSize, di
             <p className="text-xs text-muted-foreground tabular-nums">{used === null || !limit ? t("chat.contextEmpty") : t("chat.context", { used: format.number(used, 0), limit: format.number(limit, 0) })} · {t("chat.messagesCount", { count: messageCount })}</p>
           </div>
           <label className="grid gap-1 text-xs font-medium">{t("chat.contextWindow")}
-            <select className="field" disabled={disabled} value={windowSize} onChange={(event) => onWindow(Number(event.target.value))}>
+            <Select disabled={disabled} value={windowSize} onChange={(event) => onWindow(Number(event.target.value))}>
               {WINDOWS.map((value) => <option key={value} value={value}>{value === 0 ? t("chat.contextAll") : t("chat.contextLast", { count: value })}</option>)}
-            </select>
+            </Select>
             <span className="font-normal text-muted-foreground">{t("chat.contextHelp")}</span>
           </label>
           <div className="flex flex-wrap gap-2">

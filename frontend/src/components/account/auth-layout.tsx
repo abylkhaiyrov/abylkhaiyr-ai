@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Toaster } from "@/components/toaster";
+import { Select } from "@/components/ui/select";
 import { useUiStore } from "@/store/ui-store";
 
 export function AuthLayout({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
@@ -9,10 +10,10 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
   return (
     <main className="grid min-h-dvh place-items-center p-4">
       <div className="absolute right-4 top-4">
-        <select className="h-8 rounded-md bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted" value={locale} onChange={(event) => setLocale(event.target.value as "ru" | "en")} aria-label={t("settings.language")}>
+        <Select compact value={locale} onChange={(event) => setLocale(event.target.value as "ru" | "en")} aria-label={t("settings.language")}>
           <option value="ru">RU</option>
           <option value="en">EN</option>
-        </select>
+        </Select>
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-8">

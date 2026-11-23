@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { DEFAULT_SETTINGS } from "@/lib/chat-settings";
+import { Select } from "@/components/ui/select";
 import type { GenerationSettings } from "@/lib/api";
 
 const MODES = ["standard", "reasoning", "precise", "creative"] as const;
@@ -42,9 +43,9 @@ export function SettingsDialog({ open, settings, systemPrompt, onClose, onSave }
     >
       <div className="grid gap-4">
         <label className="grid gap-1.5 text-sm font-medium">{t("chat.mode")}
-          <select className="field" value={draft.mode} onChange={(event) => setDraft({ ...draft, mode: event.target.value as typeof draft.mode })}>
+          <Select value={draft.mode} onChange={(event) => setDraft({ ...draft, mode: event.target.value as typeof draft.mode })}>
             {MODES.map((mode) => <option key={mode} value={mode}>{t(`chat.modes.${mode}`)}</option>)}
-          </select>
+          </Select>
           <span className="text-xs font-normal text-muted-foreground">{t(`chat.modeHelp.${draft.mode}`)}</span>
         </label>
         {FIELDS.map(([key, label, min, max, step]) => (

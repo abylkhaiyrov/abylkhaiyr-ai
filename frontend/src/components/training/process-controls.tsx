@@ -11,6 +11,7 @@ import { useRuntime } from "@/hooks/use-runtime";
 import { useApiError } from "@/hooks/use-api-error";
 import { api } from "@/lib/api";
 import { ApiError } from "@/lib/http";
+import { Select } from "@/components/ui/select";
 import { useToastStore } from "@/store/toast-store";
 
 type StopTarget = { kind: "pipeline" } | { kind: "process"; id: string } | null;
@@ -54,10 +55,10 @@ export function ProcessControls() {
     <Panel title={t("training.control")}>
       <div className="grid gap-4">
         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <select aria-label={t("training.config")} className="field" value={config} onChange={(event) => setConfig(event.target.value)}>
+          <Select aria-label={t("training.config")} value={config} onChange={(event) => setConfig(event.target.value)}>
             <option value="">{t("training.chooseConfig")}</option>
             {launchable.map((item) => <option key={item.path} value={item.path}>{item.name} · {t(`modelStage.${item.stage}`)}</option>)}
-          </select>
+          </Select>
           <Button disabled={busy || config === "" || start.isPending} onClick={() => start.mutate()}><Play size={14} />{t("training.launch")}</Button>
         </div>
         {blockReason ? <p role="status" className="text-xs text-warning">{blockReason}</p> : null}

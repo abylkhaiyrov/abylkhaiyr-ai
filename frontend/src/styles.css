@@ -6,6 +6,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --background: 0 0% 100%;
     --foreground: 240 10% 9%;
     --card: 0 0% 100%;
@@ -29,6 +30,7 @@
   }
 
   .dark {
+    color-scheme: dark;
     --background: 240 6% 6%;
     --foreground: 0 0% 96%;
     --card: 240 5% 9%;
@@ -52,10 +54,15 @@
   }
 
   * { @apply border-border; }
-  html { @apply bg-background; font-feature-settings: "cv11", "ss01"; }
+  html { @apply bg-background; font-feature-settings: "cv11", "ss01"; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
   body { @apply min-h-dvh bg-background font-sans text-[14px] leading-6 text-foreground antialiased; }
   h1, h2, h3 { @apply tracking-tight; }
-  button, input, select, textarea { font: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  select, option, optgroup { background-color: hsl(var(--background)); color: hsl(var(--foreground)); }
+  option:checked, option:hover { background-color: hsl(var(--muted)); color: hsl(var(--foreground)); }
+  option:disabled { color: hsl(var(--muted-foreground)); }
+  input::placeholder, textarea::placeholder { opacity: 1; }
+  @media (forced-colors: active) { .field, select { border: 1px solid ButtonText; } }
   :focus-visible { @apply outline-none ring-2 ring-accent/70 ring-offset-2 ring-offset-background; }
   ::selection { @apply bg-accent/25; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -64,9 +71,10 @@
 }
 
 @layer components {
+  .select-field { @apply appearance-none pr-8; }
   .page-title { @apply text-[22px] font-semibold leading-8 tracking-tight; }
   .page-subtitle { @apply text-[13px] text-muted-foreground; }
-  .field { @apply h-8 w-full rounded-md border bg-transparent px-2.5 text-[13px] placeholder:text-muted-foreground hover:border-muted-foreground/40; }
+  .field { @apply h-8 w-full rounded-md border bg-background px-2.5 text-[13px] placeholder:text-muted-foreground hover:border-muted-foreground/40; }
   .label-caps { @apply text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground; }
   .data-table { @apply w-full text-left text-[13px]; }
   .data-table th { @apply whitespace-nowrap border-b px-3 py-2 text-xs font-medium text-muted-foreground; }
