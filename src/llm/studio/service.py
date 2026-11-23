@@ -17,6 +17,7 @@ from llm.studio.auth import AuthenticationService
 from llm.studio.database import create_sqlite_engine, ensure_studio_schema, make_session_factory
 from llm.studio.evaluations import evaluation_reports
 from llm.studio.experiments import ExperimentCatalog
+from llm.studio.model_catalog import ModelAccessPolicy, build_catalog, user_view
 from llm.studio.model_manager import ModelManager
 from llm.studio.model_registry import production_info
 from llm.studio.models import Chat, GenerationJob, MessageRecord, ProcessEvent, SystemMetric
@@ -79,6 +80,7 @@ class StudioService:
         self.users = UserDirectory(self.session_factory, self.auth, self.notifications)
         self.processes = ProcessManager(self.session_factory, self.root)
         self.runtime = RuntimeState(self.root)
+        self.model_policy = ModelAccessPolicy(self.session_factory)
         self.catalog = ExperimentCatalog(self.root, self.runtime)
         self.run_catalog = RunCatalog(
             self.runtime.pipeline_history, self.catalog.runs, self.processes.list
@@ -294,6 +296,18 @@ class StudioService:
             model["context_length"] = config.get("max_position_embeddings")
             model["metrics"] = metrics_by_run.get(run_name, {})
         return models
+
+    def model_catalog(self) -> list[dict[str, Any]]:
+        registry = (
+            self.model_manager.registry() if self.model_manager is not None else {"models": []}
+        )
+        return build_catalog(registry["models"], self.model_policy.allowed())
+
+    def user_models(self) -> list[dict[str, Any]]:
+        return user_view(self.model_catalog())
+
+    def set_allowed_models(self, identifiers: list[str]) -> list[str]:
+        return self.model_policy.update(identifiers, self.model_catalog)
 
     def datasets(self) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []

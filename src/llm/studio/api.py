@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from llm.inference.sampling import SamplingParams
 from llm.studio.api_accounts import create_account_router
+from llm.studio.model_catalog import ModelPolicyError
 from llm.studio.model_manager import ModelManager, ModelManagerError
 from llm.studio.processes import ProcessError
 from llm.studio.security import build_dependencies
@@ -42,6 +43,11 @@ class ChatUpdateRequest(BaseModel):
     generation_settings: dict[str, Any] | None = None
     pinned: bool | None = None
     archived: bool | None = None
+
+
+class AllowedModelsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ids: list[Annotated[str, Field(max_length=200)]] = Field(max_length=500)
 
 
 class ModelLoadRequest(BaseModel):
@@ -287,6 +293,31 @@ def create_studio_router(
         _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> dict[str, Any]:
         return model_manager.registry()
+
+    @router.get("/models/catalog")
+    def model_catalog(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+    ) -> list[dict[str, Any]]:
+        return studio.model_catalog()
+
+    @router.put("/models/allowed")
+    def set_allowed_models(
+        payload: AllowedModelsRequest,
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
+    ) -> list[dict[str, Any]]:
+        try:
+            studio.set_allowed_models(payload.ids)
+        except ModelPolicyError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+            ) from error
+        return studio.model_catalog()
+
+    @router.get("/chat/models")
+    def chat_models(
+        _: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> list[dict[str, Any]]:
+        return studio.user_models()
 
     @router.get("/models/active")
     def active_model(
