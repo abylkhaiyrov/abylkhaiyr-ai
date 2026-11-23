@@ -43,3 +43,5 @@ frontend/test-results/
 frontend/playwright-report/
 data/v5/
 frontend/.auth/
+data/v6_dialog/
+data/v6_plain/

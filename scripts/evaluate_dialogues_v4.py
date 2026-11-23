@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--annotations", type=Path)
     parser.add_argument("--exclude-ids", type=Path)
+    parser.add_argument("--groups", type=Path, default=Path("configs/ability_groups_v5.json"))
     parser.add_argument("--score-only", action="store_true")
     args = parser.parse_args()
     if args.batch_size < 1 or args.max_new_tokens < 1:
@@ -82,6 +83,16 @@ def main() -> None:
         report["by_language"][language] = metrics(
             group, [review for review in reviews if review.id in keys]
         )
+    membership = {
+        category: group
+        for group, categories in json.loads(args.groups.read_text(encoding="utf-8")).items()
+        for category in categories
+    }
+    report["by_group"] = {
+        group: metrics([row for row in rows if membership.get(row["category"]) == group])
+        for group in sorted(set(membership.values()))
+        if any(membership.get(row["category"]) == group for row in rows)
+    }
     report["by_category"] = {
         category: metrics([row for row in rows if row["category"] == category])
         for category in sorted({row["category"] for row in rows})

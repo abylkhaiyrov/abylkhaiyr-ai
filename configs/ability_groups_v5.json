@@ -1,0 +1,12 @@
+{
+  "communication": ["greeting", "smalltalk", "abilities", "open_question", "support"],
+  "reading": ["reading", "summarize"],
+  "semantics": ["paraphrase", "rephrase", "comparison", "compare", "explanation", "explain", "causal"],
+  "instructions": ["instruction", "instruction_format", "clarification", "clarify"],
+  "context": ["context", "context_multi", "multi_turn"],
+  "logic": ["negation", "correction", "self_correction"],
+  "factual_knowledge": ["knowledge", "unknown", "unknown_entity"],
+  "translation": ["translation", "translate"],
+  "math": ["math", "math_word"],
+  "code": ["code"]
+}

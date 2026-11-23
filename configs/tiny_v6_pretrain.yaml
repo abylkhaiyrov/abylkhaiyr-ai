@@ -1,0 +1,46 @@
+name: tiny_v6_pretrain
+model:
+  vocab_size: 8192
+  hidden_size: 384
+  num_hidden_layers: 8
+  num_attention_heads: 6
+  num_key_value_heads: 2
+  intermediate_size: 1024
+  max_position_embeddings: 512
+tokenizer:
+  vocab_size: 8192
+  path: data/tokenizer
+train:
+  stage: pretrain
+  data_dir: data/v4
+  init_from: checkpoints/tiny_v4_pretrain/step-00001221
+  restore_optimizer: false
+  output_dir: experiments/v6/pretrain/tiny_v6_pretrain
+  checkpoint_dir: checkpoints/v6_pretrain/tiny_v6_pretrain
+  device: mps
+  precision: fp32
+  max_steps: 366
+  micro_batch_size: 8
+  gradient_accumulation_steps: 4
+  sequence_length: 512
+  eval_interval: 61
+  eval_batches: 12
+  log_interval: 10
+  checkpoint_interval: 61
+  keep_checkpoints: 2
+  protected_steps:
+  - 366
+  dynamic_batch_size: false
+  fast_causal: true
+  max_ram_fraction: 0.9
+  mixture:
+    en: 1.0
+    kk: 1.0
+    ru: 1.0
+  dataset_version: v4
+  optimizer:
+    learning_rate: 0.0001
+    warmup_steps: 15
+    min_lr_ratio: 1.0
+    foreach: true
+  seed: 1
