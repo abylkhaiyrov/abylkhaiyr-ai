@@ -280,6 +280,20 @@ export type GenerationSettings = {
 
 export type StudioEvent = { process_id: string; level: string; message: string; created_at: string };
 export type Dataset = { name: string; path: string; size_bytes: number; manifest: Record<string, unknown> };
+export type MetricDefinition = { key: string; section: "language" | "conversation" | "reasoning" | "code" | "multilingual" | "efficiency"; direction: "higher" | "lower"; unit: "ratio" | "number" | "seconds" | "gigabytes" | "rate"; language: string | null; tools: boolean | null };
+export type GateStatus = "passed" | "failed" | "not_verified";
+export type QualityGate = { id: string; status: GateStatus; value: number | string | null; threshold: number | string };
+export type EvaluationGroupSummary = { id: string; experiment: string; dataset: string | null; methodology: string | null; split: string | null; checkpoints: number; evaluated_at: string | null; metric_count: number; gate_status: GateStatus };
+export type EvaluationRow = { checkpoint: string | null; model: string | null; stage: string | null; evaluated_at: string | null; sources: string[]; results: Record<string, number>; gates: QualityGate[]; gate_status: GateStatus };
+export type EvaluationGroup = EvaluationGroupSummary & { rows: EvaluationRow[] };
+export type ComparisonEntry = { value: number | null; delta: number | null; relative: number | null; improved: boolean | null; ci: [number, number] | null; samples: number | null };
+export type Comparison = {
+  group: Pick<EvaluationGroup, "id" | "experiment" | "dataset" | "methodology" | "split">;
+  checkpoints: Pick<EvaluationRow, "checkpoint" | "model" | "stage" | "gates" | "gate_status" | "evaluated_at">[];
+  metrics: { key: string; direction: "higher" | "lower"; section: MetricDefinition["section"]; entries: ComparisonEntry[] }[];
+  caveats: string[];
+  verdict: { status: "leader" | "insufficient_data" | "inconclusive"; checkpoint: string | null; reason: string | null };
+};
 export type Experiment = { name: string; results: Metric; [key: string]: unknown };
 export type Evaluation = {
   path: string;
@@ -423,6 +437,12 @@ export const api = {
   setAllowedProfiles: (ids: string[]) => http<InferenceProfile[]>("/inference/profiles/allowed", body("PUT", { ids }), listOf<InferenceProfile>(shape({ id: string, available: boolean, allowed: boolean }))),
   userModels: () => http<UserModel[]>("/chat/models", {}, listOf<UserModel>(userModel)),
   processEvents: (id: string) => http<{ level: string; message: string; created_at: string }[]>(`/processes/${encodeURIComponent(id)}/events`, {}, listOf(shape({ message: string, created_at: string }))),
+  evaluationMetrics: () => http<MetricDefinition[]>("/evaluation/metrics", {}, listOf<MetricDefinition>(shape({ key: string, section: string, direction: string }))),
+  evaluationGroups: (query: { q?: string; limit?: number; offset?: number } = {}) =>
+    http<{ items: EvaluationGroupSummary[]; total: number }>(`/evaluation/groups?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 30, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape({ items: arrayOf(shape({ id: string, experiment: string })), total: number })),
+  evaluationGroup: (id: string) => http<EvaluationGroup>(`/evaluation/groups/${encodeURIComponent(id)}`, {}, shape<EvaluationGroup>({ id: string, rows: arrayOf(shape({ results: record(number) })) })),
+  compareEvaluations: (group: string, checkpoints: string[]) =>
+    http<Comparison>(`/evaluation/compare?${new URLSearchParams([["group", group], ...checkpoints.map((item): [string, string] => ["checkpoint", item])])}`, {}, shape<Comparison>({ metrics: arrayOf(shape({ key: string })), verdict: shape({ status: string }) })),
   pipelines: () => http<Pipeline[]>("/pipelines", {}, listOf(pipelineGuard)),
   evaluations: () => http<Evaluation[]>("/evaluation", {}, listOf<Evaluation>(shape({ path: string, experiment: string, dataset: nullable(string), stage: nullable(string), model: nullable(string), checkpoint: nullable(string), results: record(number) }))),
   logs: (category?: string) => http<{ items: { category: string; source: string; message: string }[]; total: number }>(`/logs${category ? `?category=${category}` : ""}`, {}, shape({ items: arrayOf(shape({ message: string })), total: number })),
