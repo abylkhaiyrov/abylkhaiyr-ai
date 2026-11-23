@@ -1,0 +1,1926 @@
+{
+ "admin GET /api/catalog/runs": {
+  "items": [
+   {
+    "best_validation_loss": 3.1,
+    "checkpoint": null,
+    "config_path": null,
+    "created_at": "2026-11-23T09:11:45.269725+00:00",
+    "current_stage": null,
+    "dataset": null,
+    "duration_seconds": null,
+    "failure_reason": null,
+    "id": "run:v4/pretrain",
+    "kind": "training",
+    "max_steps": null,
+    "model_name": "v4/pretrain",
+    "name": "v4/pretrain",
+    "origin": "metrics",
+    "output_dir": "experiments/v4/pretrain",
+    "percent": null,
+    "stage": "pretrain",
+    "state_dir": null,
+    "status": "stopped",
+    "step": 10,
+    "tokens_per_second": null,
+    "tokens_seen": 100.0,
+    "train_loss": 3.0,
+    "updated_at": "2026-11-23T09:11:45.269725+00:00",
+    "validation_loss": 3.1,
+    "validation_perplexity": 22.0,
+    "version": "v4"
+   },
+   {
+    "best_validation_loss": 3.1,
+    "checkpoint": null,
+    "config_path": null,
+    "created_at": "2026-11-23T09:11:45.269527+00:00",
+    "current_stage": null,
+    "dataset": null,
+    "duration_seconds": null,
+    "failure_reason": null,
+    "id": "run:demo_v3",
+    "kind": "training",
+    "max_steps": null,
+    "model_name": "demo_v3",
+    "name": "demo_v3",
+    "origin": "metrics",
+    "output_dir": "experiments/demo_v3",
+    "percent": null,
+    "stage": "pretrain",
+    "state_dir": null,
+    "status": "stopped",
+    "step": 10,
+    "tokens_per_second": null,
+    "tokens_seen": 100.0,
+    "train_loss": 3.0,
+    "updated_at": "2026-11-23T09:11:45.269527+00:00",
+    "validation_loss": 3.1,
+    "validation_perplexity": 22.0,
+    "version": "v3"
+   },
+   {
+    "best_validation_loss": null,
+    "checkpoint": null,
+    "config_path": null,
+    "created_at": null,
+    "current_stage": null,
+    "dataset": "data/v2",
+    "duration_seconds": null,
+    "failure_reason": null,
+    "id": "pipeline:pipeline_tiny_v2",
+    "kind": "pipeline",
+    "max_steps": null,
+    "model_name": "tiny_v2",
+    "name": "pipeline_tiny_v2",
+    "origin": "pipeline_state",
+    "output_dir": null,
+    "percent": 10.0,
+    "stage": "pipeline",
+    "state_dir": "experiments/pipeline_tiny_v2",
+    "status": "stopped",
+    "step": null,
+    "tokens_per_second": null,
+    "tokens_seen": null,
+    "train_loss": null,
+    "updated_at": null,
+    "validation_loss": null,
+    "validation_perplexity": null,
+    "version": "v2"
+   }
+  ],
+  "total": 3
+ },
+ "admin GET /api/catalog/runs/{id}": {
+  "detail": {
+   "best_validation_loss": 3.1,
+   "checkpoints": [],
+   "config": null,
+   "config_path": null,
+   "data_dir": null,
+   "evaluations": [],
+   "first_train_loss": 3.0,
+   "max_steps": null,
+   "name": "demo_v3",
+   "output_dir": "experiments/demo_v3",
+   "percent": null,
+   "stage": "pretrain",
+   "started_at": null,
+   "status": "stopped",
+   "step": 10,
+   "tokens_per_second": null,
+   "tokens_seen": 100.0,
+   "train_loss": 3.0,
+   "updated_at": "2026-11-23T09:11:45.269527+00:00",
+   "validation_loss": 3.1,
+   "validation_perplexity": 22.0
+  },
+  "pipeline": null,
+  "run": {
+   "best_validation_loss": 3.1,
+   "checkpoint": null,
+   "config_path": null,
+   "created_at": "2026-11-23T09:11:45.269527+00:00",
+   "current_stage": null,
+   "dataset": null,
+   "duration_seconds": null,
+   "failure_reason": null,
+   "id": "run:demo_v3",
+   "kind": "training",
+   "max_steps": null,
+   "model_name": "demo_v3",
+   "name": "demo_v3",
+   "origin": "metrics",
+   "output_dir": "experiments/demo_v3",
+   "percent": null,
+   "stage": "pretrain",
+   "state_dir": null,
+   "status": "stopped",
+   "step": 10,
+   "tokens_per_second": null,
+   "tokens_seen": 100.0,
+   "train_loss": 3.0,
+   "updated_at": "2026-11-23T09:11:45.269527+00:00",
+   "validation_loss": 3.1,
+   "validation_perplexity": 22.0,
+   "version": "v3"
+  }
+ },
+ "admin GET /api/catalog/runs/{id} pipeline": {
+  "detail": null,
+  "pipeline": {
+   "artifacts": {},
+   "checkpoint": null,
+   "cpu_percent": null,
+   "current_stage": null,
+   "dataset": "data/v2",
+   "id": "pipeline_tiny_v2",
+   "last_result_stage": "pretrain",
+   "memory_bytes": null,
+   "model_name": "tiny_v2",
+   "next_stage": "data_preparation",
+   "overall": {
+    "elapsed_seconds": null,
+    "finished": 1,
+    "percent": 10.0,
+    "total": 10
+   },
+   "pid": null,
+   "running": false,
+   "stages": [
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "indeterminate": false,
+     "key": "data_preparation",
+     "kind": "data",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "indeterminate": false,
+     "key": "tokenization",
+     "kind": "tokenize",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": "checkpoints/tiny_v2",
+     "detail": {},
+     "done": 6000,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": "2026-01-01T00:00:00+00:00",
+     "history": [],
+     "indeterminate": false,
+     "key": "pretrain",
+     "kind": "train",
+     "note": null,
+     "output_dir": "experiments/tiny_v2",
+     "percent": 100.0,
+     "phase": null,
+     "results": {
+      "train_loss": 4.2,
+      "validation_loss": 4.3
+     },
+     "started_at": null,
+     "status": "completed",
+     "total": 6000,
+     "unit": "steps"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_pretrain",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "select_best_pretrain",
+     "kind": "select",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "sft",
+     "kind": "train",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_sft",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "dpo",
+     "kind": "train",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_final",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "export_release",
+     "kind": "export",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    }
+   ],
+   "started_at": null,
+   "state_dir": "experiments/pipeline_tiny_v2",
+   "updated_at": null
+  },
+  "run": {
+   "best_validation_loss": null,
+   "checkpoint": null,
+   "config_path": null,
+   "created_at": null,
+   "current_stage": null,
+   "dataset": "data/v2",
+   "duration_seconds": null,
+   "failure_reason": null,
+   "id": "pipeline:pipeline_tiny_v2",
+   "kind": "pipeline",
+   "max_steps": null,
+   "model_name": "tiny_v2",
+   "name": "pipeline_tiny_v2",
+   "origin": "pipeline_state",
+   "output_dir": null,
+   "percent": 10.0,
+   "stage": "pipeline",
+   "state_dir": "experiments/pipeline_tiny_v2",
+   "status": "stopped",
+   "step": null,
+   "tokens_per_second": null,
+   "tokens_seen": null,
+   "train_loss": null,
+   "updated_at": null,
+   "validation_loss": null,
+   "validation_perplexity": null,
+   "version": "v2"
+  }
+ },
+ "admin GET /api/evaluation/compare": {
+  "caveats": [
+   "dataset_not_recorded",
+   "methodology_not_recorded",
+   "samples_not_recorded",
+   "confidence_intervals_not_computed"
+  ],
+  "checkpoints": [
+   {
+    "checkpoint": "checkpoints/a/base",
+    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "gate_status": "failed",
+    "gates": [
+     {
+      "id": "instruction_stage",
+      "status": "not_verified",
+      "threshold": "sft/dpo",
+      "value": null
+     },
+     {
+      "id": "conversational_pass_rate",
+      "status": "failed",
+      "threshold": 0.5,
+      "value": 0.1
+     },
+     {
+      "id": "repetition",
+      "status": "not_verified",
+      "threshold": 0.45,
+      "value": null
+     }
+    ],
+    "model": "a",
+    "stage": null
+   },
+   {
+    "checkpoint": "checkpoints/a_sft/best",
+    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "gate_status": "passed",
+    "gates": [
+     {
+      "id": "instruction_stage",
+      "status": "passed",
+      "threshold": "sft/dpo",
+      "value": "sft"
+     },
+     {
+      "id": "conversational_pass_rate",
+      "status": "passed",
+      "threshold": 0.5,
+      "value": 0.7
+     },
+     {
+      "id": "repetition",
+      "status": "passed",
+      "threshold": 0.45,
+      "value": 0.2
+     }
+    ],
+    "model": "a_sft",
+    "stage": "sft"
+   }
+  ],
+  "group": {
+   "dataset": null,
+   "experiment": "stage",
+   "id": "stage:547c840d",
+   "methodology": null,
+   "split": "test"
+  },
+  "metrics": [
+   {
+    "direction": "lower",
+    "entries": [
+     {
+      "ci": null,
+      "delta": 0.0,
+      "improved": null,
+      "relative": 0.0,
+      "samples": null,
+      "value": 10.0
+     },
+     {
+      "ci": null,
+      "delta": 2.0,
+      "improved": false,
+      "relative": 0.2,
+      "samples": null,
+      "value": 12.0
+     }
+    ],
+    "key": "test_perplexity",
+    "section": "language"
+   },
+   {
+    "direction": "higher",
+    "entries": [
+     {
+      "ci": null,
+      "delta": 0.0,
+      "improved": null,
+      "relative": 0.0,
+      "samples": null,
+      "value": 0.1
+     },
+     {
+      "ci": null,
+      "delta": 0.6,
+      "improved": true,
+      "relative": 5.999999999999999,
+      "samples": null,
+      "value": 0.7
+     }
+    ],
+    "key": "conv_pass_rate",
+    "section": "conversation"
+   },
+   {
+    "direction": "lower",
+    "entries": [
+     {
+      "ci": null,
+      "delta": null,
+      "improved": null,
+      "relative": null,
+      "samples": null,
+      "value": null
+     },
+     {
+      "ci": null,
+      "delta": null,
+      "improved": null,
+      "relative": null,
+      "samples": null,
+      "value": 0.2
+     }
+    ],
+    "key": "conv_repetition_ratio",
+    "section": "conversation"
+   }
+  ],
+  "verdict": {
+   "checkpoint": "checkpoints/a_sft/best",
+   "reason": null,
+   "status": "leader"
+  }
+ },
+ "admin GET /api/evaluation/groups": {
+  "items": [
+   {
+    "checkpoints": 2,
+    "dataset": null,
+    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "experiment": "stage",
+    "gate_status": "failed",
+    "id": "stage:547c840d",
+    "methodology": null,
+    "metric_count": 3,
+    "split": "test"
+   }
+  ],
+  "total": 1
+ },
+ "admin GET /api/evaluation/groups/{id}": {
+  "checkpoints": 2,
+  "dataset": null,
+  "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+  "experiment": "stage",
+  "gate_status": "failed",
+  "id": "stage:547c840d",
+  "methodology": null,
+  "metric_count": 3,
+  "rows": [
+   {
+    "checkpoint": "checkpoints/a/base",
+    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "gate_status": "failed",
+    "gates": [
+     {
+      "id": "instruction_stage",
+      "status": "not_verified",
+      "threshold": "sft/dpo",
+      "value": null
+     },
+     {
+      "id": "conversational_pass_rate",
+      "status": "failed",
+      "threshold": 0.5,
+      "value": 0.1
+     },
+     {
+      "id": "repetition",
+      "status": "not_verified",
+      "threshold": 0.45,
+      "value": null
+     }
+    ],
+    "model": "a",
+    "results": {
+     "conv_pass_rate": 0.1,
+     "test_perplexity": 10.0
+    },
+    "sources": [
+     "experiments/stage/final_eval.json"
+    ],
+    "stage": null
+   },
+   {
+    "checkpoint": "checkpoints/a_sft/best",
+    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "gate_status": "passed",
+    "gates": [
+     {
+      "id": "instruction_stage",
+      "status": "passed",
+      "threshold": "sft/dpo",
+      "value": "sft"
+     },
+     {
+      "id": "conversational_pass_rate",
+      "status": "passed",
+      "threshold": 0.5,
+      "value": 0.7
+     },
+     {
+      "id": "repetition",
+      "status": "passed",
+      "threshold": 0.45,
+      "value": 0.2
+     }
+    ],
+    "model": "a_sft",
+    "results": {
+     "conv_pass_rate": 0.7,
+     "conv_repetition_ratio": 0.2,
+     "test_perplexity": 12.0
+    },
+    "sources": [
+     "experiments/stage/final_eval.json"
+    ],
+    "stage": "sft"
+   }
+  ],
+  "split": "test"
+ },
+ "admin GET /api/evaluation/metrics": [
+  {
+   "direction": "lower",
+   "key": "test_perplexity",
+   "language": null,
+   "section": "language",
+   "tools": null,
+   "unit": "number"
+  },
+  {
+   "direction": "lower",
+   "key": "test_loss",
+   "language": null,
+   "section": "language",
+   "tools": null,
+   "unit": "number"
+  },
+  {
+   "direction": "higher",
+   "key": "next_token_accuracy",
+   "language": null,
+   "section": "language",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "coherence_distinct_bigram",
+   "language": null,
+   "section": "language",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_wellformed_word_rate",
+   "language": null,
+   "section": "language",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_pass_rate",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_check_pass_rate",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "semantic_relevance",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "instruction_following_accuracy",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "multiturn_dialogue_accuracy",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "context_retrieval_accuracy",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "lower",
+   "key": "conv_prompt_echo_rate",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "lower",
+   "key": "conv_repetition_ratio",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "lower",
+   "key": "repeated_trigram_ratio_greedy",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_non_empty_rate",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_completion_rate",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_language_stability",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "lower",
+   "key": "conv_hallucination_rate",
+   "language": null,
+   "section": "conversation",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "arithmetic_exact_match",
+   "language": null,
+   "section": "reasoning",
+   "tools": false,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "gsm8k_exact_match",
+   "language": null,
+   "section": "reasoning",
+   "tools": false,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "math_bench_model_accuracy",
+   "language": null,
+   "section": "reasoning",
+   "tools": false,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "math_bench_tool_accuracy",
+   "language": null,
+   "section": "reasoning",
+   "tools": true,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "logic_model_accuracy",
+   "language": null,
+   "section": "reasoning",
+   "tools": false,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "logic_tool_accuracy",
+   "language": null,
+   "section": "reasoning",
+   "tools": true,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "factual_accuracy",
+   "language": null,
+   "section": "reasoning",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "lower",
+   "key": "factual_wrong_rate",
+   "language": null,
+   "section": "reasoning",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "code_pass_at_1",
+   "language": null,
+   "section": "code",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "code_pass_at_4",
+   "language": null,
+   "section": "code",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "code_tool_pass_rate",
+   "language": null,
+   "section": "code",
+   "tools": true,
+   "unit": "ratio"
+  },
+  {
+   "direction": "lower",
+   "key": "perplexity_ru",
+   "language": "ru",
+   "section": "multilingual",
+   "tools": null,
+   "unit": "number"
+  },
+  {
+   "direction": "lower",
+   "key": "perplexity_en",
+   "language": "en",
+   "section": "multilingual",
+   "tools": null,
+   "unit": "number"
+  },
+  {
+   "direction": "lower",
+   "key": "perplexity_kk",
+   "language": "kk",
+   "section": "multilingual",
+   "tools": null,
+   "unit": "number"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_lang_ru",
+   "language": "ru",
+   "section": "multilingual",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_lang_en",
+   "language": "en",
+   "section": "multilingual",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "conv_lang_kk",
+   "language": "kk",
+   "section": "multilingual",
+   "tools": null,
+   "unit": "ratio"
+  },
+  {
+   "direction": "higher",
+   "key": "generation_tokens_per_second",
+   "language": null,
+   "section": "efficiency",
+   "tools": null,
+   "unit": "rate"
+  },
+  {
+   "direction": "lower",
+   "key": "ram_gb",
+   "language": null,
+   "section": "efficiency",
+   "tools": null,
+   "unit": "gigabytes"
+  },
+  {
+   "direction": "lower",
+   "key": "device_memory_gb",
+   "language": null,
+   "section": "efficiency",
+   "tools": null,
+   "unit": "gigabytes"
+  }
+ ],
+ "admin GET /api/experiments": [
+  {
+   "name": "probe",
+   "results": {
+    "validation_loss": 3.0
+   }
+  }
+ ],
+ "admin GET /api/inference/profiles": [
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 256,
+   "generation_timeout_seconds": 30.0,
+   "id": "lite",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 128
+   },
+   "max_output_tokens": 128,
+   "reasoning": {
+    "enabled": false,
+    "max_candidates": 1,
+    "verification_attempts": 0
+   },
+   "tool_budget_seconds": 0.0,
+   "unavailable_reason": "context_too_small"
+  },
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 512,
+   "generation_timeout_seconds": 60.0,
+   "id": "medium",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 256
+   },
+   "max_output_tokens": 256,
+   "reasoning": {
+    "enabled": false,
+    "max_candidates": 1,
+    "verification_attempts": 0
+   },
+   "tool_budget_seconds": 0.0,
+   "unavailable_reason": "context_too_small"
+  },
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 1024,
+   "generation_timeout_seconds": 90.0,
+   "id": "high",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 768
+   },
+   "max_output_tokens": 256,
+   "reasoning": {
+    "enabled": true,
+    "max_candidates": 2,
+    "verification_attempts": 1
+   },
+   "tool_budget_seconds": 30.0,
+   "unavailable_reason": "context_too_small"
+  },
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 2048,
+   "generation_timeout_seconds": 180.0,
+   "id": "very_high",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 2048
+   },
+   "max_output_tokens": 512,
+   "reasoning": {
+    "enabled": true,
+    "max_candidates": 4,
+    "verification_attempts": 2
+   },
+   "tool_budget_seconds": 60.0,
+   "unavailable_reason": "context_too_small"
+  }
+ ],
+ "admin GET /api/models/catalog": [
+  {
+   "allowed": true,
+   "availability_reason": null,
+   "available": true,
+   "capabilities": [
+    "text_completion"
+   ],
+   "checkpoint_count": 1,
+   "context_length": 64,
+   "display_name": "Test-model",
+   "family": "test-model",
+   "id": "test-model",
+   "parameters": 31392,
+   "quality_status": "experimental",
+   "recommended_use": "research",
+   "representative_checkpoint": "test-model",
+   "stage": "pretrain",
+   "version": null
+  }
+ ],
+ "admin GET /api/models/checkpoints": {
+  "items": [
+   {
+    "architecture": {
+     "dropout": 0.0,
+     "hidden_size": 32,
+     "initializer_range": 0.02,
+     "intermediate_size": 64,
+     "max_position_embeddings": 64,
+     "num_attention_heads": 4,
+     "num_hidden_layers": 2,
+     "num_key_value_heads": 2,
+     "rms_norm_eps": 1e-05,
+     "rope_theta": 10000.0,
+     "tie_word_embeddings": true,
+     "vocab_size": 400
+    },
+    "availability_reason": null,
+    "available": true,
+    "checkpoint_id": "test-model",
+    "compatibility_issues": [],
+    "compatible": true,
+    "context_length": 64,
+    "created_at": "2026-11-23T09:11:45.552107+00:00",
+    "device": "cpu",
+    "display_name": "test-model \u00b7 \u2014",
+    "evaluated": false,
+    "id": "test-model",
+    "loaded": true,
+    "metadata": {},
+    "metrics": {},
+    "model_id": "test-model",
+    "name": "test-model",
+    "parameters": 31392,
+    "path": "test-model",
+    "quality_failed": false,
+    "roles": [
+     "loaded"
+    ],
+    "stage": "pretrain",
+    "status": "experimental",
+    "step": null,
+    "tokens_seen": null,
+    "trained": false,
+    "verified": false,
+    "verified_stage": null,
+    "vocab_size": 400,
+    "weights_bytes": null
+   }
+  ],
+  "total": 1
+ },
+ "admin GET /api/models/registry": {
+  "models": [
+   {
+    "architecture": {
+     "dropout": 0.0,
+     "hidden_size": 32,
+     "initializer_range": 0.02,
+     "intermediate_size": 64,
+     "max_position_embeddings": 64,
+     "num_attention_heads": 4,
+     "num_hidden_layers": 2,
+     "num_key_value_heads": 2,
+     "rms_norm_eps": 1e-05,
+     "rope_theta": 10000.0,
+     "tie_word_embeddings": true,
+     "vocab_size": 400
+    },
+    "availability_reason": null,
+    "available": true,
+    "checkpoint_id": "test-model",
+    "compatibility_issues": [],
+    "compatible": true,
+    "context_length": 64,
+    "created_at": "2026-11-23T09:11:45.552107+00:00",
+    "device": "cpu",
+    "display_name": "test-model \u00b7 \u2014",
+    "evaluated": false,
+    "id": "test-model",
+    "loaded": true,
+    "metadata": {},
+    "metrics": {},
+    "model_id": "test-model",
+    "name": "test-model",
+    "parameters": 31392,
+    "path": "test-model",
+    "quality_failed": false,
+    "roles": [
+     "loaded"
+    ],
+    "stage": "pretrain",
+    "status": "experimental",
+    "step": null,
+    "tokens_seen": null,
+    "trained": false,
+    "verified": false,
+    "verified_stage": null,
+    "vocab_size": 400,
+    "weights_bytes": null
+   }
+  ],
+  "roles": {
+   "best_evaluated": null,
+   "latest_trained": null,
+   "loaded": "test-model",
+   "production": null
+  }
+ },
+ "admin GET /api/pipelines": [
+  {
+   "artifacts": {},
+   "checkpoint": null,
+   "cpu_percent": null,
+   "current_stage": null,
+   "dataset": "data/v2",
+   "id": "pipeline_tiny_v2",
+   "last_result_stage": "pretrain",
+   "memory_bytes": null,
+   "model_name": "tiny_v2",
+   "next_stage": "data_preparation",
+   "overall": {
+    "elapsed_seconds": null,
+    "finished": 1,
+    "percent": 10.0,
+    "total": 10
+   },
+   "pid": null,
+   "running": false,
+   "stages": [
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "indeterminate": false,
+     "key": "data_preparation",
+     "kind": "data",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "indeterminate": false,
+     "key": "tokenization",
+     "kind": "tokenize",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": "checkpoints/tiny_v2",
+     "detail": {},
+     "done": 6000,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": "2026-01-01T00:00:00+00:00",
+     "history": [],
+     "indeterminate": false,
+     "key": "pretrain",
+     "kind": "train",
+     "note": null,
+     "output_dir": "experiments/tiny_v2",
+     "percent": 100.0,
+     "phase": null,
+     "results": {
+      "train_loss": 4.2,
+      "validation_loss": 4.3
+     },
+     "started_at": null,
+     "status": "completed",
+     "total": 6000,
+     "unit": "steps"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_pretrain",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "select_best_pretrain",
+     "kind": "select",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "sft",
+     "kind": "train",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_sft",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "dpo",
+     "kind": "train",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_final",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "export_release",
+     "kind": "export",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    }
+   ],
+   "started_at": null,
+   "state_dir": "experiments/pipeline_tiny_v2",
+   "updated_at": null
+  }
+ ],
+ "admin GET /api/processes": [
+  {
+   "command": "python -m llm.cli.main train",
+   "completed_at": "2026-01-01T01:00:00",
+   "config_path": null,
+   "cpu_percent": null,
+   "duration_seconds": 3600.0,
+   "error_reason": null,
+   "exit_code": null,
+   "id": "proc-1",
+   "kind": "sft",
+   "memory_bytes": null,
+   "output_dir": "experiments/demo_v3",
+   "pid": null,
+   "started_at": "2026-01-01T00:00:00",
+   "status": "completed"
+  },
+  {
+   "command": "scripts/run_pipeline.py",
+   "completed_at": null,
+   "config_path": null,
+   "cpu_percent": null,
+   "duration_seconds": null,
+   "error_reason": null,
+   "exit_code": null,
+   "id": "pipeline:pipeline_tiny_v2",
+   "kind": "pipeline",
+   "managed": false,
+   "memory_bytes": null,
+   "model_name": "tiny_v2",
+   "output_dir": "experiments/pipeline_tiny_v2",
+   "pid": null,
+   "started_at": null,
+   "status": "stopped"
+  }
+ ],
+ "admin GET /api/processes/{id}/events": [],
+ "admin GET /api/runs": [
+  {
+   "best_validation_loss": 3.1,
+   "config_path": null,
+   "data_dir": null,
+   "first_train_loss": 3.0,
+   "max_steps": null,
+   "name": "demo_v3",
+   "output_dir": "experiments/demo_v3",
+   "percent": null,
+   "stage": "pretrain",
+   "started_at": null,
+   "status": "stopped",
+   "step": 10,
+   "tokens_per_second": null,
+   "tokens_seen": 100.0,
+   "train_loss": 3.0,
+   "updated_at": "2026-11-23T09:11:45.269527+00:00",
+   "validation_loss": 3.1,
+   "validation_perplexity": 22.0
+  },
+  {
+   "best_validation_loss": 4.3,
+   "config_path": "configs/tiny_v2.yaml",
+   "data_dir": "data/v2",
+   "first_train_loss": 4.2,
+   "max_steps": 6000,
+   "name": "tiny_v2",
+   "output_dir": "experiments/tiny_v2",
+   "percent": 1.6666666666666667,
+   "stage": "pretrain",
+   "started_at": null,
+   "status": "stopped",
+   "step": 100,
+   "tokens_per_second": null,
+   "tokens_seen": null,
+   "train_loss": 4.2,
+   "updated_at": "2026-11-23T09:11:45.269378+00:00",
+   "validation_loss": 4.3,
+   "validation_perplexity": null
+  }
+ ],
+ "admin GET /api/runtime": {
+  "compute": {
+   "busy": false,
+   "holder": null
+  },
+  "events": [],
+  "generated_at": "2026-11-23T09:11:45.552156+00:00",
+  "inference_model": "test-model",
+  "models": {
+   "best_evaluated": null,
+   "latest_trained": null,
+   "loaded": {
+    "created_at": "2026-11-23T09:11:45.552107+00:00",
+    "device": "cpu",
+    "display_name": "test-model \u00b7 \u2014",
+    "id": "test-model",
+    "stage": "pretrain",
+    "step": null,
+    "verified": false
+   },
+   "production": null
+  },
+  "pipeline": {
+   "artifacts": {},
+   "checkpoint": null,
+   "cpu_percent": null,
+   "current_stage": null,
+   "dataset": "data/v2",
+   "id": "pipeline_tiny_v2",
+   "last_result_stage": "pretrain",
+   "memory_bytes": null,
+   "model_name": "tiny_v2",
+   "next_stage": "data_preparation",
+   "overall": {
+    "elapsed_seconds": null,
+    "finished": 1,
+    "percent": 10.0,
+    "total": 10
+   },
+   "pid": null,
+   "running": false,
+   "stages": [
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "indeterminate": false,
+     "key": "data_preparation",
+     "kind": "data",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "indeterminate": false,
+     "key": "tokenization",
+     "kind": "tokenize",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": "checkpoints/tiny_v2",
+     "detail": {},
+     "done": 6000,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": "2026-01-01T00:00:00+00:00",
+     "history": [],
+     "indeterminate": false,
+     "key": "pretrain",
+     "kind": "train",
+     "note": null,
+     "output_dir": "experiments/tiny_v2",
+     "percent": 100.0,
+     "phase": null,
+     "results": {
+      "train_loss": 4.2,
+      "validation_loss": 4.3
+     },
+     "started_at": null,
+     "status": "completed",
+     "total": 6000,
+     "unit": "steps"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_pretrain",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "select_best_pretrain",
+     "kind": "select",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "sft",
+     "kind": "train",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_sft",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "dpo",
+     "kind": "train",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "eval_final",
+     "kind": "eval",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": "benchmarks"
+    },
+    {
+     "checkpoint_dir": null,
+     "detail": {},
+     "done": null,
+     "duration_seconds": null,
+     "error": null,
+     "eta_seconds": null,
+     "finished_at": null,
+     "history": [],
+     "indeterminate": false,
+     "key": "export_release",
+     "kind": "export",
+     "note": null,
+     "output_dir": null,
+     "percent": null,
+     "phase": null,
+     "results": {},
+     "started_at": null,
+     "status": "pending",
+     "total": null,
+     "unit": null
+    }
+   ],
+   "started_at": null,
+   "state_dir": "experiments/pipeline_tiny_v2",
+   "updated_at": null
+  },
+  "production": null,
+  "runs": {
+   "active": null,
+   "completed_count": 0,
+   "latest": {
+    "best_validation_loss": 3.1,
+    "checkpoint": null,
+    "config_path": null,
+    "created_at": "2026-11-23T09:11:45.269725+00:00",
+    "current_stage": null,
+    "dataset": null,
+    "duration_seconds": null,
+    "failure_reason": null,
+    "id": "run:v4/pretrain",
+    "kind": "training",
+    "max_steps": null,
+    "model_name": "v4/pretrain",
+    "name": "v4/pretrain",
+    "origin": "metrics",
+    "output_dir": "experiments/v4/pretrain",
+    "percent": null,
+    "stage": "pretrain",
+    "state_dir": null,
+    "status": "stopped",
+    "step": 10,
+    "tokens_per_second": null,
+    "tokens_seen": 100.0,
+    "train_loss": 3.0,
+    "updated_at": "2026-11-23T09:11:45.269725+00:00",
+    "validation_loss": 3.1,
+    "validation_perplexity": 22.0,
+    "version": "v4"
+   },
+   "total": 3
+  }
+ },
+ "user GET /api/chat/model": {
+  "context_length": 64,
+  "device": "cpu",
+  "display_name": "test-model",
+  "id": "test-model",
+  "stage": "pretrain"
+ },
+ "user GET /api/chat/models": [
+  {
+   "available": true,
+   "capabilities": [
+    "text_completion"
+   ],
+   "context_length": 64,
+   "display_name": "Test-model",
+   "family": "test-model",
+   "id": "test-model",
+   "parameters": 31392,
+   "quality_status": "experimental",
+   "recommended_use": "research",
+   "version": null
+  }
+ ],
+ "user GET /api/inference/profiles": [
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 256,
+   "generation_timeout_seconds": 30.0,
+   "id": "lite",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 128
+   },
+   "max_output_tokens": 128,
+   "reasoning": {
+    "enabled": false,
+    "max_candidates": 1,
+    "verification_attempts": 0
+   },
+   "tool_budget_seconds": 0.0,
+   "unavailable_reason": "context_too_small"
+  },
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 512,
+   "generation_timeout_seconds": 60.0,
+   "id": "medium",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 256
+   },
+   "max_output_tokens": 256,
+   "reasoning": {
+    "enabled": false,
+    "max_candidates": 1,
+    "verification_attempts": 0
+   },
+   "tool_budget_seconds": 0.0,
+   "unavailable_reason": "context_too_small"
+  },
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 1024,
+   "generation_timeout_seconds": 90.0,
+   "id": "high",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 768
+   },
+   "max_output_tokens": 256,
+   "reasoning": {
+    "enabled": true,
+    "max_candidates": 2,
+    "verification_attempts": 1
+   },
+   "tool_budget_seconds": 30.0,
+   "unavailable_reason": "context_too_small"
+  },
+  {
+   "allowed": true,
+   "available": false,
+   "context_budget": 2048,
+   "generation_timeout_seconds": 180.0,
+   "id": "very_high",
+   "limits": {
+    "max_concurrent_generations": 1,
+    "max_total_new_tokens": 2048
+   },
+   "max_output_tokens": 512,
+   "reasoning": {
+    "enabled": true,
+    "max_candidates": 4,
+    "verification_attempts": 2
+   },
+   "tool_budget_seconds": 60.0,
+   "unavailable_reason": "context_too_small"
+  }
+ ]
+}
