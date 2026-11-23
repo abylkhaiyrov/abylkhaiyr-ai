@@ -310,6 +310,10 @@ export const en: Mirror<typeof ru> = {
     switching_model: "Loading the selected checkpoint.",
   },
   chatError: {
+    model_not_allowed: "This model is not enabled for your account. Choose another model.",
+    profile_not_allowed: "This inference profile is not enabled for your account.",
+    profile_unavailable: "This inference profile is unavailable for the loaded model.",
+    invalid_profile: "Unknown inference profile.",
     server_restarted: "The server restarted during generation. Any saved part of the answer is in the chat.",
     model_not_loaded: "No model is loaded. Select a checkpoint.",
     queue_full: "The generation queue is full. Wait or cancel a request.",
@@ -353,6 +357,7 @@ export const en: Mirror<typeof ru> = {
     http: "The request could not be completed.",
     unknown: "Something went wrong.",
     detail: {
+      model_not_allowed: "This model is not enabled for your account.",
       studio_unavailable: "Studio is unavailable. Start the backend and try again.",
       generation_active: "The model cannot be changed while an answer is being generated.",
       compute_busy_pipeline: "The compute device is busy with a running pipeline.",

@@ -306,6 +306,10 @@ export const ru = {
     switching_model: "Загружается выбранный checkpoint.",
   },
   chatError: {
+    model_not_allowed: "Эта модель не открыта для вашего аккаунта. Выберите другую модель.",
+    profile_not_allowed: "Этот профиль inference не открыт для вашего аккаунта.",
+    profile_unavailable: "Этот профиль недоступен для загруженной модели.",
+    invalid_profile: "Неизвестный профиль inference.",
     server_restarted: "Сервер перезапустился во время генерации. Сохранённая часть ответа доступна в чате.",
     model_not_loaded: "Модель не загружена. Выберите checkpoint.",
     queue_full: "Очередь генерации заполнена. Подождите или отмените запрос.",
@@ -349,6 +353,7 @@ export const ru = {
     http: "Не удалось выполнить запрос.",
     unknown: "Что-то пошло не так.",
     detail: {
+      model_not_allowed: "Эта модель вам не доступна.",
       studio_unavailable: "Studio недоступна. Запустите сервер и повторите попытку.",
       generation_active: "Модель нельзя менять во время генерации ответа.",
       compute_busy_pipeline: "Вычислительное устройство занято работающим pipeline.",

@@ -120,7 +120,7 @@ def test_users_can_only_pick_models_the_admin_allowed(app):
     identifier = admin.get("/api/models/catalog").json()[0]["id"]
     headers = csrf(user)
     denied = user.post("/api/chats", headers=headers, json={"model_name": identifier})
-    assert (denied.status_code, denied.json()["model_name"]) == (201, None)
+    assert (denied.status_code, denied.json()["detail"]) == (403, "model_not_allowed")
     admin.put("/api/models/allowed", json={"ids": [identifier]}, headers=csrf(admin))
     created = user.post("/api/chats", headers=headers, json={"model_name": identifier})
     assert created.status_code == 201
@@ -130,7 +130,7 @@ def test_users_can_only_pick_models_the_admin_allowed(app):
     admin.put("/api/models/allowed", json={"ids": []}, headers=csrf(admin))
     assert studio.resolve_user_checkpoint(identifier) is None
     missing = user.post("/api/chats", headers=headers, json={"model_name": "missing"})
-    assert missing.json()["model_name"] is None
+    assert (missing.status_code, missing.json()["detail"]) == (403, "model_not_allowed")
     assert user.post("/api/chats", headers=headers, json={}).status_code == 201
 
 
@@ -175,3 +175,35 @@ def test_checkpoint_endpoint_is_admin_only_and_paginated(app):
     page = admin.get("/api/models/checkpoints", params={"limit": 1}).json()
     assert len(page["items"]) <= 1 and page["total"] >= 1
     assert admin.get("/api/models/checkpoints", params={"limit": 0}).status_code == 422
+
+
+def test_scheduler_rejects_forbidden_model_use_explicitly(app):
+    import asyncio
+    import threading
+
+    from llm.studio.scheduler import GenerationRequest, GenerationScheduler
+
+    admin = sign_in(app, "admin", "admin")
+    user, _ = register(app)
+    studio = app.state.studio
+    identifier = admin.get("/api/models/catalog").json()[0]["id"]
+    admin.put("/api/models/allowed", json={"ids": [identifier]}, headers=csrf(admin))
+    chat = user.post("/api/chats", headers=csrf(user), json={"model_name": identifier}).json()
+    scheduler = GenerationScheduler(studio, app.state.model_manager, threading.Lock())
+    record = studio.chat(2, chat["id"], None, False)
+    other = GenerationRequest(
+        "r", 2, chat["id"], content="hi", checkpoint_id="checkpoints/x/step-1"
+    )
+    assert asyncio.run(scheduler._model_rejection(other, record))["code"] == "model_not_allowed"
+    allowed = GenerationRequest("r", 2, chat["id"], content="hi")
+    assert asyncio.run(scheduler._model_rejection(allowed, record)) is None
+    admin.put("/api/models/allowed", json={"ids": []}, headers=csrf(admin))
+    rejection = asyncio.run(scheduler._model_rejection(allowed, record))
+    assert rejection == {
+        "code": "model_not_allowed",
+        "detail": "This model is not enabled for your account",
+    }
+    privileged = GenerationRequest(
+        "r", 1, chat["id"], content="hi", privileged=True, checkpoint_id="x"
+    )
+    assert asyncio.run(scheduler._model_rejection(privileged, record)) is None

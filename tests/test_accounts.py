@@ -205,18 +205,28 @@ def test_user_cannot_reach_admin_apis(app):
 
 def test_user_cannot_pick_models_and_sees_only_the_active_one(app):
     client, _ = register(app)
-    created = client.post(
+    denied = client.post(
         "/api/chats",
         headers=csrf(client),
         json={"checkpoint": "checkpoints/x/step-1", "model_name": "x"},
-    ).json()
+    )
+    assert (denied.status_code, denied.json()["detail"]) == (403, "model_not_allowed")
+    only_checkpoint = client.post(
+        "/api/chats", headers=csrf(client), json={"checkpoint": "checkpoints/x/step-1"}
+    )
+    assert only_checkpoint.status_code == 403
+    created = client.post("/api/chats", headers=csrf(client), json={}).json()
     assert created["checkpoint"] is None and created["model_name"] is None
     patched = client.patch(
         f"/api/chats/{created['id']}",
         headers=csrf(client),
         json={"checkpoint": "checkpoints/y/step-9"},
-    ).json()
-    assert patched["checkpoint"] is None
+    )
+    assert (patched.status_code, patched.json()["detail"]) == (403, "model_not_allowed")
+    unknown = client.patch(
+        f"/api/chats/{created['id']}", headers=csrf(client), json={"model_name": "missing"}
+    )
+    assert unknown.status_code == 403
     info = client.get("/api/chat/model").json()
     assert info["id"] and "weights_bytes" not in info
 

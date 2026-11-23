@@ -130,7 +130,7 @@ class GenerationScheduler:
         ):
             return "rejected", {"code": "invalid_event", "detail": "Message content is required"}
         request.profile = request.profile or (chat.get("generation_settings") or {}).get("profile")
-        rejection = self._profile_rejection(request)
+        rejection = await self._model_rejection(request, chat) or self._profile_rejection(request)
         if rejection is not None:
             return "rejected", rejection
         if len(self.pending) >= self.max_queue_size:
@@ -737,6 +737,23 @@ class GenerationScheduler:
                 state.request_id,
                 status,
             )
+
+    async def _model_rejection(
+        self, request: GenerationRequest, chat: dict[str, Any]
+    ) -> dict[str, str] | None:
+        if request.privileged:
+            return None
+        requested = request.checkpoint_id is not None
+        model_name = chat.get("model_name")
+        revoked = bool(model_name) and (
+            await asyncio.to_thread(self.studio.resolve_user_checkpoint, str(model_name)) is None
+        )
+        if requested or revoked:
+            return {
+                "code": "model_not_allowed",
+                "detail": "This model is not enabled for your account",
+            }
+        return None
 
     async def _target_checkpoint(
         self, request: GenerationRequest, chat: dict[str, Any]
