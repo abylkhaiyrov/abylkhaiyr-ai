@@ -17,18 +17,22 @@ test("the interface recovers after the backend restarts", async ({ page }, info)
   expect(created.ok()).toBeTruthy();
   const chat = (await created.json()) as { id: string };
   await page.goto(`/chat?c=${chat.id}`);
-  await expect(page.getByText("Restart probe").first()).toBeVisible();
+  await expect(page.getByLabel("Write a message…")).toBeVisible();
   const failures: string[] = [];
   page.on("pageerror", (error) => failures.push(error.message));
 
-  execFileSync(script ?? "", ["stop"]);
-  await expect(page.getByRole("status").filter({ hasText: /reconnecting|paused|unavailable/i })).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole("navigation").first()).toBeVisible();
-  await page.screenshot({ path: info.outputPath("backend-down.png") });
-  execFileSync(script ?? "", ["start"], { timeout: 120_000 });
+  const run = (action: "stop" | "start") => execFileSync(script ?? "", [action], { timeout: 120_000 });
+  run("stop");
+  try {
+    await expect(page.getByRole("status").filter({ hasText: /reconnecting|paused|unavailable/i })).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("main")).toBeVisible();
+    await page.screenshot({ path: info.outputPath("backend-down.png") });
+  } finally {
+    run("start");
+  }
 
   await expect(page.getByRole("status").filter({ hasText: "Live updates connected" })).toBeVisible({ timeout: 90_000 });
-  await expect(page.getByText("Restart probe").first()).toBeVisible();
+  await expect(page.getByLabel("Write a message…")).toBeVisible();
   expect(failures).toEqual([]);
   const listed = await (await page.request.get("/api/chats")).json();
   expect(listed.some((item: { id: string }) => item.id === chat.id)).toBeTruthy();

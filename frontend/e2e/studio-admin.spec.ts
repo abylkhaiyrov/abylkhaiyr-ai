@@ -26,7 +26,10 @@ test("models page separates the catalog from the checkpoint registry", async ({ 
   await page.goto("/models");
   await expect(page.getByRole("tab", { name: "Model catalog" })).toBeVisible();
   await expect(page.getByText("Visible to users").first()).toBeVisible();
-  await page.getByRole("tab", { name: "Checkpoint registry" }).click();
+  await expect(async () => {
+    await page.getByRole("tab", { name: "Checkpoint registry" }).click();
+    await expect(page.getByRole("tab", { name: "Checkpoint registry" })).toHaveAttribute("aria-selected", "true", { timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
   await expect(page.getByRole("columnheader", { name: "Stage" })).toBeVisible();
   await expect(page.getByText(/Showing 50 of \d+/)).toBeVisible();
   const before = await page.locator("tbody tr").count();

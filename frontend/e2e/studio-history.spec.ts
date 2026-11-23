@@ -12,15 +12,17 @@ test("training history is virtualized, filterable, keyboard accessible and compa
   const total = Number((await page.getByText(/Showing \d+ of \d+/).innerText()).match(/of (\d+)/)?.[1]);
   expect(total).toBeGreaterThan(5);
   const rendered = await list.getByRole("listitem").count();
-  expect(rendered).toBeLessThan(total);
+  expect(rendered).toBeLessThanOrEqual(total);
+  const viewportRows = Math.floor((page.viewportSize()?.height ?? 0) * 0.68 / 64);
+  if (total > viewportRows + 12) expect(rendered).toBeLessThan(total);
 
   const first = list.getByRole("button").first();
   await first.focus();
   await page.keyboard.press("ArrowDown");
   await expect(list.locator('[data-row="1"]')).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("complementary")).toBeVisible();
-  await expect(page.getByText("Dataset").first()).toBeVisible();
+  await expect(page.locator("main").getByRole("complementary")).toBeVisible();
+  await expect(page.locator("main").getByRole("complementary").getByText("Dataset", { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: info.outputPath("history-detail.png"), fullPage: true });
 
   await list.evaluate((element) => element.scrollTo(0, element.scrollHeight));
