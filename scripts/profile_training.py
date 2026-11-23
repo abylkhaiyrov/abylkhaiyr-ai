@@ -20,6 +20,8 @@ VARIANTS = {
     "foreach": Variant("foreach"),
     "native_gqa": Variant("native_gqa", native_gqa=True),
     "fast_causal": Variant("fast_causal", fast_causal=True),
+    "causal_mb4": Variant("causal_mb4", micro_batch=4, accumulation=8, fast_causal=True),
+    "checkpointed_causal": Variant("checkpointed_causal", fast_causal=True, checkpointing=True),
     "gqa_causal": Variant("gqa_causal", native_gqa=True, fast_causal=True),
     "exact_pad": Variant("exact_pad", pad_multiple=1),
     "packed": Variant("packed", pack=True),

@@ -131,9 +131,13 @@ def main() -> None:
     diagnostic = audit_items(rows, tokenizer, args.corpus / "train.jsonl")
     legacy = list(read_jsonl(Path("configs/diagnostic_v1.jsonl")))
     path = args.root / "diagnostic_v2.jsonl"
-    with path.open("x", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+    serialized = "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows)
+    if path.exists():
+        if path.read_text(encoding="utf-8") != serialized:
+            parser.error("refusing to replace the frozen diagnostic bank")
+    else:
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(serialized)
     report = {
         "bank_sha256": file_sha256(path),
         "v2": diagnostic,

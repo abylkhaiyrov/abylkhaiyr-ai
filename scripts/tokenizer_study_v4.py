@@ -8,6 +8,8 @@ from collections.abc import Iterable
 from itertools import islice
 from pathlib import Path
 
+import psutil
+
 from llm.core.config import TokenizerConfig
 from llm.core.profiles import build_model_config, count_parameters
 from llm.data.binary import read_jsonl
@@ -33,12 +35,15 @@ def measure_tokenizer(tokenizer: BPETokenizer, samples: list[str]) -> dict:
         encoded = tokenizer.encode_batch(samples)
         durations.append(time.perf_counter() - started)
     bytes_used = sum(len(text.encode("utf-8")) for text in samples)
+    characters = sum(len(text) for text in samples)
     tokens = sum(map(len, encoded))
     return {
         "samples": len(samples),
         "utf8_bytes": bytes_used,
         "tokens": tokens,
         "bytes_per_token": bytes_used / tokens,
+        "characters_per_token": characters / tokens,
+        "utf8_to_uint16_ratio": bytes_used / (2 * tokens),
         "encode_mib_per_second": bytes_used / 2**20 / statistics.median(durations),
         "lossless": all(
             tokenizer.decode(ids) == text for ids, text in zip(encoded, samples, strict=True)
@@ -53,6 +58,14 @@ def main() -> None:
     parser.add_argument("--sources", type=Path, default=Path("configs/data_v4_sources.json"))
     parser.add_argument("--documents-per-language", type=int, default=1000)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--vocab-sizes",
+        type=int,
+        nargs="+",
+        choices=(8192, 16384, 32768),
+        default=(8192, 16384, 32768),
+    )
+    parser.add_argument("--split", choices=("validation", "test"), default="validation")
     args = parser.parse_args()
     if args.documents_per_language < 1:
         parser.error("--documents-per-language must be positive")
@@ -64,7 +77,7 @@ def main() -> None:
             for row in islice(
                 (
                     row
-                    for row in read_jsonl(args.root / "validation.jsonl")
+                    for row in read_jsonl(args.root / f"{args.split}.jsonl")
                     if row["language"] == language
                 ),
                 100,
@@ -74,13 +87,15 @@ def main() -> None:
     }
     samples["code"] = [source.local(args.inputs).read_text(encoding="utf-8")]
     output = []
-    for requested in (8192, 16384, 32768):
+    for requested in args.vocab_sizes:
+        rss_before = psutil.Process().memory_info().rss
         started = time.perf_counter()
         tokenizer = BPETokenizer.train(
             training_texts(args.root, args.documents_per_language),
             TokenizerConfig(vocab_size=requested),
         )
         trained_seconds = time.perf_counter() - started
+        rss_after = psutil.Process().memory_info().rss
         target = args.output.parent / f"bpe-{requested}"
         tokenizer.save(target)
         architectures = {}
@@ -99,6 +114,9 @@ def main() -> None:
                 "actual": tokenizer.vocab_size,
                 "version": tokenizer.version,
                 "training_seconds": trained_seconds,
+                "rss_before_training_mib": rss_before / 2**20,
+                "rss_after_training_mib": rss_after / 2**20,
+                "evaluation_split": args.split,
                 "architectures": architectures,
                 "samples": {
                     name: measure_tokenizer(tokenizer, texts) for name, texts in samples.items()

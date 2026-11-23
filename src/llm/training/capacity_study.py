@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from llm.core.config import ExperimentConfig, OptimizerConfig, TokenizerConfig, TrainConfig
+from llm.core.config import (
+    ExperimentConfig,
+    ModelConfig,
+    OptimizerConfig,
+    TokenizerConfig,
+    TrainConfig,
+)
 from llm.core.profiles import build_model_config
 from llm.core.scaling import flops_per_token
 
@@ -21,7 +27,7 @@ def budget_step(tokens: int) -> int:
     return max(1, round(tokens / TOKENS_PER_STEP))
 
 
-def model_profile(profile: str):
+def model_profile(profile: str) -> ModelConfig:
     return build_model_config(profile, 8192).model_copy(update={"max_position_embeddings": CONTEXT})
 
 
