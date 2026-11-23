@@ -13,6 +13,7 @@ from llm.core.checksums import file_sha256
 from llm.core.errors import ResourceError
 from llm.core.hardware import free_disk_gb
 from llm.optimization.memory import release_device_memory
+from llm.tokenizer.bpe import BPETokenizer
 from llm.training.capacity_study import (
     ARCHITECTURES,
     BATCH,
@@ -62,6 +63,8 @@ def main() -> None:
     frozen = json.loads((output / "preflight_data.json").read_text(encoding="utf-8"))
     if file_sha256(output / "diagnostic_v2.jsonl") != frozen["bank_sha256"]:
         parser.error("diagnostic bank changed")
+    if BPETokenizer.load(args.tokenizer).version != frozen["corpus"]["tokenizer"]:
+        parser.error("tokenizer version differs from the frozen corpus")
     for split, details in frozen["corpus"]["splits"].items():
         if file_sha256(args.corpus / "tokens" / f"{split}.bin") != details["sha256"]:
             parser.error(f"{split} token binary changed")

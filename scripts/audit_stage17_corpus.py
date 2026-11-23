@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
@@ -16,6 +17,21 @@ from llm.data.v4_sources import load_sources
 from llm.evaluation.metrics import normalize_words
 
 ANCHOR_LENGTH = 24
+EMPTY_PARENTHESES = re.compile(r"\(\s*(?:[,;]\s*)*\)")
+INTERWIKI_LINE = re.compile(r"(?m)^\s*(?:en|fr|uk|de|es|ru):[^/\s]+\s*$")
+CUES = {
+    "en": (
+        r"\b(?:because|therefore|consequently)\b",
+        r"\b(?:in contrast|compared with|whereas|unlike)\b",
+    ),
+    "ru": (
+        r"\b(?:потому что|поэтому|вследствие)\b",
+        r"\b(?:в отличие от|по сравнению с|тогда как)\b",
+    ),
+    "kk": (r"\b(?:өйткені|сондықтан|себебі)\b", r"\b(?:салыстырғанда|қарағанда|өзгеше)\b"),
+}
+CAUSAL_CUES = {language: re.compile(cues[0], re.IGNORECASE) for language, cues in CUES.items()}
+COMPARISON_CUES = {language: re.compile(cues[1], re.IGNORECASE) for language, cues in CUES.items()}
 
 
 @dataclass(frozen=True)
@@ -55,9 +71,17 @@ def corpus_scan(root: Path, anchors: Iterable[Anchor]) -> dict:
     matched: dict[str, set[str]] = defaultdict(set)
     samples: dict[str, list[tuple[int, dict]]] = defaultdict(list)
     n_language_document: Counter[str] = Counter()
+    formatting: dict[str, Counter[str]] = defaultdict(Counter)
     for row in read_jsonl(root / "train.jsonl"):
-        words = normalize_words(row["text"])
-        n_language_document[row["language"]] += 1
+        text = row["text"]
+        language = row["language"]
+        words = normalize_words(text)
+        n_language_document[language] += 1
+        counts = formatting[language]
+        counts["empty_parentheses"] += bool(EMPTY_PARENTHESES.search(text))
+        counts["interwiki_line"] += bool(INTERWIKI_LINE.search(text))
+        counts["causal_connector"] += bool(CAUSAL_CUES[language].search(text))
+        counts["comparison_connector"] += bool(COMPARISON_CUES[language].search(text))
         for offset, word in enumerate(words):
             if word not in beginnings:
                 continue
@@ -79,6 +103,7 @@ def corpus_scan(root: Path, anchors: Iterable[Anchor]) -> dict:
             split: sorted(matched[split]) for split in totals
         },
         "scanned_documents": dict(n_language_document),
+        "formatting_and_lexical_cues": formatting,
         "sample": [row for entries in samples.values() for _, row in entries],
     }
 
