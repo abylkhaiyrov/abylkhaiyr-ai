@@ -72,6 +72,26 @@ def graceful_shutdown(stop_event: threading.Event) -> Iterator[None]:
             signal.signal(sig, handler)
 
 
+@contextmanager
+def stop_at_deadline(event: threading.Event, deadline: float | None) -> Iterator[None]:
+    if deadline is None:
+        yield
+        return
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        event.set()
+        yield
+        return
+    timer = threading.Timer(remaining, event.set)
+    timer.daemon = True
+    timer.start()
+    try:
+        yield
+    finally:
+        timer.cancel()
+        timer.join()
+
+
 def configure_logging(output_dir: str) -> None:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     logger.setLevel(logging.INFO)
@@ -88,14 +108,20 @@ def run_training(
     max_restarts: int = 0,
     backoff_seconds: float = RESTART_BACKOFF_SECONDS,
     stop_file: Path | None = None,
+    deadline: float | None = None,
 ) -> TrainingResult:
     configure_logging(config.train.output_dir)
     attempt = 0
     with exclusive_session():
         while True:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise ResourceError("training deadline reached")
             trainer = build_trainer(config, resume or attempt > 0)
             trainer.stop_file = stop_file
-            with graceful_shutdown(trainer.stop_event):
+            with (
+                graceful_shutdown(trainer.stop_event),
+                stop_at_deadline(trainer.stop_event, deadline),
+            ):
                 try:
                     logger.info("starting at step %d", trainer.state.step)
                     result = trainer.train(stop_step=stop_step)
