@@ -24,6 +24,7 @@ CHECKPOINTS = Path("checkpoints/stage20")
 REGISTRATION = Path("docs/stage20_preregistration.md")
 REUSED = {"A-1": Path("checkpoints/stage19/L1")}
 WALL_SECONDS = 3900
+RAM_MARGIN_GIB = 0.25
 LEARNING_RATE = 5e-5
 JOBS = ("B-1", "R-1", "A-2", "B-2", "R-2", "A-3", "B-3", "R-3")
 DATA = {"A": "data/stage18/a", "B": "data/stage18/b", "R": str(REPLAY_ROOT)}
@@ -75,7 +76,7 @@ def main() -> None:
     if args.run:
         ROOT.mkdir(parents=True, exist_ok=True)
         profile = json.loads((STAGE18_ROOT / "profile.json").read_text(encoding="utf-8"))[0]
-        resources = resource_gate(float(profile["peak_device_gb"]))
+        resources = resource_gate(float(profile["peak_device_gb"]), RAM_MARGIN_GIB)
         if args.state.exists():
             state = json.loads(args.state.read_text(encoding="utf-8"))
             if state["plan"] != plan:

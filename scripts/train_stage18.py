@@ -33,6 +33,7 @@ TARGET = budget_step(BUDGETS[0])
 WALL_SECONDS = 3300
 DISK_RESERVE = 20.0
 GIB = 2**30
+RAM_MARGIN_GIB = 0.75
 
 
 def configuration(job: str) -> ExperimentConfig:
@@ -127,11 +128,11 @@ def completed_step(job: str) -> int:
     return int(CheckpointManager.verify(state)["step"])
 
 
-def resource_gate(expected_peak: float) -> dict[str, float]:
+def resource_gate(expected_peak: float, margin: float = RAM_MARGIN_GIB) -> dict[str, float]:
     ram = psutil.virtual_memory()
     swap = psutil.swap_memory()
     disk = free_disk_gb(CHECKPOINTS)
-    if not torch.backends.mps.is_available() or ram.available / GIB < expected_peak + 0.75:
+    if not torch.backends.mps.is_available() or ram.available / GIB < expected_peak + margin:
         raise ResourceError("MPS or RAM preflight failed")
     needed_disk = DISK_RESERVE + len(JOBS) * 3 * 0.20 + 0.50
     if disk < needed_disk:
