@@ -15,6 +15,8 @@ from sqlalchemy import func, or_, select
 from llm.evaluation.registry import load_registry
 from llm.studio.auth import AuthenticationService
 from llm.studio.database import create_sqlite_engine, ensure_studio_schema, make_session_factory
+from llm.studio.evaluation_center import compare as compare_checkpoints
+from llm.studio.evaluation_center import group_detail, list_groups
 from llm.studio.evaluations import evaluation_reports
 from llm.studio.experiments import ExperimentCatalog
 from llm.studio.inference_profiles import (
@@ -359,6 +361,15 @@ class StudioService:
 
     def experiments(self) -> list[dict[str, Any]]:
         return load_registry(self.root / "experiments" / "registry.jsonl")
+
+    def evaluation_groups(self, query: str | None, offset: int, limit: int) -> dict[str, Any]:
+        return list_groups(self.root, query, offset, limit)
+
+    def evaluation_group(self, identifier: str) -> dict[str, Any] | None:
+        return group_detail(self.root, identifier)
+
+    def compare_evaluations(self, identifier: str, checkpoints: list[str]) -> dict[str, Any] | None:
+        return compare_checkpoints(self.root, identifier, checkpoints)
 
     def evaluations(self) -> list[dict[str, Any]]:
         return evaluation_reports(self.root)

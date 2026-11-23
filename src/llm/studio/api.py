@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from llm.inference.sampling import SamplingParams
 from llm.studio.api_accounts import create_account_router
+from llm.studio.evaluation_center import IncompatibleEvaluations
+from llm.studio.evaluation_metrics import metric_catalog
 from llm.studio.inference_profiles import PROFILE_IDS, ProfilePolicyError
 from llm.studio.model_catalog import ModelPolicyError
 from llm.studio.model_manager import ModelManager, ModelManagerError
@@ -420,6 +422,47 @@ def create_studio_router(
         _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> list[dict[str, Any]]:
         return studio.evaluations()
+
+    @router.get("/evaluation/metrics")
+    def evaluation_metrics(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+    ) -> list[dict[str, Any]]:
+        return metric_catalog()
+
+    @router.get("/evaluation/groups")
+    def evaluation_groups(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        return studio.evaluation_groups(q, offset, limit)
+
+    @router.get("/evaluation/groups/{group_id}")
+    def evaluation_group(
+        group_id: str,
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+    ) -> dict[str, Any]:
+        group = studio.evaluation_group(group_id)
+        if group is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group_not_found")
+        return group
+
+    @router.get("/evaluation/compare")
+    def evaluation_compare(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+        group: Annotated[str, Query(min_length=1, max_length=200)],
+        checkpoint: Annotated[list[str], Query(min_length=2, max_length=8)],
+    ) -> dict[str, Any]:
+        try:
+            result = studio.compare_evaluations(group, checkpoint)
+        except IncompatibleEvaluations as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="incompatible_evaluations"
+            ) from error
+        if result is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="group_not_found")
+        return result
 
     @router.get("/logs")
     def logs(

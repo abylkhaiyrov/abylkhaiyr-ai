@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -81,29 +82,64 @@ def evaluation_reports(root: Path) -> list[dict[str, Any]]:
                             "path": source,
                             "experiment": experiment,
                             "dataset": dataset,
+                            "methodology": entry.get("methodology"),
+                            "split": entry.get("split"),
                             "stage": stage,
                             "checkpoint": identifier,
                             "model": Path(identifier).parent.name,
+                            "evaluated_at": entry.get("updated_at") or report_time(path),
                             "results": results,
                         }
                     )
-    files = set(root.glob("experiments/**/evaluation.json")) | set(
-        root.glob("experiments/*_eval.json")
+    files = (
+        set(root.glob("experiments/**/evaluation.json"))
+        | set(root.glob("experiments/*_eval.json"))
+        | set(root.glob("experiments/**/*eval*.json"))
     )
     for path in sorted(files):
         data = read_report(path)
-        results = result_metrics(data.get("metrics", data))
-        if results:
-            checkpoint = relative_id(root, data.get("checkpoint"))
+        stamp = report_time(path)
+        for entry in report_entries(data):
+            results = result_metrics(entry.get("metrics"))
+            if not results:
+                continue
+            checkpoint = relative_id(root, entry.get("checkpoint") or data.get("checkpoint"))
             reports.append(
                 {
                     "path": str(path.relative_to(root)),
-                    "experiment": path.parent.name if path.name == "evaluation.json" else path.stem,
-                    "dataset": data.get("data_dir"),
-                    "stage": data.get("stage"),
+                    "experiment": experiment_name(path),
+                    "dataset": entry.get("data_dir") or data.get("data_dir"),
+                    "methodology": entry.get("methodology") or data.get("methodology"),
+                    "split": entry.get("split") or data.get("split"),
+                    "stage": entry.get("stage") or data.get("stage"),
                     "checkpoint": checkpoint,
                     "model": Path(checkpoint).parent.name if checkpoint else None,
+                    "evaluated_at": stamp,
                     "results": results,
                 }
             )
     return reports
+
+
+def report_entries(data: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(data.get("metrics"), dict):
+        return [data]
+    if all(isinstance(value, (int, float)) for value in data.values()) and data:
+        return [{"metrics": data}]
+    return [
+        value
+        for value in data.values()
+        if isinstance(value, dict) and isinstance(value.get("metrics"), dict)
+    ]
+
+
+def experiment_name(path: Path) -> str:
+    return (
+        path.parent.name
+        if path.name in {"evaluation.json"} or path.parent.name != "experiments"
+        else path.stem
+    )
+
+
+def report_time(path: Path) -> str:
+    return datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat()
