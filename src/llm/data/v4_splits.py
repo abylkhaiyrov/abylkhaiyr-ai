@@ -8,9 +8,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-
-from llm.data.binary import IGNORE_INDEX, read_jsonl, tokenize_sft_split, with_extension
+from llm.data.binary import read_jsonl, supervised_token_count, tokenize_sft_split, with_extension
 from llm.data.dedup import MinHashDeduplicator, stable_hash
 from llm.data.v4_dialogues import Dialogue
 from llm.data.v4_quality import LANGUAGES
@@ -39,13 +37,22 @@ class DialogueDeduplicator:
         self.prompts = set() if existing is None else set(existing)
         self.families: set[str] = set()
         self.user_roots: set[int] = set()
+        self.protected: set[int] = set()
         self.near = MinHashDeduplicator(48, 0.8, 3, 1234)
+
+    def block(self, prompt_hashes: set[int]) -> None:
+        self.protected.update(prompt_hashes)
 
     def add(self, row: Dialogue, *, unique_family: bool = True) -> bool:
         history = normalized(row.prompt)
         key = stable_hash(history)
         if (
             key in self.prompts
+            or any(
+                stable_hash(normalized(turn.content)) in self.protected
+                for turn in row.messages
+                if turn.role == "user"
+            )
             or (unique_family and row.family in self.families)
             or self.near.is_duplicate(history)
         ):
@@ -155,10 +162,5 @@ def write_sft_groups(
             source = with_extension(prefix, ".jsonl")
             write_rows(source, cases)
             tokenize_sft_split(source, prefix, tokenizer)
-            labels = np.memmap(
-                with_extension(prefix, ".labels.bin"),
-                mode="r",
-                dtype=np.int32,
-            )
-            report[split][name] = int((labels != IGNORE_INDEX).sum())
+            report[split][name] = supervised_token_count(prefix)
     return report

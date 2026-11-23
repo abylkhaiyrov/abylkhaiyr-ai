@@ -8,6 +8,7 @@ from pathlib import Path
 
 from llm.data.binary import read_jsonl
 from llm.data.dedup import stable_hash
+from llm.data.v4_corpus import partition_of
 from llm.data.v4_curated import kazsandra_rows
 from llm.data.v4_quality import LANGUAGES, CyrillicLanguageFilter, clean_v4_text
 from llm.data.v4_sources import parquet_rows
@@ -22,6 +23,33 @@ TRANSLATE = {
     "ru": "Переведи следующий текст на русский.",
     "kk": "Мына мәтінді қазақшаға аудар.",
 }
+DEFINITION_PROMPTS = {
+    "en": (
+        "What is {title}?",
+        "Tell me about {title}.",
+        "Explain what {title} is.",
+        "Who or what is {title}? Answer briefly.",
+    ),
+    "ru": (
+        "Что такое {title}?",
+        "Расскажи о теме «{title}».",
+        "Объясни, что такое {title}.",
+        "Кратко расскажи, что известно о теме «{title}».",
+    ),
+    "kk": (
+        "{title} деген не?",
+        "{title} туралы айтып бер.",
+        "{title} дегенді түсіндіріп бер.",
+        "«{title}» тақырыбы туралы қысқаша айтып бер.",
+    ),
+}
+EMPTY_BRACKETS = re.compile(r"\s*\(\s*[;,]?\s*\)")
+TRAILING_COMMA = re.compile(r"\s*,\s*\)")
+SPACE_BEFORE_PUNCTUATION = re.compile(r"\s+([,;:)])|(\()\s+")
+NOTABLE_ARTICLE_CHARS = 3000
+SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+")
+LEAD_MIN, LEAD_MAX = 90, 420
+TITLE_REJECT = re.compile(r"[:(){}\[\]]|^\W*\d|\d{4}|^(список|тізімі|list of)\b", re.IGNORECASE)
 INTENT_PATTERNS = (
     ("translation", r"\b(translate|переведи|переведите|аудар|аударыңыз)\b"),
     ("causal", r"\b(why|почему|зачем|неге|неліктен)\b"),
@@ -315,11 +343,65 @@ def belebele_dialogues(
             yield dialogue
 
 
+def article_lead(text: str) -> str | None:
+    paragraph = text.strip().split("\n", 1)[0].replace("\xa0", " ").replace("\u0301", "")
+    paragraph = EMPTY_BRACKETS.sub("", paragraph)
+    paragraph = TRAILING_COMMA.sub(")", paragraph)
+    paragraph = SPACE_BEFORE_PUNCTUATION.sub(
+        lambda match: match.group(1) or match.group(2), paragraph
+    )
+    if "{{" in paragraph or "  " in paragraph:
+        return None
+    lead = ""
+    for sentence in SENTENCE_BOUNDARY.split(paragraph):
+        if len(lead) + len(sentence) > LEAD_MAX:
+            break
+        lead = f"{lead} {sentence}".strip()
+    return lead if len(lead) >= LEAD_MIN else None
+
+
+def wiki_definition_dialogues(
+    source: str,
+    path: Path,
+    language: str,
+    quality: CyrillicLanguageFilter,
+    tokenizer: BPETokenizer,
+) -> Iterator[Dialogue]:
+    for row in parquet_rows(path, ["id", "title", "text"]):
+        title = row["title"].strip()
+        if partition_of(source, row["id"]) != "train" or TITLE_REJECT.search(title):
+            continue
+        lead = article_lead(row["text"]) if len(row["text"]) >= NOTABLE_ARTICLE_CHARS else None
+        if lead is None:
+            continue
+        templates = DEFINITION_PROMPTS[language]
+        prompt = templates[stable_hash(row["id"]) % len(templates)].format(title=title)
+        dialogue = instruction_pair(
+            source,
+            row["id"],
+            f"{source}/{row['id']}",
+            language,
+            "definition",
+            prompt,
+            lead,
+            quality,
+            tokenizer,
+        )
+        if dialogue is not None:
+            yield dialogue
+
+
 def kazsandra_dialogues(
-    path: Path, quality: CyrillicLanguageFilter, tokenizer: BPETokenizer
+    path: Path, quality: CyrillicLanguageFilter, tokenizer: BPETokenizer, limit: int
 ) -> Iterator[Dialogue]:
     polarity = {"0": "Жағымсыз.", "1": "Жағымды."}
-    for row in kazsandra_rows(path, semantic=True):
+    rows = sorted(
+        kazsandra_rows(path, semantic=True), key=lambda item: stable_hash(item["custom_id"])
+    )
+    yielded = 0
+    for row in rows:
+        if yielded == limit:
+            return
         review, label = row["text"], row["label"]
         if label not in polarity or len(review) < 40:
             continue
@@ -336,4 +418,5 @@ def kazsandra_dialogues(
             tokenizer,
         )
         if dialogue is not None:
+            yielded += 1
             yield dialogue

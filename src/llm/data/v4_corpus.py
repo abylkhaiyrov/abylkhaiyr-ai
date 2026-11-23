@@ -19,6 +19,15 @@ from llm.tokenizer.bpe import BPETokenizer
 SPLITS = ("train", "validation", "test")
 
 
+def partition_of(source: str, source_id: str) -> str:
+    bucket = stable_hash(f"{source}/{source_id}") % 100
+    if bucket < 2:
+        return "test"
+    if bucket < 5:
+        return "validation"
+    return "train"
+
+
 @dataclass(frozen=True)
 class Document:
     text: str
@@ -33,12 +42,7 @@ class Document:
     def split(self) -> str:
         if self.partition is not None:
             return self.partition
-        bucket = stable_hash(f"{self.source}/{self.source_id}") % 100
-        if bucket < 2:
-            return "test"
-        if bucket < 5:
-            return "validation"
-        return "train"
+        return partition_of(self.source, self.source_id)
 
 
 def wiki_rows(source: Source, root: Path, start: int, limit: int) -> Iterator[dict]:

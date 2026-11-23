@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from llm.data.v4_corpus import Document, summarize_token_streams, write_splits
+from llm.data.dedup import stable_hash
+from llm.data.v4_corpus import Document, partition_of, summarize_token_streams, write_splits
 from llm.data.v4_curated import book_body, cpython_code
-from llm.data.v4_dialogues import Dialogue
+from llm.data.v4_dialogues import Dialogue, article_lead
 from llm.data.v4_quality import CyrillicLanguageFilter, clean_v4_text
 from llm.data.v4_sources import fetch_snapshot, load_sources
 from llm.data.v4_splits import DialogueDeduplicator, select_training
@@ -106,3 +108,46 @@ def test_validation_stream_interleaves_language_blocks(tmp_path: Path) -> None:
     actual = np.fromfile(tmp_path / "validation.bin", dtype=dtype)
     assert actual[::512].tolist() == [0, 1, 2, 0, 1, 2]
     assert result["distinct_token_ids"] == 3
+
+
+def test_article_lead_cleans_template_residue_and_rejects_gaps() -> None:
+    lead = article_lead(
+        "Lake Foo ( ; ) is a freshwater lake , located in the north of the country and "
+        "fed by three small rivers that flow down from the surrounding hills.\nSecond paragraph."
+    )
+    assert lead is not None
+    assert "( " not in lead and " ," not in lead and "Second" not in lead
+    assert (
+        article_lead("Area is  km² and population is  people in total across the whole region.")
+        is None
+    )
+    assert article_lead("Short.") is None
+
+
+def test_partition_is_deterministic_and_shared_with_documents() -> None:
+    document = Document("text", "wiki_kk", "42", "url", "kk", "encyclopedia")
+    assert document.split == partition_of("wiki_kk", "42")
+    shares = Counter(partition_of("wiki_kk", str(index)) for index in range(2000))
+    assert 0.9 < shares["train"] / 2000 < 0.97
+
+
+def test_blocked_prompts_never_reach_training() -> None:
+    from llm.data.v4_splits import DialogueDeduplicator, normalized, select_training
+    from llm.tokenizer.bpe import Message
+
+    def row(identifier: str, question: str) -> Dialogue:
+        return Dialogue(
+            "s",
+            identifier,
+            f"f/{identifier}",
+            "en",
+            "definition",
+            (Message("user", question), Message("assistant", "A long enough answer.")),
+        )
+
+    index = DialogueDeduplicator()
+    index.block({stable_hash(normalized("Which one is better?"))})
+    kept = list(
+        select_training([row("1", "Which one is better?"), row("2", "What is a lake?")], index)
+    )
+    assert [item.source_id for item in kept] == ["2"]

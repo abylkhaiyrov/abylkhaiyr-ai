@@ -107,6 +107,11 @@ def tokenize_sft_split(sft_file: Path, prefix: Path, tokenizer: BPETokenizer) ->
     return len(lengths)
 
 
+def supervised_token_count(prefix: Path) -> int:
+    labels = np.memmap(with_extension(prefix, ".labels.bin"), mode="r", dtype=np.int32)
+    return int((labels != IGNORE_INDEX).sum())
+
+
 class PackedTokenLoader:
     def __init__(
         self,

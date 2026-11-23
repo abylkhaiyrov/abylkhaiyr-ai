@@ -19,6 +19,7 @@ from llm.data.v4_dialogues import (
     oasst_dialogues,
     squad_dialogues,
     support_dialogues,
+    wiki_definition_dialogues,
 )
 from llm.data.v4_quality import LANGUAGES
 from llm.data.v4_sources import fetch, load_sources
@@ -52,6 +53,14 @@ def main() -> None:
         type=Path,
         default=[Path("data/v3_1/sft_groups"), Path("data/v3_3/sft_groups")],
     )
+    parser.add_argument(
+        "--protected",
+        nargs="*",
+        type=Path,
+        default=[Path("configs/natural_eval_v4.jsonl")],
+    )
+    parser.add_argument("--sentiment-limit", type=int, default=0)
+    parser.add_argument("--definitions", action="store_true")
     parser.add_argument("--validation-only", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
@@ -64,6 +73,8 @@ def main() -> None:
     names.update(f"belebele_{lang}" for lang in LANGUAGES)
     if not args.validation_only:
         names.update(("oasst_train", "aya_train", "dolly", "squad_train", "kazsandra"))
+        if args.definitions:
+            names.add("wiki_en")
     sources = {name: source for name, source in all_sources.items() if name in names}
     with ThreadPoolExecutor(max_workers=5) as pool:
         list(pool.map(partial(fetch, root=args.inputs), sources.values()))
@@ -91,7 +102,9 @@ def main() -> None:
     legacy = legacy_prompts(
         path for directory in args.legacy_sft for path in sorted(directory.glob("train.*.jsonl"))
     )
-    holdout = validation_set(candidates, legacy)
+    protected = legacy_prompts(args.protected)
+    holdout = validation_set(candidates, legacy | protected)
+    holdout.index.block(protected)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=args.output.parent) as staging:
         root = Path(staging) / "dialogues"
@@ -115,7 +128,16 @@ def main() -> None:
                     aya_dialogues(paths["aya_train"], quality, tokenizer),
                     dolly_dialogues(paths["dolly"], quality, tokenizer),
                     squad_dialogues("squad_train", paths["squad_train"], quality, tokenizer),
-                    kazsandra_dialogues(paths["kazsandra"], quality, tokenizer),
+                    kazsandra_dialogues(
+                        paths["kazsandra"], quality, tokenizer, args.sentiment_limit
+                    ),
+                    *(
+                        wiki_definition_dialogues(
+                            f"wiki_{lang}", paths[f"wiki_{lang}"], lang, quality, tokenizer
+                        )
+                        for lang in LANGUAGES
+                        if args.definitions
+                    ),
                 ),
                 holdout.index,
             )
