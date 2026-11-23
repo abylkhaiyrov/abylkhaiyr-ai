@@ -8,7 +8,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { useFormat } from "@/hooks/use-format";
 import { useMetricFormat } from "@/hooks/use-metric-format";
 import { CatalogTable } from "@/components/models/catalog-table";
-import { useModelCatalog, useModelRegistry } from "@/hooks/use-runtime";
+import { ProfilesTable } from "@/components/models/profiles-table";
+import { useInferenceProfiles, useModelCatalog, useModelRegistry } from "@/hooks/use-runtime";
 import { useApiError } from "@/hooks/use-api-error";
 import { api, type ModelRole } from "@/lib/api";
 import { modelAvailabilityKey } from "@/lib/models";
@@ -31,15 +32,17 @@ export function ModelsPage() {
   const describe = useApiError();
   const query = useModelRegistry();
   const catalog = useModelCatalog();
-  const [view, setView] = useState<"catalog" | "checkpoints">("catalog");
+  const profiles = useInferenceProfiles();
+  const [view, setView] = useState<"catalog" | "profiles" | "checkpoints">("catalog");
   const settle = () => void client.invalidateQueries({ queryKey: ["models"] });
   const fail = (error: Error) => push("error", describe(error));
   const load = useMutation({ mutationFn: (id: string) => api.switchModel(id), onSuccess: settle, onError: fail });
   const unload = useMutation({ mutationFn: api.unloadModel, onSuccess: settle, onError: fail });
   return (
     <div className="grid gap-4">
-      <PageHeader title={t("models.title")} subtitle={t("models.subtitle")} actions={<Tabs value={view} onChange={setView} items={[{ value: "catalog", label: t("models.catalog") }, { value: "checkpoints", label: t("models.checkpointRegistry") }]} />} />
+      <PageHeader title={t("models.title")} subtitle={t("models.subtitle")} actions={<Tabs value={view} onChange={setView} items={[{ value: "catalog", label: t("models.catalog") }, { value: "profiles", label: t("models.profiles") }, { value: "checkpoints", label: t("models.checkpointRegistry") }]} />} />
       {view === "catalog" ? <Query query={catalog}>{(entries) => <CatalogTable catalog={entries} />}</Query> : null}
+      {view === "profiles" ? <Query query={profiles}>{(items) => <ProfilesTable profiles={items} />}</Query> : null}
       {view === "checkpoints" ? <Query query={query}>
         {(registry) => (
           <>

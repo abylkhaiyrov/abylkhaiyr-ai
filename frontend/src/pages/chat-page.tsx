@@ -8,17 +8,19 @@ import { Composer } from "@/components/chat/composer";
 import { ContextPanel } from "@/components/chat/context-panel";
 import { MessageItem } from "@/components/chat/message-item";
 import { ModelPicker } from "@/components/chat/model-picker";
+import { ProfilePicker } from "@/components/chat/profile-picker";
 import { SettingsDialog } from "@/components/chat/settings-dialog";
 import { Button } from "@/components/ui/button";
-import { ErrorState, LoadingState } from "@/components/data-state";
+import { EmptyState, ErrorState, LoadingState } from "@/components/data-state";
 import { useApiError } from "@/hooks/use-api-error";
 import { useChatGeneration } from "@/hooks/use-chat-generation";
 import { useRole } from "@/hooks/use-auth";
-import { useModelCatalog, useModelRegistry, useRuntime } from "@/hooks/use-runtime";
-import { api, type CatalogModel, type ChatMessage, type ChatSummary, type GenerationSettings, type Model } from "@/lib/api";
+import { useInferenceProfiles, useModelCatalog, useModelRegistry, useRuntime, useUserModels } from "@/hooks/use-runtime";
+import { api, type ChatMessage, type ChatSummary, type GenerationSettings, type Model, type ProfileId, type UserModel } from "@/lib/api";
 import { DEFAULT_SETTINGS } from "@/lib/chat-settings";
 import { isActive } from "@/lib/generation";
 import { defaultModel, modelById } from "@/lib/models";
+import { pickProfile, preferredModel } from "@/lib/profiles";
 import { cn } from "@/lib/utils";
 import { useToastStore } from "@/store/toast-store";
 import { useUiStore } from "@/store/ui-store";
@@ -43,6 +45,8 @@ export function ChatPage() {
   const [drawer, setDrawer] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [draftModel, setDraftModel] = useState<string | null>(null);
+  const [draftUserModel, setDraftUserModel] = useState<string | null>(null);
+  const [draftProfile, setDraftProfile] = useState<ProfileId | null>(null);
   const [pinned, setPinned] = useState(true);
   const viewport = useRef<HTMLDivElement>(null);
   const { active, failure, start, cancel, clearFailure } = useChatGeneration();
@@ -62,6 +66,12 @@ export function ChatPage() {
     [registry, runtime, chat.data?.checkpoint, draftModel],
   );
   const model: Pick<Model, "id" | "display_name" | "stage" | "context_length"> | null = isAdmin ? adminModel : (activeModelInfo.data ?? null);
+  const profiles = useInferenceProfiles().data;
+  const userModels = useUserModels().data;
+  const rawSettings = chat.data?.generation_settings;
+  const profile = pickProfile(profiles, rawSettings?.profile ?? draftProfile);
+  const userModel = preferredModel(userModels, chat.data?.model_name ?? draftUserModel);
+  const requestSettings: GenerationSettings = useMemo(() => ({ ...(rawSettings ?? {}), profile: profile?.id ?? null }), [rawSettings, profile?.id]);
   const settings = useMemo(() => resolveSettings(chat.data?.generation_settings), [chat.data?.generation_settings]);
   const running = isActive(active);
   const visibleActive = active && active.chatId === selected ? active : null;
@@ -120,14 +130,14 @@ export function ChatPage() {
     const element = viewport.current;
     if (element) setPinned(element.scrollHeight - element.scrollTop - element.clientHeight < STICK_THRESHOLD);
   };
-  const modelPayload = (target: Model | null) => (isAdmin && target ? { model_name: target.model_id, checkpoint: target.id } : {});
+  const modelPayload = (target: Model | null) => (isAdmin ? (target ? { model_name: target.model_id, checkpoint: target.id } : {}) : userModel ? { model_name: userModel.id } : {});
 
   const send = async (content: string) => {
     if (!model || running || createChat.isPending) return;
     let chatId = selected;
     if (chatId === null) {
       try {
-        const created = await createChat.mutateAsync({ ...modelPayload(adminModel), generation_settings: settings });
+        const created = await createChat.mutateAsync({ ...modelPayload(adminModel), generation_settings: requestSettings });
         chatId = created.id;
         setSelected(chatId);
         refreshChats();
@@ -137,21 +147,29 @@ export function ChatPage() {
       }
     }
     setPinned(true);
-    start({ chatId, action: "send", content, checkpointId: isAdmin ? model.id : null, settings });
+    start({ chatId, action: "send", content, checkpointId: isAdmin ? model.id : null, settings: requestSettings });
   };
   const act = (action: "edit" | "regenerate" | "continue", message: ChatMessage, content?: string) => {
-    if (selected && model) start({ chatId: selected, action, targetId: message.id, content, checkpointId: isAdmin ? model.id : null, settings });
+    if (selected && model) start({ chatId: selected, action, targetId: message.id, content, checkpointId: isAdmin ? model.id : null, settings: requestSettings });
   };
   const pickModel = (next: Model) => {
     setDraftModel(next.id);
     if (selected) updateChat.mutate({ id: selected, payload: modelPayload(next) });
   };
-  const pickCatalogModel = (entry: CatalogModel) => {
-    const checkpoint = modelById(registry, entry.representative_checkpoint);
+  const pickCatalogModel = (entry: UserModel) => {
+    const checkpoint = modelById(registry, catalog?.find((item) => item.id === entry.id)?.representative_checkpoint ?? null);
     if (checkpoint) pickModel(checkpoint);
   };
+  const pickUserModel = (entry: UserModel) => {
+    setDraftUserModel(entry.id);
+    if (selected) updateChat.mutate({ id: selected, payload: { model_name: entry.id } });
+  };
+  const pickProfileId = (id: ProfileId) => {
+    setDraftProfile(id);
+    if (selected) updateChat.mutate({ id: selected, payload: { generation_settings: { ...(rawSettings ?? {}), profile: id } } });
+  };
   const saveSettings = (next: Required<GenerationSettings>, prompt: string) => {
-    if (selected) updateChat.mutate({ id: selected, payload: { generation_settings: next, system_prompt: prompt } });
+    if (selected) updateChat.mutate({ id: selected, payload: { generation_settings: { ...next, profile: profile?.id ?? null }, system_prompt: prompt } });
     else push("info", t("chat.settingsAfterFirst"));
   };
 
@@ -162,8 +180,11 @@ export function ChatPage() {
   const notice = model?.stage === "pretrain" ? t("chat.pretrainNotice") : runtime?.production && !runtime.production.ready ? t("chat.notReadyNotice") : null;
   const failureHere = failure && failure.chatId === selected ? failure : null;
   const empty = messages.length === 0;
-  const blockReason = !backendOnline ? t("chatError.disconnected") : model === null ? t("chat.noModel") : null;
-  const composer = (
+  const noModelsAllowed = isAdmin ? catalog !== undefined && !catalog.some((item) => item.available) : userModels !== undefined && userModel === null;
+  const blockReason = !backendOnline ? t("chatError.disconnected") : (isAdmin ? model === null : userModel === null) ? t("chat.noModel") : null;
+  const composer = noModelsAllowed ? (
+    <EmptyState title={t("chat.noModelsAllowedTitle")} description={t(isAdmin ? "chat.noModelsAllowedAdmin" : "chat.noModelsAllowedUser")} />
+  ) : (
     <Composer generating={running} disabled={blockReason !== null || createChat.isPending} disabledReason={blockReason} onSend={(content) => void send(content)} onStop={cancel} focusKey={selected} large={empty} />
   );
   const sidebar = (
@@ -197,10 +218,11 @@ export function ChatPage() {
           <Button variant="ghost" size="icon" className="lg:hidden" aria-label={t("chat.history")} onClick={() => setDrawer(true)}><PanelLeft size={16} /></Button>
           <Button variant="ghost" size="icon" className="hidden lg:inline-flex" aria-label={t(historyOpen ? "chat.hideHistory" : "chat.showHistory")} aria-pressed={historyOpen} onClick={toggleHistory}><PanelLeft size={16} /></Button>
           {isAdmin ? (
-            <ModelPicker catalog={catalog} selected={adminModel} locked={running} onSelect={pickCatalogModel} />
+            <ModelPicker models={catalog ?? []} selectedId={adminModel?.model_id ?? null} locked={running} onSelect={pickCatalogModel} advancedHref="/models" />
           ) : (
-            <span className="px-2 text-[13px] font-semibold" title={t("chat.activeModel")}>{model?.display_name ?? t("chat.noModel")}</span>
+            <ModelPicker models={userModels ?? []} selectedId={userModel?.id ?? null} locked={running} onSelect={pickUserModel} />
           )}
+          <ProfilePicker profiles={profiles ?? []} value={profile?.id ?? null} locked={running} onChange={pickProfileId} />
           <span className="mx-1 hidden min-w-0 flex-1 truncate text-center text-[13px] text-muted-foreground md:block">{chat.data?.title ?? ""}</span>
           <div className="ml-auto flex items-center md:ml-0">
             <ContextPanel
@@ -209,7 +231,7 @@ export function ChatPage() {
               messageCount={messages.length}
               window={settings.context_messages}
               disabled={selected === null || running}
-              onWindow={(value) => selected && updateChat.mutate({ id: selected, payload: { generation_settings: { ...settings, context_messages: value } } })}
+              onWindow={(value) => selected && updateChat.mutate({ id: selected, payload: { generation_settings: { ...requestSettings, context_messages: value } } })}
               onSystemPrompt={() => setSettingsOpen(true)}
               onClear={() => setSelected(null)}
             />
@@ -234,7 +256,7 @@ export function ChatPage() {
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 {SUGGESTIONS.map((key) => (
-                  <button key={key} type="button" disabled={running || createChat.isPending || blockReason !== null} onClick={() => void send(t(`chat.suggestions.${key}`))} className="rounded-full border px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">
+                  <button key={key} type="button" disabled={running || createChat.isPending || blockReason !== null || noModelsAllowed} onClick={() => void send(t(`chat.suggestions.${key}`))} className="rounded-full border px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50">
                     {t(`chat.suggestions.${key}`)}
                   </button>
                 ))}

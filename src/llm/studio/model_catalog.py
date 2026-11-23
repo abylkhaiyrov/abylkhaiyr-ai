@@ -47,9 +47,8 @@ def family_of(name: str) -> str:
 
 
 def display_name(name: str) -> str:
-    version = version_of(name)
-    family = family_of(name).capitalize()
-    return family if version is None else f"{family} {version}"
+    words = name.replace("_", " ").strip()
+    return words[:1].upper() + words[1:]
 
 
 def representative(checkpoints: list[dict[str, Any]]) -> dict[str, Any]:

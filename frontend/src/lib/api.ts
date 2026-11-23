@@ -252,7 +252,23 @@ export type Process = {
 
 export type ReasoningStageEvent = { stage: string; status: string; data: Record<string, unknown>; timestamp?: number };
 
+export type ProfileId = "lite" | "medium" | "high" | "very_high";
+
+export type InferenceProfile = {
+  id: ProfileId;
+  max_output_tokens: number;
+  context_budget: number;
+  generation_timeout_seconds: number;
+  tool_budget_seconds: number;
+  reasoning: { enabled: boolean; max_candidates: number; verification_attempts: number };
+  limits: { max_total_new_tokens: number; max_concurrent_generations: number };
+  available: boolean;
+  unavailable_reason: string | null;
+  allowed: boolean;
+};
+
 export type GenerationSettings = {
+  profile?: ProfileId | null;
   mode?: "standard" | "reasoning" | "precise" | "creative";
   temperature?: number;
   top_p?: number;
@@ -403,6 +419,8 @@ export const api = {
     http<RunPage>(`/catalog/runs?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape<RunPage>({ items: arrayOf(runEntry), total: number })),
   modelCatalog: () => http<CatalogModel[]>("/models/catalog", {}, listOf<CatalogModel>(catalogModel)),
   setAllowedModels: (ids: string[]) => http<CatalogModel[]>("/models/allowed", body("PUT", { ids }), listOf<CatalogModel>(catalogModel)),
+  inferenceProfiles: () => http<InferenceProfile[]>("/inference/profiles", {}, listOf<InferenceProfile>(shape({ id: string, available: boolean, allowed: boolean }))),
+  setAllowedProfiles: (ids: string[]) => http<InferenceProfile[]>("/inference/profiles/allowed", body("PUT", { ids }), listOf<InferenceProfile>(shape({ id: string, available: boolean, allowed: boolean }))),
   userModels: () => http<UserModel[]>("/chat/models", {}, listOf<UserModel>(userModel)),
   processEvents: (id: string) => http<{ level: string; message: string; created_at: string }[]>(`/processes/${encodeURIComponent(id)}/events`, {}, listOf(shape({ message: string, created_at: string }))),
   pipelines: () => http<Pipeline[]>("/pipelines", {}, listOf(pipelineGuard)),

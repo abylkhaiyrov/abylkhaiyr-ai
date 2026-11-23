@@ -65,6 +65,8 @@ export function StudioEventsProvider({ children, enabled }: { children: ReactNod
         void queryClient.invalidateQueries({ queryKey: ["evaluation"] }, { cancelRefetch: false });
         void queryClient.invalidateQueries({ queryKey: ["pipelines"] }, { cancelRefetch: false });
         void queryClient.invalidateQueries({ queryKey: ["model-catalog"] }, { cancelRefetch: false });
+        void queryClient.invalidateQueries({ queryKey: ["inference-profiles"] }, { cancelRefetch: false });
+        void queryClient.invalidateQueries({ queryKey: ["user-models"] }, { cancelRefetch: false });
         void queryClient.invalidateQueries({ queryKey: ["catalog-runs"] }, { cancelRefetch: false });
         void queryClient.invalidateQueries({ queryKey: ["processes"] }, { cancelRefetch: false });
       } else if (event.type === "system.update") {

@@ -8,6 +8,8 @@ export const useRuntime = () => useQuery({ queryKey: ["runtime"], queryFn: api.r
 export const useSystem = () => useQuery({ queryKey: ["system"], queryFn: api.system, ...LIVE });
 export const useModelRegistry = () => useQuery({ queryKey: ["models"], queryFn: api.modelRegistry, enabled: useRole() === "ADMIN", ...LIVE });
 export const useModelCatalog = () => useQuery({ queryKey: ["model-catalog"], queryFn: api.modelCatalog, enabled: useRole() === "ADMIN", staleTime: 30_000 });
+export const useInferenceProfiles = () => useQuery({ queryKey: ["inference-profiles"], queryFn: api.inferenceProfiles, staleTime: 60_000 });
+export const useUserModels = () => useQuery({ queryKey: ["user-models"], queryFn: api.userModels, enabled: useRole() === "USER", staleTime: 60_000 });
 export const useSystemHistory = () =>
   useQuery({ queryKey: ["system-history"], queryFn: () => api.systemHistory(3600), ...LIVE });
 

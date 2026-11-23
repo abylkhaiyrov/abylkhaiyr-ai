@@ -58,7 +58,7 @@ def test_catalog_groups_checkpoints_and_picks_best_representative():
     assert best["representative_checkpoint"].endswith("step-200")
     assert best["checkpoint_count"] == 3
     assert best["quality_status"] == "validated"
-    assert best["display_name"] == "Tiny v4"
+    assert best["display_name"] == "Tiny v4 sft"
     assert entries["tiny_v3_sft"]["allowed"] is False
 
 

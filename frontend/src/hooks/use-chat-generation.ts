@@ -56,6 +56,7 @@ export function useChatGeneration() {
         target_message_id: options.targetId,
         checkpoint_id: options.checkpointId ?? undefined,
         mode: settings.mode,
+        profile: settings.profile ?? undefined,
         temperature: settings.temperature,
         top_p: settings.top_p,
         top_k: settings.top_k,
