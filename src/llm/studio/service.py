@@ -17,6 +17,12 @@ from llm.studio.auth import AuthenticationService
 from llm.studio.database import create_sqlite_engine, ensure_studio_schema, make_session_factory
 from llm.studio.evaluations import evaluation_reports
 from llm.studio.experiments import ExperimentCatalog
+from llm.studio.inference_profiles import (
+    PROFILE_IDS,
+    PROFILES,
+    ProfileAccessPolicy,
+    profile_view,
+)
 from llm.studio.model_catalog import ModelAccessPolicy, build_catalog, user_view
 from llm.studio.model_manager import ModelManager
 from llm.studio.model_registry import production_info
@@ -81,6 +87,7 @@ class StudioService:
         self.processes = ProcessManager(self.session_factory, self.root)
         self.runtime = RuntimeState(self.root)
         self.model_policy = ModelAccessPolicy(self.session_factory)
+        self.profile_policy = ProfileAccessPolicy(self.session_factory)
         self.catalog = ExperimentCatalog(self.root, self.runtime)
         self.run_catalog = RunCatalog(
             self.runtime.pipeline_history,
@@ -310,6 +317,18 @@ class StudioService:
 
     def set_allowed_models(self, identifiers: list[str]) -> list[str]:
         return self.model_policy.update(identifiers, self.model_catalog)
+
+    def profile_allowed(self, profile_id: str) -> bool:
+        allowed = self.profile_policy.allowed()
+        return profile_id in PROFILES and (allowed is None or profile_id in allowed)
+
+    def inference_profiles(self, context_length: int | None, admin: bool) -> list[dict[str, Any]]:
+        allowed = self.profile_policy.allowed()
+        views = [profile_view(PROFILES[item], context_length, allowed) for item in PROFILE_IDS]
+        return views if admin else [item for item in views if item["allowed"]]
+
+    def set_allowed_profiles(self, identifiers: list[str]) -> list[str]:
+        return self.profile_policy.update(identifiers)
 
     def datasets(self) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []

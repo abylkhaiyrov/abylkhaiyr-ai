@@ -49,6 +49,7 @@ class ClientEvent(BaseModel):
     action: Literal["send", "edit", "regenerate", "continue"] = "send"
     target_message_id: str | None = Field(default=None, min_length=1, max_length=64)
     mode: Literal["standard", "reasoning", "precise", "creative"] = "standard"
+    profile: Literal["lite", "medium", "high", "very_high"] | None = None
     checkpoint_id: str | None = Field(default=None, min_length=1, max_length=1024)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
@@ -387,6 +388,7 @@ class WebSocketManager:
                 action=event.action,
                 target_message_id=event.target_message_id,
                 mode=event.mode,
+                profile=event.profile,
                 checkpoint_id=event.checkpoint_id,
                 temperature=event.temperature,
                 top_p=event.top_p,

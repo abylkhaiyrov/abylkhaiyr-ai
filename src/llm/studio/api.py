@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from llm.inference.sampling import SamplingParams
 from llm.studio.api_accounts import create_account_router
+from llm.studio.inference_profiles import PROFILE_IDS, ProfilePolicyError
 from llm.studio.model_catalog import ModelPolicyError
 from llm.studio.model_manager import ModelManager, ModelManagerError
 from llm.studio.processes import ProcessError
@@ -27,12 +28,20 @@ class TrainingStartRequest(BaseModel):
     stage: Literal["pretrain", "sft", "dpo"] | None = None
 
 
+def valid_profile_setting(settings: dict[str, Any] | None) -> dict[str, Any] | None:
+    if settings is not None and settings.get("profile") not in {None, *PROFILE_IDS}:
+        raise ValueError("unknown_inference_profile")
+    return settings
+
+
 class ChatCreateRequest(BaseModel):
     title: str = Field(default="New chat", max_length=256)
     model_name: str | None = Field(default=None, max_length=256)
     checkpoint: str | None = Field(default=None, max_length=1024)
     system_prompt: str = Field(default="", max_length=20000)
     generation_settings: dict[str, Any] = Field(default_factory=dict)
+
+    _profile = field_validator("generation_settings")(valid_profile_setting)
 
 
 class ChatUpdateRequest(BaseModel):
@@ -43,6 +52,8 @@ class ChatUpdateRequest(BaseModel):
     generation_settings: dict[str, Any] | None = None
     pinned: bool | None = None
     archived: bool | None = None
+
+    _profile = field_validator("generation_settings")(valid_profile_setting)
 
 
 class AllowedModelsRequest(BaseModel):
@@ -318,6 +329,30 @@ def create_studio_router(
         _: Annotated[tuple[Any, str], Depends(current_identity)],
     ) -> list[dict[str, Any]]:
         return studio.user_models()
+
+    @router.get("/inference/profiles")
+    def inference_profiles(
+        identity: Annotated[tuple[Any, str], Depends(current_identity)],
+    ) -> list[dict[str, Any]]:
+        active = model_manager.active_info()
+        context = None if active is None else active.get("context_length")
+        return studio.inference_profiles(context, identity[0].role == "ADMIN")
+
+    @router.put("/inference/profiles/allowed")
+    def set_allowed_profiles(
+        payload: AllowedModelsRequest,
+        _: Annotated[tuple[Any, str], Depends(admin_csrf)],
+    ) -> list[dict[str, Any]]:
+        try:
+            studio.set_allowed_profiles(payload.ids)
+        except ProfilePolicyError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+            ) from error
+        active = model_manager.active_info()
+        return studio.inference_profiles(
+            None if active is None else active.get("context_length"), True
+        )
 
     @router.get("/models/active")
     def active_model(

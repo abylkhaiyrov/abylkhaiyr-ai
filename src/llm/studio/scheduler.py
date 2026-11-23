@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from llm.inference.sampling import SamplingParams
 from llm.reasoning.engine import Budget, ReasoningEngine, classify_task
+from llm.studio.inference_profiles import PROFILES, effective_output_tokens, unavailable_reason
 from llm.studio.model_manager import LoadedModelState, ModelManager, ModelManagerError
 from llm.studio.service import TASK_STATUS, StudioService
 from llm.studio.streaming import PERSIST_INTERVAL_SECONDS, DeltaBuffer
@@ -35,6 +36,7 @@ class GenerationRequest:
     action: Literal["send", "edit", "regenerate", "continue"] = "send"
     target_message_id: str | None = None
     mode: Literal["standard", "reasoning", "precise", "creative"] = "standard"
+    profile: str | None = None
     checkpoint_id: str | None = None
     temperature: float | None = None
     top_p: float | None = None
@@ -51,6 +53,7 @@ class GenerationState:
     request_id: str
     action: str = "send"
     cancel: threading.Event = field(default_factory=threading.Event)
+    timed_out: bool = False
     status: str = "queued"
     message_id: str | None = None
     text: str = ""
@@ -126,6 +129,10 @@ class GenerationScheduler:
             not request.content or not request.content.strip()
         ):
             return "rejected", {"code": "invalid_event", "detail": "Message content is required"}
+        request.profile = request.profile or (chat.get("generation_settings") or {}).get("profile")
+        rejection = self._profile_rejection(request)
+        if rejection is not None:
+            return "rejected", rejection
         if len(self.pending) >= self.max_queue_size:
             return "rejected", {
                 "code": "queue_full",
@@ -388,9 +395,13 @@ class GenerationScheduler:
             prefix_tokens = (
                 len(engine.tokenizer.encode(continuation_prefix)) if continuation_prefix else 0
             )
-            messages, dropped_messages = engine.fit_messages(
-                history, params.max_new_tokens + prefix_tokens
-            )
+            profile = PROFILES.get(str(params_dict.get("profile") or ""))
+            reserved_tokens = params.max_new_tokens + prefix_tokens
+            if profile is not None:
+                reserved_tokens = max(
+                    reserved_tokens, engine.max_positions - profile.context_budget
+                )
+            messages, dropped_messages = engine.fit_messages(history, reserved_tokens)
             input_tokens = (
                 len(engine.tokenizer.encode_conversation(messages, add_generation_prompt=True))
                 + prefix_tokens
@@ -418,7 +429,19 @@ class GenerationScheduler:
             state.persisted_at = started
             generated_chars_start = len(state.text)
 
-            if request.mode == "reasoning" and request.action != "continue":
+            use_reasoning = profile.reasoning.enabled if profile else request.mode == "reasoning"
+            timer = None
+            if profile is not None:
+
+                def expire() -> None:
+                    state.timed_out = True
+                    state.cancel.set()
+
+                timer = threading.Timer(profile.generation_timeout_seconds, expire)
+                timer.daemon = True
+                timer.start()
+
+            if use_reasoning and request.action != "continue":
 
                 def run_reasoning() -> tuple[str, int]:
                     def on_reasoning_event(event: dict[str, Any]) -> None:
@@ -436,12 +459,16 @@ class GenerationScheduler:
 
                     with self.inference_lock:
                         reasoning_engine = ReasoningEngine(engine)
-                        budget = Budget(
-                            max_candidates=2,
-                            max_retries=1,
-                            max_new_tokens_total=max(params.max_new_tokens * 3, 256),
-                            max_seconds=30.0,
-                            max_new_tokens_per_candidate=params.max_new_tokens,
+                        budget = (
+                            profile.budget(params.max_new_tokens)
+                            if profile is not None
+                            else Budget(
+                                max_candidates=2,
+                                max_retries=1,
+                                max_new_tokens_total=max(params.max_new_tokens * 3, 256),
+                                max_seconds=30.0,
+                                max_new_tokens_per_candidate=params.max_new_tokens,
+                            )
                         )
                         solution = reasoning_engine.solve_auto(
                             last_user_text,
@@ -519,6 +546,16 @@ class GenerationScheduler:
                         {"output_tokens": output_tokens},
                     )
 
+            if timer is not None:
+                timer.cancel()
+            if state.timed_out and profile is not None:
+                await self._record_stage(
+                    publish,
+                    state,
+                    "generation_timeout",
+                    "failed",
+                    {"seconds": profile.generation_timeout_seconds},
+                )
             elapsed_ms = int((time.monotonic() - started) * 1000)
             tps = round(output_tokens / max(elapsed_ms / 1000, 0.001), 2) if output_tokens else 0.0
             state.status = "cancelled" if state.cancel.is_set() else "completed"
@@ -705,12 +742,32 @@ class GenerationScheduler:
                 status,
             )
 
+    def _profile_rejection(self, request: GenerationRequest) -> dict[str, str] | None:
+        if request.profile is None:
+            return None
+        profile = PROFILES.get(request.profile)
+        if profile is None:
+            return {"code": "invalid_profile", "detail": "Unknown inference profile"}
+        if not request.privileged and not self.studio.profile_allowed(profile.id):
+            return {
+                "code": "profile_not_allowed",
+                "detail": "This inference profile is not enabled for your account",
+            }
+        active = self.model_manager.active
+        reason = (
+            None if active is None else unavailable_reason(profile, active.engine.max_positions)
+        )
+        if reason is not None:
+            return {"code": "profile_unavailable", "detail": reason}
+        return None
+
     @staticmethod
     def _resolve_sampling_params(
         request: GenerationRequest, chat: dict[str, Any], max_positions: int
     ) -> tuple[SamplingParams, dict[str, Any]]:
         saved = chat.get("generation_settings") or {}
         mode = request.mode or saved.get("mode") or "standard"
+        profile = PROFILES.get(request.profile or saved.get("profile") or "")
         default_temp = DEFAULT_TEMPERATURE
         default_top_p = DEFAULT_TOP_P
         default_top_k = DEFAULT_TOP_K
@@ -744,9 +801,14 @@ class GenerationScheduler:
         requested_max = int(
             request.max_tokens
             if request.max_tokens is not None
-            else saved.get("max_tokens", min(256, max(1, max_positions // 2)))
+            else saved.get(
+                "max_tokens",
+                profile.max_output_tokens if profile else min(256, max(1, max_positions // 2)),
+            )
         )
         max_new_tokens = max(1, min(requested_max, max_cap))
+        if profile is not None:
+            max_new_tokens = min(max_new_tokens, effective_output_tokens(profile, max_positions))
         greedy = temperature <= 1e-5
         params = SamplingParams(
             max_new_tokens=max_new_tokens,
@@ -758,6 +820,7 @@ class GenerationScheduler:
         )
         params_dict = {
             "mode": mode,
+            "profile": None if profile is None else profile.id,
             "temperature": temperature,
             "top_p": top_p,
             "top_k": top_k,

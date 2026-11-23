@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from llm.studio.models import ApplicationSetting
+from llm.studio.access_policy import AccessPolicy
 from llm.studio.run_catalog import version_of
 
 ALLOWED_KEY = "models.allowed"
@@ -112,25 +112,9 @@ def user_view(entries: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-class ModelAccessPolicy:
+class ModelAccessPolicy(AccessPolicy):
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
-        self.session_factory = session_factory
-
-    def allowed(self) -> set[str] | None:
-        with self.session_factory() as database:
-            row = database.get(ApplicationSetting, ALLOWED_KEY)
-            value = None if row is None else row.value
-        if value is None:
-            return None
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return set()
-        return (
-            {item for item in parsed if isinstance(item, str)}
-            if isinstance(parsed, list)
-            else set()
-        )
+        super().__init__(session_factory, ALLOWED_KEY)
 
     def update(
         self, identifiers: list[str], catalog: Callable[[], list[dict[str, Any]]]
@@ -144,11 +128,4 @@ class ModelAccessPolicy:
         )
         if unknown or rejected:
             raise ModelPolicyError(json.dumps({"unknown": unknown, "rejected": rejected}))
-        ordered = sorted(set(identifiers))
-        with self.session_factory.begin() as database:
-            row = database.get(ApplicationSetting, ALLOWED_KEY)
-            if row is None:
-                database.add(ApplicationSetting(key=ALLOWED_KEY, value=json.dumps(ordered)))
-            else:
-                row.value = json.dumps(ordered)
-        return ordered
+        return self.store(set(identifiers))
