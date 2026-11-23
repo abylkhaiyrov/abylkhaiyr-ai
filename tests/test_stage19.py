@@ -178,12 +178,24 @@ def test_optimizer_state_saved_with_the_older_group_order_is_remapped(model_conf
         )
 
 
-def test_matching_optimizer_state_is_returned_unchanged(model_config) -> None:
+def test_missing_hyperparameters_of_older_states_use_current_values(model_config) -> None:
+    from llm.training.checkpoint import align_optimizer_state
+
+    _, previous, current = moment_pair(model_config)
+    saved = previous.state_dict()
+    for group in saved["param_groups"]:
+        group.pop("foreach", None)
+    aligned = align_optimizer_state(saved, current)
+    assert all("foreach" in group and "lr_scale" in group for group in aligned["param_groups"])
+    current.load_state_dict(aligned)
+
+
+def test_matching_optimizer_state_keeps_every_saved_value(model_config) -> None:
     from llm.training.checkpoint import align_optimizer_state
 
     _, _, current = moment_pair(model_config)
     saved = current.state_dict()
-    assert align_optimizer_state(saved, current) is saved
+    assert align_optimizer_state(saved, current) == saved
 
 
 def test_incompatible_optimizer_state_is_rejected(model_config) -> None:

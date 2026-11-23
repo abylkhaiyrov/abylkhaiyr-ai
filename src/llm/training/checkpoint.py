@@ -326,18 +326,15 @@ class CheckpointManager:
 def align_optimizer_state(
     saved: dict[str, Any], optimizer: torch.optim.Optimizer
 ) -> dict[str, Any]:
-    sizes = [len(group["params"]) for group in saved["param_groups"]]
-    wanted = [len(group["params"]) for group in optimizer.param_groups]
-    if sizes == wanted:
-        return saved
     remaining = list(saved["param_groups"])
     ordered = []
-    for size in wanted:
-        match = next((group for group in remaining if len(group["params"]) == size), None)
-        if match is None:
+    for current in optimizer.param_groups:
+        size = len(current["params"])
+        index = next((i for i, group in enumerate(remaining) if len(group["params"]) == size), None)
+        if index is None:
             raise CheckpointError("optimizer state does not match the model parameter groups")
-        remaining.remove(match)
-        ordered.append(match)
+        defaults = {key: value for key, value in current.items() if key != "params"}
+        ordered.append({**defaults, **remaining.pop(index)})
     return {**saved, "param_groups": ordered}
 
 
