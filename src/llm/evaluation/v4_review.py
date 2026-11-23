@@ -50,6 +50,29 @@ def proportion(successes: int, size: int) -> dict:
     }
 
 
+SCRIPT_EXEMPT = {"translation", "code", "math"}
+KAZAKH_LETTERS = frozenset("әғқңөұүһі")
+
+
+def accepted(response: str, groups: Sequence[Sequence[str]], rejected: Sequence[str] = ()) -> bool:
+    folded = response.casefold()
+    return all(
+        any(option.casefold() in folded for option in group) for group in groups
+    ) and not any(option.casefold() in folded for option in rejected)
+
+
+def script_matches(language: str, response: str) -> bool:
+    letters = [char for char in response if char.isalpha()]
+    if not letters:
+        return False
+    cyrillic = sum("\u0400" <= char <= "\u04ff" for char in letters) / len(letters)
+    if language == "en":
+        return cyrillic < 0.2
+    if language == "ru":
+        return cyrillic >= 0.8 and not KAZAKH_LETTERS & set(response.casefold())
+    return cyrillic >= 0.8
+
+
 def predictions(
     engine: InferenceEngine,
     rows: Sequence[dict],
@@ -70,6 +93,8 @@ def predictions(
                 "category": row["category"],
                 "messages": row["messages"][:-1],
                 "reference": row["messages"][-1]["content"],
+                "accept": row.get("accept"),
+                "reject": row.get("reject") or [],
                 "response": result.text,
                 "response_sha256": hashlib.sha256(result.text.encode("utf-8")).hexdigest(),
                 "stop": finish,
@@ -99,7 +124,18 @@ def metrics(rows: Sequence[dict], reviews: Sequence[Review] = ()) -> dict:
             if value is not None:
                 eligible[metric] += 1
                 tally[metric] += value
+    single = [row for row in rows if row.get("accept")]
+    scripted = [row for row in rows if row["category"] not in SCRIPT_EXEMPT]
     return {
+        "single_answer_accuracy": proportion(
+            sum(accepted(row["response"], row["accept"], row.get("reject", ())) for row in single),
+            len(single),
+        ),
+        "script_match": proportion(
+            sum(script_matches(row["language"], row["response"]) for row in scripted),
+            len(scripted),
+        ),
+        "incomplete": proportion(sum(row["stop"] != "stop" for row in rows), len(rows)),
         "prompt_echo": proportion(sum(row["prompt_echo"] for row in rows), len(rows)),
         "nonempty": proportion(sum(bool(row["response"].strip()) for row in rows), len(rows)),
         "mean_repetition": sum(row["repetition"] for row in rows) / len(rows) if rows else None,

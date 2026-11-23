@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+from collections import Counter
+from pathlib import Path
+
 import pytest
 
-from llm.evaluation.v4_review import Review, metrics, proportion
+from llm.evaluation.v4_review import Review, accepted, metrics, proportion, script_matches
 
 
 def test_wilson_reporting_includes_sample_size_and_handles_zero() -> None:
@@ -17,6 +21,9 @@ def test_manual_metrics_require_a_matching_review() -> None:
     rows = [
         {
             "id": "example",
+            "language": "en",
+            "category": "greeting",
+            "stop": "stop",
             "response": "A real answer.",
             "response_sha256": "current",
             "prompt_echo": False,
@@ -35,3 +42,34 @@ def test_manual_metrics_require_a_matching_review() -> None:
     stale = review.model_copy(update={"response_sha256": "old"})
     with pytest.raises(ValueError, match="review does not match prediction"):
         metrics(rows, [stale])
+
+
+def test_single_answer_matching_requires_every_group() -> None:
+    groups = [["walk"], ["evening", "night"]]
+    assert accepted("I like to Walk in the evening.", groups)
+    assert not accepted("I like to walk.", groups)
+
+
+def test_distractor_echo_is_not_credited() -> None:
+    assert accepted("carrot", [["carrot"]], ["apple", "pear"])
+    assert not accepted("apple, carrot, pear", [["carrot"]], ["apple", "pear"])
+
+
+def test_script_match_separates_languages() -> None:
+    assert script_matches("en", "Hello there")
+    assert not script_matches("en", "Привет")
+    assert script_matches("ru", "Привет, как дела")
+    assert not script_matches("ru", "Сәлем, қалайсың")
+    assert script_matches("kk", "Сәлем, қалайсың")
+    assert not script_matches("kk", "")
+
+
+def test_natural_evaluation_set_is_balanced_and_unique() -> None:
+    rows = [
+        json.loads(line) for line in Path("configs/natural_eval_v4.jsonl").read_text().splitlines()
+    ]
+    assert len({row["id"] for row in rows}) == len(rows)
+    cells = Counter((row["language"], row["category"]) for row in rows)
+    assert set(cells.values()) == {3}
+    assert {language for language, _ in cells} == {"en", "ru", "kk"}
+    assert all(bool(row["accept"]) == (row["kind"] == "single") for row in rows)

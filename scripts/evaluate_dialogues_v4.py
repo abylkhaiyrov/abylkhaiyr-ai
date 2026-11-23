@@ -77,6 +77,10 @@ def main() -> None:
         report["by_language"][language] = metrics(
             group, [review for review in reviews if review.id in keys]
         )
+    report["by_category"] = {
+        category: metrics([row for row in rows if row["category"] == category])
+        for category in sorted({row["category"] for row in rows})
+    }
     result = json.dumps(report, indent=2, allow_nan=False)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(result + "\n", encoding="utf-8")
