@@ -3,9 +3,9 @@ name: frontend-e2e
 on:
   push:
     branches: [main]
-    paths: ["frontend/**", ".github/workflows/frontend-e2e.yml"]
+    paths: ["frontend/**", "src/llm/studio/**", "tests/**", ".github/workflows/frontend-e2e.yml"]
   pull_request:
-    paths: ["frontend/**", ".github/workflows/frontend-e2e.yml"]
+    paths: ["frontend/**", "src/llm/studio/**", "tests/**", ".github/workflows/frontend-e2e.yml"]
 
 jobs:
   e2e:
@@ -48,3 +48,78 @@ jobs:
           path: |
             frontend/test-results
             frontend/playwright-report
+
+  studio:
+    name: studio ${{ matrix.os }} / ${{ matrix.project }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, project: chromium, install: chromium }
+          - { os: ubuntu-latest, project: firefox, install: firefox }
+          - { os: ubuntu-latest, project: mobile-375, install: chromium }
+          - { os: windows-latest, project: chromium, install: chromium }
+          - { os: windows-latest, project: firefox, install: firefox }
+          - { os: macos-latest, project: chromium, install: chromium }
+          - { os: macos-latest, project: webkit, install: webkit }
+    env:
+      E2E_BASE_URL: http://127.0.0.1:8001
+      E2E_ADMIN_PASSWORD: ci-admin-password-12345
+      E2E_BACKEND: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+        if: runner.os != 'macOS'
+      - run: pip install -e .
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps ${{ matrix.install }}
+        working-directory: frontend
+      - name: Start Studio on an empty project
+        run: |
+          nohup llm studio --port 8001 > studio.log 2>&1 &
+          for attempt in $(seq 1 90); do
+            curl -sf http://127.0.0.1:8001/health >/dev/null && exit 0
+            sleep 2
+          done
+          cat studio.log
+          exit 1
+      - run: node e2e/bootstrap.mjs
+        working-directory: frontend
+      - run: npx playwright test e2e/studio-pages.spec.ts --project=${{ matrix.project }}
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: studio-${{ matrix.os }}-${{ matrix.project }}
+          path: |
+            frontend/test-results
+            studio.log
+
+  backend:
+    name: backend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: mypy src/llm/studio
+      - run: pytest -q
