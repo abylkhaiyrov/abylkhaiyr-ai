@@ -54,7 +54,7 @@ def arm_configuration(arm: str) -> ExperimentConfig:
     return base.model_copy(update={"name": f"stage19-{arm}", "train": train})
 
 
-def run_queue(deadline: float, arms: tuple[str, ...]) -> None:
+def run_queue(deadline: float, arms: tuple[str, ...], state_file: Path) -> None:
     stop = Event()
     with graceful_shutdown(stop):
         for arm in arms:
@@ -62,7 +62,14 @@ def run_queue(deadline: float, arms: tuple[str, ...]) -> None:
                 continue
             if stop.is_set() or time.time() >= deadline:
                 return
-            command = [sys.executable, str(Path(__file__)), "--job", arm]
+            command = [
+                sys.executable,
+                str(Path(__file__)),
+                "--job",
+                arm,
+                "--state",
+                str(state_file),
+            ]
             with subprocess.Popen(command) as child:
                 while child.poll() is None:
                     if stop.wait(0.5):
@@ -87,8 +94,10 @@ def main() -> None:
     commands.add_argument("--run", action="store_true")
     commands.add_argument("--job", choices=tuple(ARMS))
     parser.add_argument("--arms", nargs="+", choices=tuple(ARMS), default=tuple(ARMS))
+    parser.add_argument("--state", type=Path, default=ROOT / "lr_series.json")
+    parser.add_argument("--wall", type=int, default=WALL_SECONDS)
     args = parser.parse_args()
-    state_file = ROOT / "lr_series.json"
+    state_file = args.state
     frozen = verify_data()
     plan = {
         "frozen": frozen,
@@ -103,11 +112,11 @@ def main() -> None:
             if state["plan"] != plan:
                 parser.error("resume requires the registered configurations")
         else:
-            state = {"plan": plan, "deadline": time.time() + WALL_SECONDS, "resources": resources}
+            state = {"plan": plan, "deadline": time.time() + args.wall, "resources": resources}
             state_file.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(state["resources"]), flush=True)
         with exclusive_session(ROOT / ".series.lock"):
-            run_queue(float(state["deadline"]), tuple(args.arms))
+            run_queue(float(state["deadline"]), tuple(args.arms), state_file)
         return
     state = json.loads(state_file.read_text(encoding="utf-8"))
     step = step_of(args.job)

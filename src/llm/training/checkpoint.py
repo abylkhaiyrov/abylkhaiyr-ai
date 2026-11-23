@@ -298,7 +298,7 @@ class CheckpointManager:
     def load_optimizer_state(path: Path, optimizer: torch.optim.Optimizer) -> None:
         CheckpointManager.verify(path)
         payload = load_training_state(path / STATE_FILE)
-        optimizer.load_state_dict(payload["optimizer"])
+        optimizer.load_state_dict(align_optimizer_state(payload["optimizer"], optimizer))
 
     def restore(
         self,
@@ -316,11 +316,29 @@ class CheckpointManager:
         payload = load_training_state(path / STATE_FILE)
         load_model_weights(model, path / MODEL_FILE)
         if optimizer is not None:
-            optimizer.load_state_dict(payload["optimizer"])
+            optimizer.load_state_dict(align_optimizer_state(payload["optimizer"], optimizer))
         if scaler is not None and payload["scaler"] is not None:
             scaler.load_state_dict(payload["scaler"])
         restore_rng_state(payload["rng"], device)
         return TrainingState(**payload["state"]), payload["loader"]
+
+
+def align_optimizer_state(
+    saved: dict[str, Any], optimizer: torch.optim.Optimizer
+) -> dict[str, Any]:
+    sizes = [len(group["params"]) for group in saved["param_groups"]]
+    wanted = [len(group["params"]) for group in optimizer.param_groups]
+    if sizes == wanted:
+        return saved
+    remaining = list(saved["param_groups"])
+    ordered = []
+    for size in wanted:
+        match = next((group for group in remaining if len(group["params"]) == size), None)
+        if match is None:
+            raise CheckpointError("optimizer state does not match the model parameter groups")
+        remaining.remove(match)
+        ordered.append(match)
+    return {**saved, "param_groups": ordered}
 
 
 def load_model_for_inference(path: str | Path) -> tuple[CausalLM, ModelConfig, dict[str, Any]]:

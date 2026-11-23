@@ -24,7 +24,7 @@ from llm.model.transformer import CausalLM
 from llm.optimization.memory import configure_threads
 from llm.tokenizer.bpe import BPETokenizer
 from llm.training.checkpoint import CheckpointManager, load_model_weights
-from llm.training.engine import Trainer, seed_everything
+from llm.training.engine import Trainer, apply_weight_decay, seed_everything
 from llm.training.monitor import TrainingMonitor
 from llm.training.objectives import DPOObjective, Objective
 
@@ -211,10 +211,7 @@ def build_trainer(config: ExperimentConfig, resume: bool) -> Trainer:
     if train.init_from and train.restore_optimizer and not resume:
         source = CheckpointManager(train.init_from, keep=1).latest_valid() or Path(train.init_from)
         CheckpointManager.load_optimizer_state(source, trainer.optimizer)
-        for group, decay in zip(
-            trainer.optimizer.param_groups, (train.optimizer.weight_decay, 0.0), strict=True
-        ):
-            group["weight_decay"] = decay
+        apply_weight_decay(trainer.optimizer, train.optimizer.weight_decay)
     if resume:
         trainer.resume()
     return trainer

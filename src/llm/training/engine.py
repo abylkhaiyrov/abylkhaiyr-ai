@@ -68,6 +68,12 @@ def layer_scale(name: str, layers: int, decay: float) -> float:
     return 1.0
 
 
+def apply_weight_decay(optimizer: torch.optim.Optimizer, weight_decay: float) -> None:
+    for group in optimizer.param_groups:
+        decayed = group["params"][0].ndim > NO_DECAY_NDIM
+        group["weight_decay"] = weight_decay if decayed else 0.0
+
+
 def build_optimizer(model: CausalLM, config: TrainConfig) -> AdamW:
     settings = config.optimizer
     buckets: dict[tuple[float, bool], list[nn.Parameter]] = {}
