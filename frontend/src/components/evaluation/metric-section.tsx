@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { checkpointLabel, formatMetricValue, metricsOf, rowId, type SectionKey } from "@/lib/evaluation";
+import { checkpointLabel, formatInterval, formatMetricValue, metricsOf, rowId, type SectionKey } from "@/lib/evaluation";
 import type { EvaluationRow, MetricDefinition } from "@/lib/api";
 
 type Props = { section: SectionKey; catalog: MetricDefinition[]; rows: EvaluationRow[] };
@@ -26,7 +26,14 @@ export function MetricSection({ section, catalog, rows }: Props) {
               </th>
               {rows.map((row) => {
                 const shown = formatMetricValue(definition, row.results[definition.key], i18n.language);
-                return <td key={rowId(row)} className="tabular-nums">{shown ?? <span className="text-muted-foreground">{t("evalCenter.notVerified")}</span>}</td>;
+                const interval = formatInterval(definition, row.intervals[definition.key], i18n.language);
+                const samples = row.samples[definition.key];
+                return (
+                  <td key={rowId(row)} className="tabular-nums">
+                    {shown ?? <span className="text-muted-foreground">{t("evalCenter.notVerified")}</span>}
+                    {shown && samples ? <p className="text-xs text-muted-foreground">{t("evalCenter.samples", { count: samples })}{interval ? ` · ${t("evalCenter.interval")} ${interval}` : ""}</p> : null}
+                  </td>
+                );
               })}
             </tr>
           ))}

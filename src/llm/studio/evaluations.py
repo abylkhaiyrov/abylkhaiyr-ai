@@ -88,6 +88,7 @@ def evaluation_reports(root: Path) -> list[dict[str, Any]]:
                             "checkpoint": identifier,
                             "model": Path(identifier).parent.name,
                             "evaluated_at": entry.get("updated_at") or report_time(path),
+                            "samples": sample_counts(entry.get("samples")),
                             "results": results,
                         }
                     )
@@ -115,10 +116,21 @@ def evaluation_reports(root: Path) -> list[dict[str, Any]]:
                     "checkpoint": checkpoint,
                     "model": Path(checkpoint).parent.name if checkpoint else None,
                     "evaluated_at": stamp,
+                    "samples": sample_counts(entry.get("samples") or data.get("samples")),
                     "results": results,
                 }
             )
     return reports
+
+
+def sample_counts(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: int(count)
+        for key, count in value.items()
+        if isinstance(count, (int, float)) and not isinstance(count, bool) and count > 0
+    }
 
 
 def report_entries(data: dict[str, Any]) -> list[dict[str, Any]]:

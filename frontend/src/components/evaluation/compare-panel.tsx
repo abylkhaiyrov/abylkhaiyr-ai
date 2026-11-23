@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, LoadingState, Panel } from "@/components/data-s
 import { GateList } from "@/components/evaluation/gate-list";
 import { Select } from "@/components/ui/select";
 import { api, type Comparison, type MetricDefinition } from "@/lib/api";
-import { checkpointLabel, formatDelta, formatMetricValue } from "@/lib/evaluation";
+import { checkpointLabel, formatDelta, formatInterval, formatMetricValue } from "@/lib/evaluation";
 import { cn } from "@/lib/utils";
 
 type Props = { group: string; checkpoints: string[]; catalog: MetricDefinition[] };
@@ -40,12 +40,14 @@ function Result({ data, catalog }: { data: Comparison; catalog: MetricDefinition
           {data.checkpoints.map((item, index) => (
             <div key={item.checkpoint ?? index} className="grid content-start gap-2">
               <p className="truncate text-[13px] font-medium" title={item.checkpoint ?? undefined}>{names[index]}</p>
+              <p className={cn("text-xs", item.registry_status === "production" || item.registry_status === "validated" ? "text-success" : "text-warning")}>{item.registry_status ? t(`checkpointStatus.${item.registry_status}`) : t("evalCenter.notInRegistry")}</p>
               <GateList gates={item.gates} />
             </div>
           ))}
         </div>
       </Panel>
       <Panel title={t("evaluation.comparison")}>
+        <p className="mb-2 text-xs text-muted-foreground">{t("evalCenter.legend")}</p>
         <div className="overflow-x-auto border-y hairline">
           <table className="data-table">
             <thead><tr><th scope="col">{t("evaluation.metric")}</th>{names.map((name, index) => <th scope="col" key={data.checkpoints[index].checkpoint ?? index} className="max-w-40 truncate">{name}</th>)}</tr></thead>
@@ -58,9 +60,11 @@ function Result({ data, catalog }: { data: Comparison; catalog: MetricDefinition
                     {metric.entries.map((entry, index) => {
                       const shown = definition ? formatMetricValue(definition, entry.value, i18n.language) : null;
                       const change = definition && index > 0 ? formatDelta(definition, entry.delta, i18n.language) : null;
+                      const interval = definition ? formatInterval(definition, entry.ci, i18n.language) : null;
                       return (
                         <td key={index} className="tabular-nums">
                           {shown ?? <span className="text-muted-foreground">{t("evalCenter.notVerified")}</span>}
+                          {shown && entry.samples ? <span className="block text-xs text-muted-foreground">{t("evalCenter.samples", { count: entry.samples })}{interval ? ` · ${t("evalCenter.interval")} ${interval}` : ""}</span> : null}
                           {change ? <span className="ml-2 inline-flex items-center gap-1 text-xs"><Trend improved={entry.improved} delta={entry.delta} />{change}{entry.relative !== null ? ` (${new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 0, signDisplay: "always" }).format(entry.relative * 100)}%)` : ""}</span> : null}
                         </td>
                       );

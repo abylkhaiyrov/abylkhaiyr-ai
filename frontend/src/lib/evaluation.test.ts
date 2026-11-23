@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { checkpointLabel, formatDelta, formatMetricValue, MAX_COMPARE, rowId, sectionCoverage, toggle } from "@/lib/evaluation";
+import { checkpointLabel, formatDelta, formatInterval, formatMetricValue, MAX_COMPARE, rowId, sectionCoverage, toggle } from "@/lib/evaluation";
 import type { EvaluationRow, MetricDefinition } from "@/lib/api";
 
-const def = (key: string, unit: MetricDefinition["unit"], section: MetricDefinition["section"] = "language"): MetricDefinition => ({ key, section, direction: "higher", unit, language: null, tools: null });
-const row = (results: Record<string, number>): EvaluationRow => ({ checkpoint: "a/b/c", model: null, stage: null, evaluated_at: null, sources: ["s"], results, gates: [], gate_status: "not_verified" });
+const def = (key: string, unit: MetricDefinition["unit"], section: MetricDefinition["section"] = "language"): MetricDefinition => ({ key, section, direction: "higher", unit, language: null, tools: null, binomial: false });
+const row = (results: Record<string, number>): EvaluationRow => ({ checkpoint: "a/b/c", model: null, stage: null, evaluated_at: null, sources: ["s"], results, samples: {}, intervals: {}, gates: [], gate_status: "not_verified" });
 
 describe("formatMetricValue", () => {
   it("never turns a missing metric into zero", () => {
@@ -45,5 +45,12 @@ describe("selection", () => {
     const catalog = [def("a", "ratio"), def("b", "ratio"), def("c", "ratio", "code")];
     expect(sectionCoverage(catalog, [row({ a: 1 })], "language")).toEqual({ measured: 1, total: 2 });
     expect(sectionCoverage(catalog, [row({})], "code")).toEqual({ measured: 0, total: 1 });
+  });
+});
+
+describe("formatInterval", () => {
+  it("formats a present interval and hides a missing one", () => {
+    expect(formatInterval(def("x", "ratio"), [0.4, 0.6], "en")).toBe("40% – 60%");
+    expect(formatInterval(def("x", "ratio"), undefined, "en")).toBeNull();
   });
 });

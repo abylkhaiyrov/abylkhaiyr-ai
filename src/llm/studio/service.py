@@ -384,7 +384,14 @@ class StudioService:
         return group_detail(self.root, identifier)
 
     def compare_evaluations(self, identifier: str, checkpoints: list[str]) -> dict[str, Any] | None:
-        return compare_checkpoints(self.root, identifier, checkpoints)
+        result = compare_checkpoints(self.root, identifier, checkpoints)
+        if result is None:
+            return None
+        registry = self.model_manager.registry()["models"] if self.model_manager is not None else []
+        status_by_id = {item["id"]: item["status"] for item in registry}
+        for item in result["checkpoints"]:
+            item["registry_status"] = status_by_id.get(item["checkpoint"])
+        return result
 
     def evaluations(self) -> list[dict[str, Any]]:
         return evaluation_reports(self.root)

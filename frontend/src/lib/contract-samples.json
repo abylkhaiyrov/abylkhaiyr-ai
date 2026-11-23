@@ -5,7 +5,7 @@
     "best_validation_loss": 3.1,
     "checkpoint": null,
     "config_path": null,
-    "created_at": "2026-11-23T09:11:45.269725+00:00",
+    "created_at": "2026-11-23T09:12:54.058602+00:00",
     "current_stage": null,
     "dataset": null,
     "duration_seconds": null,
@@ -25,7 +25,7 @@
     "tokens_per_second": null,
     "tokens_seen": 100.0,
     "train_loss": 3.0,
-    "updated_at": "2026-11-23T09:11:45.269725+00:00",
+    "updated_at": "2026-11-23T09:12:54.058602+00:00",
     "validation_loss": 3.1,
     "validation_perplexity": 22.0,
     "version": "v4"
@@ -34,7 +34,7 @@
     "best_validation_loss": 3.1,
     "checkpoint": null,
     "config_path": null,
-    "created_at": "2026-11-23T09:11:45.269527+00:00",
+    "created_at": "2026-11-23T09:12:54.058269+00:00",
     "current_stage": null,
     "dataset": null,
     "duration_seconds": null,
@@ -54,7 +54,7 @@
     "tokens_per_second": null,
     "tokens_seen": 100.0,
     "train_loss": 3.0,
-    "updated_at": "2026-11-23T09:11:45.269527+00:00",
+    "updated_at": "2026-11-23T09:12:54.058269+00:00",
     "validation_loss": 3.1,
     "validation_perplexity": 22.0,
     "version": "v3"
@@ -111,7 +111,7 @@
    "tokens_per_second": null,
    "tokens_seen": 100.0,
    "train_loss": 3.0,
-   "updated_at": "2026-11-23T09:11:45.269527+00:00",
+   "updated_at": "2026-11-23T09:12:54.058269+00:00",
    "validation_loss": 3.1,
    "validation_perplexity": 22.0
   },
@@ -120,7 +120,7 @@
    "best_validation_loss": 3.1,
    "checkpoint": null,
    "config_path": null,
-   "created_at": "2026-11-23T09:11:45.269527+00:00",
+   "created_at": "2026-11-23T09:12:54.058269+00:00",
    "current_stage": null,
    "dataset": null,
    "duration_seconds": null,
@@ -140,7 +140,7 @@
    "tokens_per_second": null,
    "tokens_seen": 100.0,
    "train_loss": 3.0,
-   "updated_at": "2026-11-23T09:11:45.269527+00:00",
+   "updated_at": "2026-11-23T09:12:54.058269+00:00",
    "validation_loss": 3.1,
    "validation_perplexity": 22.0,
    "version": "v3"
@@ -434,7 +434,7 @@
   "checkpoints": [
    {
     "checkpoint": "checkpoints/a/base",
-    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
     "gate_status": "failed",
     "gates": [
      {
@@ -457,11 +457,12 @@
      }
     ],
     "model": "a",
+    "registry_status": null,
     "stage": null
    },
    {
     "checkpoint": "checkpoints/a_sft/best",
-    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
     "gate_status": "passed",
     "gates": [
      {
@@ -484,6 +485,7 @@
      }
     ],
     "model": "a_sft",
+    "registry_status": null,
     "stage": "sft"
    }
   ],
@@ -576,7 +578,7 @@
    {
     "checkpoints": 2,
     "dataset": null,
-    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
     "experiment": "stage",
     "gate_status": "failed",
     "id": "stage:547c840d",
@@ -590,7 +592,7 @@
  "admin GET /api/evaluation/groups/{id}": {
   "checkpoints": 2,
   "dataset": null,
-  "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+  "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
   "experiment": "stage",
   "gate_status": "failed",
   "id": "stage:547c840d",
@@ -599,7 +601,7 @@
   "rows": [
    {
     "checkpoint": "checkpoints/a/base",
-    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
     "gate_status": "failed",
     "gates": [
      {
@@ -621,11 +623,13 @@
       "value": null
      }
     ],
+    "intervals": {},
     "model": "a",
     "results": {
      "conv_pass_rate": 0.1,
      "test_perplexity": 10.0
     },
+    "samples": {},
     "sources": [
      "experiments/stage/final_eval.json"
     ],
@@ -633,7 +637,7 @@
    },
    {
     "checkpoint": "checkpoints/a_sft/best",
-    "evaluated_at": "2026-11-23T09:11:45.269876+00:00",
+    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
     "gate_status": "passed",
     "gates": [
      {
@@ -655,12 +659,14 @@
       "value": 0.2
      }
     ],
+    "intervals": {},
     "model": "a_sft",
     "results": {
      "conv_pass_rate": 0.7,
      "conv_repetition_ratio": 0.2,
      "test_perplexity": 12.0
     },
+    "samples": {},
     "sources": [
      "experiments/stage/final_eval.json"
     ],
@@ -671,6 +677,7 @@
  },
  "admin GET /api/evaluation/metrics": [
   {
+   "binomial": false,
    "direction": "lower",
    "key": "test_perplexity",
    "language": null,
@@ -679,6 +686,7 @@
    "unit": "number"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "test_loss",
    "language": null,
@@ -687,6 +695,7 @@
    "unit": "number"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "next_token_accuracy",
    "language": null,
@@ -695,6 +704,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "coherence_distinct_bigram",
    "language": null,
@@ -703,6 +713,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "conv_wellformed_word_rate",
    "language": null,
@@ -711,6 +722,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "conv_pass_rate",
    "language": null,
@@ -719,6 +731,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "conv_check_pass_rate",
    "language": null,
@@ -727,6 +740,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "semantic_relevance",
    "language": null,
@@ -735,6 +749,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "instruction_following_accuracy",
    "language": null,
@@ -743,6 +758,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "multiturn_dialogue_accuracy",
    "language": null,
@@ -751,6 +767,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "context_retrieval_accuracy",
    "language": null,
@@ -759,6 +776,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "conv_prompt_echo_rate",
    "language": null,
@@ -767,6 +785,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "conv_repetition_ratio",
    "language": null,
@@ -775,6 +794,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "repeated_trigram_ratio_greedy",
    "language": null,
@@ -783,6 +803,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "conv_non_empty_rate",
    "language": null,
@@ -791,6 +812,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "conv_completion_rate",
    "language": null,
@@ -799,6 +821,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "conv_language_stability",
    "language": null,
@@ -807,6 +830,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "conv_hallucination_rate",
    "language": null,
@@ -815,6 +839,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "arithmetic_exact_match",
    "language": null,
@@ -823,6 +848,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "gsm8k_exact_match",
    "language": null,
@@ -831,6 +857,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "math_bench_model_accuracy",
    "language": null,
@@ -839,6 +866,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "math_bench_tool_accuracy",
    "language": null,
@@ -847,6 +875,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "logic_model_accuracy",
    "language": null,
@@ -855,6 +884,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "logic_tool_accuracy",
    "language": null,
@@ -863,6 +893,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "factual_accuracy",
    "language": null,
@@ -871,6 +902,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "factual_wrong_rate",
    "language": null,
@@ -879,6 +911,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "code_pass_at_1",
    "language": null,
@@ -887,6 +920,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "code_pass_at_4",
    "language": null,
@@ -895,6 +929,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": true,
    "direction": "higher",
    "key": "code_tool_pass_rate",
    "language": null,
@@ -903,6 +938,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "perplexity_ru",
    "language": "ru",
@@ -911,6 +947,7 @@
    "unit": "number"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "perplexity_en",
    "language": "en",
@@ -919,6 +956,7 @@
    "unit": "number"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "perplexity_kk",
    "language": "kk",
@@ -927,6 +965,7 @@
    "unit": "number"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "conv_lang_ru",
    "language": "ru",
@@ -935,6 +974,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "conv_lang_en",
    "language": "en",
@@ -943,6 +983,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "conv_lang_kk",
    "language": "kk",
@@ -951,6 +992,7 @@
    "unit": "ratio"
   },
   {
+   "binomial": false,
    "direction": "higher",
    "key": "generation_tokens_per_second",
    "language": null,
@@ -959,6 +1001,7 @@
    "unit": "rate"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "ram_gb",
    "language": null,
@@ -967,6 +1010,7 @@
    "unit": "gigabytes"
   },
   {
+   "binomial": false,
    "direction": "lower",
    "key": "device_memory_gb",
    "language": null,
@@ -1105,7 +1149,7 @@
     "compatibility_issues": [],
     "compatible": true,
     "context_length": 64,
-    "created_at": "2026-11-23T09:11:45.552107+00:00",
+    "created_at": "2026-11-23T09:12:54.341308+00:00",
     "device": "cpu",
     "display_name": "test-model \u00b7 \u2014",
     "evaluated": false,
@@ -1157,7 +1201,7 @@
     "compatibility_issues": [],
     "compatible": true,
     "context_length": 64,
-    "created_at": "2026-11-23T09:11:45.552107+00:00",
+    "created_at": "2026-11-23T09:12:54.341308+00:00",
     "device": "cpu",
     "display_name": "test-model \u00b7 \u2014",
     "evaluated": false,
@@ -1493,7 +1537,7 @@
    "tokens_per_second": null,
    "tokens_seen": 100.0,
    "train_loss": 3.0,
-   "updated_at": "2026-11-23T09:11:45.269527+00:00",
+   "updated_at": "2026-11-23T09:12:54.058269+00:00",
    "validation_loss": 3.1,
    "validation_perplexity": 22.0
   },
@@ -1513,7 +1557,7 @@
    "tokens_per_second": null,
    "tokens_seen": null,
    "train_loss": 4.2,
-   "updated_at": "2026-11-23T09:11:45.269378+00:00",
+   "updated_at": "2026-11-23T09:12:54.058021+00:00",
    "validation_loss": 4.3,
    "validation_perplexity": null
   }
@@ -1524,13 +1568,13 @@
    "holder": null
   },
   "events": [],
-  "generated_at": "2026-11-23T09:11:45.552156+00:00",
+  "generated_at": "2026-11-23T09:12:54.341359+00:00",
   "inference_model": "test-model",
   "models": {
    "best_evaluated": null,
    "latest_trained": null,
    "loaded": {
-    "created_at": "2026-11-23T09:11:45.552107+00:00",
+    "created_at": "2026-11-23T09:12:54.341308+00:00",
     "device": "cpu",
     "display_name": "test-model \u00b7 \u2014",
     "id": "test-model",
@@ -1794,7 +1838,7 @@
     "best_validation_loss": 3.1,
     "checkpoint": null,
     "config_path": null,
-    "created_at": "2026-11-23T09:11:45.269725+00:00",
+    "created_at": "2026-11-23T09:12:54.058602+00:00",
     "current_stage": null,
     "dataset": null,
     "duration_seconds": null,
@@ -1814,7 +1858,7 @@
     "tokens_per_second": null,
     "tokens_seen": 100.0,
     "train_loss": 3.0,
-    "updated_at": "2026-11-23T09:11:45.269725+00:00",
+    "updated_at": "2026-11-23T09:12:54.058602+00:00",
     "validation_loss": 3.1,
     "validation_perplexity": 22.0,
     "version": "v4"

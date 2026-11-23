@@ -286,16 +286,16 @@ export type GenerationSettings = {
 
 export type StudioEvent = { process_id: string; level: string; message: string; created_at: string };
 export type Dataset = { name: string; path: string; size_bytes: number; manifest: Record<string, unknown> };
-export type MetricDefinition = { key: string; section: "language" | "conversation" | "reasoning" | "code" | "multilingual" | "efficiency"; direction: "higher" | "lower"; unit: "ratio" | "number" | "seconds" | "gigabytes" | "rate"; language: string | null; tools: boolean | null };
+export type MetricDefinition = { key: string; section: "language" | "conversation" | "reasoning" | "code" | "multilingual" | "efficiency"; direction: "higher" | "lower"; unit: "ratio" | "number" | "seconds" | "gigabytes" | "rate"; language: string | null; tools: boolean | null; binomial: boolean };
 export type GateStatus = "passed" | "failed" | "not_verified";
 export type QualityGate = { id: string; status: GateStatus; value: number | string | null; threshold: number | string };
 export type EvaluationGroupSummary = { id: string; experiment: string; dataset: string | null; methodology: string | null; split: string | null; checkpoints: number; evaluated_at: string | null; metric_count: number; gate_status: GateStatus };
-export type EvaluationRow = { checkpoint: string | null; model: string | null; stage: string | null; evaluated_at: string | null; sources: string[]; results: Record<string, number>; gates: QualityGate[]; gate_status: GateStatus };
+export type EvaluationRow = { checkpoint: string | null; model: string | null; stage: string | null; evaluated_at: string | null; sources: string[]; results: Record<string, number>; samples: Record<string, number>; intervals: Record<string, [number, number]>; gates: QualityGate[]; gate_status: GateStatus };
 export type EvaluationGroup = EvaluationGroupSummary & { rows: EvaluationRow[] };
 export type ComparisonEntry = { value: number | null; delta: number | null; relative: number | null; improved: boolean | null; ci: [number, number] | null; samples: number | null };
 export type Comparison = {
   group: Pick<EvaluationGroup, "id" | "experiment" | "dataset" | "methodology" | "split">;
-  checkpoints: Pick<EvaluationRow, "checkpoint" | "model" | "stage" | "gates" | "gate_status" | "evaluated_at">[];
+  checkpoints: (Pick<EvaluationRow, "checkpoint" | "model" | "stage" | "gates" | "gate_status" | "evaluated_at"> & { registry_status: CheckpointStatus | null })[];
   metrics: { key: string; direction: "higher" | "lower"; section: MetricDefinition["section"]; entries: ComparisonEntry[] }[];
   caveats: string[];
   verdict: { status: "leader" | "insufficient_data" | "inconclusive"; checkpoint: string | null; reason: string | null };

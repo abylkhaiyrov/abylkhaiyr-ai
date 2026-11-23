@@ -173,3 +173,75 @@ def test_endpoints_enforce_admin_and_validate_input(tmp_path, model_config, toke
     assert conflict.status_code == 409
     assert admin.get("/api/evaluation/metrics").json()[0]["key"] == "test_perplexity"
     assert admin.get("/api/evaluation").status_code == 200
+
+
+def test_wilson_interval_needs_sample_size_and_a_proportion():
+    from llm.studio.evaluation_center import interval_for, wilson_interval
+
+    low, high = wilson_interval(0.5, 100)
+    assert 0.40 < low < 0.41 and 0.59 < high < 0.60
+    assert wilson_interval(0.0, 10)[0] == pytest.approx(0.0, abs=1e-12)
+    assert wilson_interval(1.0, 10)[1] == pytest.approx(1.0, abs=1e-12)
+    assert wilson_interval(0.5, 0) is None
+    assert wilson_interval(1.5, 10) is None
+    assert interval_for("conv_pass_rate", {"conv_pass_rate": 0.5}, {}) is None
+    assert (
+        interval_for("test_perplexity", {"test_perplexity": 0.5}, {"test_perplexity": 100}) is None
+    )
+    assert (
+        interval_for("conv_pass_rate", {"conv_pass_rate": 0.5}, {"conv_pass_rate": 100}) is not None
+    )
+
+
+def test_intervals_and_sample_counts_flow_into_groups_and_comparison(tmp_path):
+    write_report(
+        tmp_path,
+        "stage/final_eval.json",
+        {
+            "base": {
+                "checkpoint": "checkpoints/a/base",
+                "metrics": {"conv_pass_rate": 0.1, "test_perplexity": 9.0},
+                "samples": {"conv_pass_rate": 50},
+            },
+            "sft": {
+                "checkpoint": "checkpoints/a/sft_best",
+                "metrics": {"conv_pass_rate": 0.7, "test_perplexity": 12.0},
+                "samples": {"conv_pass_rate": 50, "test_perplexity": 50, "bad": -3},
+            },
+        },
+    )
+    group = list_groups(tmp_path, None, 0, 10)["items"][0]
+    detail = group_detail(tmp_path, group["id"])
+    sft = next(row for row in detail["rows"] if row["checkpoint"].endswith("sft_best"))
+    assert sft["samples"] == {"conv_pass_rate": 50, "test_perplexity": 50}
+    assert set(sft["intervals"]) == {"conv_pass_rate"}
+    result = compare(tmp_path, group["id"], ["checkpoints/a/base", "checkpoints/a/sft_best"])
+    entry = next(item for item in result["metrics"] if item["key"] == "conv_pass_rate")["entries"][
+        1
+    ]
+    assert entry["samples"] == 50 and len(entry["ci"]) == 2
+    perplexity = next(item for item in result["metrics"] if item["key"] == "test_perplexity")[
+        "entries"
+    ][1]
+    assert perplexity["ci"] is None and perplexity["samples"] == 50
+    assert "samples_not_recorded" not in result["caveats"]
+    assert "confidence_intervals_not_computed" not in result["caveats"]
+
+
+def test_compare_marks_registry_status_of_checkpoints(tmp_path, model_config, tokenizer):
+    write_report(
+        tmp_path,
+        "stage/final_eval.json",
+        {
+            "a": {"checkpoint": "checkpoints/a/base", "metrics": {"conv_pass_rate": 0.1}},
+            "b": {"checkpoint": "checkpoints/a/sft", "metrics": {"conv_pass_rate": 0.4}},
+        },
+    )
+    app = make_app(model_config, tokenizer, tmp_path)
+    admin = sign_in(app, "admin", "admin")
+    group = admin.get("/api/evaluation/groups").json()["items"][0]["id"]
+    result = admin.get(
+        "/api/evaluation/compare",
+        params={"group": group, "checkpoint": ["checkpoints/a/base", "checkpoints/a/sft"]},
+    ).json()
+    assert [item["registry_status"] for item in result["checkpoints"]] == [None, None]

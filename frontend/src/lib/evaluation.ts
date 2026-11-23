@@ -46,3 +46,11 @@ export function formatDelta(definition: Pick<MetricDefinition, "unit">, delta: n
   const shown = definition.unit === "ratio" ? `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(delta * 100)} pp` : new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(delta);
   return `${sign}${shown}`;
 }
+
+export function formatInterval(definition: Pick<MetricDefinition, "unit">, interval: [number, number] | null | undefined, locale: string) {
+  if (!interval) return null;
+  const [low, high] = interval;
+  const low_text = formatMetricValue(definition, low, locale);
+  const high_text = formatMetricValue(definition, high, locale);
+  return low_text && high_text ? `${low_text} – ${high_text}` : null;
+}

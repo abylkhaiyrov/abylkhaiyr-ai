@@ -90,10 +90,12 @@ def build_groups(root: Path) -> dict[str, dict[str, Any]]:
                 "stage": report["stage"],
                 "evaluated_at": report.get("evaluated_at"),
                 "sources": [],
+                "samples": {},
                 "results": {},
             },
         )
         row["results"].update(report["results"])
+        row["samples"].update(report.get("samples") or {})
         row["sources"].append(report["path"])
         row["stage"] = row["stage"] or report["stage"]
         if (report.get("evaluated_at") or "") > (row["evaluated_at"] or ""):
@@ -106,10 +108,45 @@ def infer_stage(checkpoint: str | None) -> str | None:
     return next((stage for stage in ("dpo", "sft") if stage in name), None)
 
 
+def wilson_interval(proportion: float, trials: int) -> list[float] | None:
+    if trials <= 0 or not 0.0 <= proportion <= 1.0:
+        return None
+    z = 1.959963984540054
+    centre = (proportion + z * z / (2 * trials)) / (1 + z * z / trials)
+    margin = (
+        z
+        * math.sqrt(proportion * (1 - proportion) / trials + z * z / (4 * trials * trials))
+        / (1 + z * z / trials)
+    )
+    return [max(centre - margin, 0.0), min(centre + margin, 1.0)]
+
+
+def interval_for(
+    key: str, results: dict[str, float], samples: dict[str, int]
+) -> list[float] | None:
+    definition = BY_KEY.get(key)
+    trials = samples.get(key)
+    value = results.get(key)
+    if definition is None or not definition.binomial or trials is None or value is None:
+        return None
+    return wilson_interval(value, trials)
+
+
 def finalize_row(row: dict[str, Any]) -> dict[str, Any]:
     stage = row["stage"] or infer_stage(row["checkpoint"])
     gates = quality_gates(stage, row["results"])
-    return {**row, "stage": stage, "gates": gates, "gate_status": gate_summary(gates)}
+    intervals = {
+        key: interval
+        for key in row["results"]
+        if (interval := interval_for(key, row["results"], row["samples"])) is not None
+    }
+    return {
+        **row,
+        "stage": stage,
+        "gates": gates,
+        "gate_status": gate_summary(gates),
+        "intervals": intervals,
+    }
 
 
 def summarize(group: dict[str, Any]) -> dict[str, Any]:
@@ -164,13 +201,13 @@ def compare(root: Path, identifier: str, checkpoints: list[str]) -> dict[str, An
     chosen = [rows[item] for item in checkpoints]
     keys = [key for key in BY_KEY if any(key in row["results"] for row in chosen)]
     baseline = chosen[0]
-    metrics = []
+    metrics: list[dict[str, Any]] = []
     for key in keys:
         definition = BY_KEY[key]
         values = [row["results"].get(key) for row in chosen]
         base = baseline["results"].get(key)
         entries = []
-        for value in values:
+        for row, value in zip(chosen, values, strict=True):
             comparable = base is not None and value is not None
             delta = value - base if comparable else None
             better = None
@@ -182,8 +219,8 @@ def compare(root: Path, identifier: str, checkpoints: list[str]) -> dict[str, An
                     "delta": delta,
                     "relative": relative_change(base, value) if comparable else None,
                     "improved": better,
-                    "ci": None,
-                    "samples": None,
+                    "ci": row["intervals"].get(key),
+                    "samples": row["samples"].get(key),
                 }
             )
         metrics.append(
@@ -211,8 +248,14 @@ def compare(root: Path, identifier: str, checkpoints: list[str]) -> dict[str, An
             for caveat, active in (
                 ("dataset_not_recorded", detail["dataset"] is None),
                 ("methodology_not_recorded", detail["methodology"] is None),
-                ("samples_not_recorded", True),
-                ("confidence_intervals_not_computed", True),
+                (
+                    "samples_not_recorded",
+                    not any(entry["samples"] for item in metrics for entry in item["entries"]),
+                ),
+                (
+                    "confidence_intervals_not_computed",
+                    not any(entry["ci"] for item in metrics for entry in item["entries"]),
+                ),
             )
             if active
         ],

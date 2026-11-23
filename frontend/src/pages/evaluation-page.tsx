@@ -16,7 +16,7 @@ import { checkpointLabel, DEFAULT_SELECTION, rowId, SECTIONS, sectionCoverage, t
 type View = "overview" | SectionKey | "compare";
 const PAGE = 30;
 
-function Overview({ group, catalog, selected, onToggle }: { group: EvaluationGroup; catalog: MetricDefinition[]; selected: string[]; onToggle: (id: string) => void }) {
+function Overview({ group, catalog, selected, onToggle, others }: { group: EvaluationGroup; catalog: MetricDefinition[]; selected: string[]; onToggle: (id: string) => void; others: number }) {
   const { t } = useTranslation();
   const format = useFormat();
   const missing = t("evalCenter.notRecorded");
@@ -49,6 +49,7 @@ function Overview({ group, catalog, selected, onToggle }: { group: EvaluationGro
           })}
         </ul>
       </Panel>
+      {others > 0 ? <p className="text-xs text-muted-foreground">{t("evalCenter.otherGroups", { count: others })}</p> : null}
       <ul className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
         {SECTIONS.map((section) => {
           const coverage = sectionCoverage(catalog, group.rows, section);
@@ -96,7 +97,7 @@ export function EvaluationPage() {
           {detail.isPending ? <LoadingState /> : detail.isError ? <ErrorState error={detail.error} retry={() => void detail.refetch()} /> : (
             <>
               <Tabs value={view} onChange={setView} items={tabs} />
-              {view === "overview" ? <Overview group={detail.data} catalog={catalog.data} selected={selected} onToggle={(id) => setPicked(toggle(selected, id))} /> : null}
+              {view === "overview" ? <Overview group={detail.data} catalog={catalog.data} selected={selected} onToggle={(id) => setPicked(toggle(selected, id))} others={Math.max(groups.data.total - 1, 0)} /> : null}
               {view === "compare" ? <ComparePanel group={current} checkpoints={selected.map((id) => rows.find((row) => rowId(row) === id)?.checkpoint).filter((item): item is string => Boolean(item))} catalog={catalog.data} /> : null}
               {view !== "overview" && view !== "compare" ? (chosenRows.length === 0 ? <EmptyState title={t("evalCenter.pick")} /> : <MetricSection section={view} catalog={catalog.data} rows={chosenRows} />) : null}
             </>
