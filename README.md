@@ -168,7 +168,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Этап 14. Данные v4.1, оценка и эксперименты](docs/stage14_data_eval.md) ·
 [Этап 15. Корпус v5 и расширенная валидация](docs/stage15_conversational_v5.md) ·
 [Этап 16. Базовые знания и dialogue-formatted pretraining](docs/stage16_core_training.md) ·
-[Этап 17. Ёмкость модели и качество данных](docs/stage17_capacity_scaling.md).
+[Этап 17. Ёмкость модели и качество данных](docs/stage17_capacity_scaling.md) ·
+[Этап 18. Балансировка корпуса и семантическое обобщение](docs/stage18_corpus_quality.md).
 
 ## Проверка качества кода
 

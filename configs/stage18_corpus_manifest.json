@@ -1,0 +1,358 @@
+{
+  "a": {
+    "candidate_tokens_by_language_category": {
+      "en/code": 19071,
+      "en/education": 1848356,
+      "en/encyclopedia": 6001843,
+      "en/literature": 219096,
+      "en/mathematical_explanations": 16090,
+      "en/popular_science": 70107,
+      "en/technical_documentation": 14104,
+      "kk/encyclopedia": 2824819,
+      "kk/reviews": 125707,
+      "ru/encyclopedia": 10215097
+    },
+    "documents": 23287,
+    "documents_by_source": {
+      "candle": 83,
+      "kazsandra": 1643,
+      "pride": 219,
+      "python_functools": 1,
+      "python_statistics": 13,
+      "python_tutorial": 13,
+      "wiki_en": 4214,
+      "wiki_kk": 9419,
+      "wiki_ru": 4192,
+      "wiki_simple": 3490
+    },
+    "paragraph_occurrences": 179207,
+    "rejected": {
+      "duplicate_document": 2,
+      "duplicate_paragraphs": 3,
+      "held_out": 326,
+      "holdout/family": 3,
+      "holdout/near_paragraph": 92,
+      "holdout/paragraph": 186,
+      "holdout/window": 258,
+      "technical_repair": 3798
+    },
+    "selected_tokens_by_language_category": {
+      "en/code": 19071,
+      "en/education": 1848356,
+      "en/encyclopedia": 6001843,
+      "en/literature": 219096,
+      "en/mathematical_explanations": 16090,
+      "en/popular_science": 70107,
+      "en/technical_documentation": 14104,
+      "kk/encyclopedia": 2824819,
+      "kk/reviews": 125707,
+      "ru/encyclopedia": 10215097
+    },
+    "sha256": {
+      "test.jsonl": "7403ed41783391a9d67cef35607155d8b3257b261de4a306f5cd432645285d67",
+      "tokens/test.bin": "d7af602572d3b661b77d7a1eabdd7f93c621e64c354fa9d5df776e763de4d399",
+      "tokens/test.en.bin": "57c7fe27700194b3c12cd2a4ddc922f382406b415097b7948709e0f8c7e79dad",
+      "tokens/test.kk.bin": "27ecded77ee75d3e19341c77bebf0b3661046cb50386da2baeaffbe9c8270c7c",
+      "tokens/test.ru.bin": "65558e9f410fb07abcf3d7101d54647f83e83450bb54619d90cf643543b6d722",
+      "tokens/train.bin": "0d08cd0c9347f8d8557fab4dedb9e446a3395ce99dd05a297c6a6afe2c8731ec",
+      "tokens/train.en.bin": "9418ac18e59fa8c5cf66d3baa486c5808fffd45653b483c7cfa222e081d2b108",
+      "tokens/train.kk.bin": "ac06757df7e7e259c43330390f176b633c65256de7beba81071d6312cb227ae8",
+      "tokens/train.ru.bin": "074ad213362b667e9c6c9d0229ef710eae23f8355bf0c202e4ef6b6e0298bc96",
+      "tokens/validation.bin": "6832124be3d86b13e4fc6d7e53347421f37262db14a519c316b2b602f6dbf028",
+      "tokens/validation.en.bin": "bd9f35c7f7383cb4eb12c30a5abec9bf7f5332228bbcf44cf6e031525f24aae7",
+      "tokens/validation.kk.bin": "419b060e6abef454006a2883a71aa9a89cfe0e23dfa8d4b04c08ca88dc1e82cc",
+      "tokens/validation.ru.bin": "bfbd2c8ed8a26968a958f93ddd2f30bd2fef10cecef4d77b8d229adef214f1af",
+      "train.jsonl": "654b248020273fbc195608cdd79ab51c688d14474c3ad74796d4c9dcbf6ebcd0",
+      "validation.jsonl": "59e79dd048b55c3f6f6c4719f54d880c783b5547fbfd52a9cee3684360bc7b68"
+    },
+    "tokens": {
+      "test": {
+        "distinct_token_ids": 5982,
+        "stored_tokens": {
+          "all": 70367,
+          "en": 20488,
+          "kk": 24146,
+          "ru": 25733
+        }
+      },
+      "train": {
+        "distinct_token_ids": 8111,
+        "stored_tokens": {
+          "all": 21354290,
+          "en": 8188667,
+          "kk": 2950526,
+          "ru": 10215097
+        }
+      },
+      "validation": {
+        "distinct_token_ids": 6875,
+        "stored_tokens": {
+          "all": 164407,
+          "en": 47823,
+          "kk": 56613,
+          "ru": 59971
+        }
+      }
+    },
+    "unique_documents": 23287,
+    "unique_paragraphs": 178708
+  },
+  "b": {
+    "candidate_tokens_by_language_category": {
+      "en/causal": 48062,
+      "en/code": 19071,
+      "en/comparison": 14825,
+      "en/conversation": 621223,
+      "en/education": 26939,
+      "en/encyclopedia": 6983105,
+      "en/literature": 219096,
+      "en/logic": 1010,
+      "en/mathematical_explanations": 100657,
+      "en/popular_science": 197661,
+      "en/practical": 2870,
+      "en/programming": 126634,
+      "en/technical_documentation": 14550,
+      "kk/causal": 8736,
+      "kk/comparison": 4305,
+      "kk/education": 149324,
+      "kk/encyclopedia": 2262635,
+      "kk/logic": 6968,
+      "kk/mathematical_explanations": 41751,
+      "kk/popular_science": 174697,
+      "kk/practical": 7059,
+      "kk/programming": 8593,
+      "kk/reviews": 125707,
+      "kk/technical_documentation": 1792,
+      "ru/causal": 9743,
+      "ru/comparison": 7461,
+      "ru/conversation": 125278,
+      "ru/education": 112916,
+      "ru/encyclopedia": 9010004,
+      "ru/mathematical_explanations": 155863,
+      "ru/popular_science": 319227,
+      "ru/practical": 1465,
+      "ru/programming": 73874,
+      "ru/technical_documentation": 6183
+    },
+    "documents": 11335,
+    "documents_by_source": {
+      "candle": 83,
+      "kazsandra": 1643,
+      "oasst_train": 2457,
+      "pride": 219,
+      "python_functools": 1,
+      "python_statistics": 13,
+      "python_tutorial": 13,
+      "wiki_en": 431,
+      "wiki_kk": 5393,
+      "wiki_ru": 733,
+      "wiki_simple": 349
+    },
+    "paragraph_occurrences": 58139,
+    "rejected": {
+      "boilerplate_only": 399,
+      "damaged": 7,
+      "duplicate_paragraphs": 3,
+      "held_out": 174,
+      "holdout/family": 3,
+      "holdout/near_paragraph": 69,
+      "holdout/paragraph": 59,
+      "holdout/window": 157,
+      "technical_repair": 3798
+    },
+    "selected_tokens_by_language_category": {
+      "en/causal": 48062,
+      "en/code": 19071,
+      "en/comparison": 14825,
+      "en/conversation": 489673,
+      "en/education": 26939,
+      "en/encyclopedia": 489234,
+      "en/literature": 219096,
+      "en/logic": 1010,
+      "en/mathematical_explanations": 100657,
+      "en/popular_science": 197661,
+      "en/practical": 2870,
+      "en/programming": 126634,
+      "en/technical_documentation": 14550,
+      "kk/causal": 8736,
+      "kk/comparison": 4305,
+      "kk/education": 149324,
+      "kk/encyclopedia": 1221125,
+      "kk/logic": 6968,
+      "kk/mathematical_explanations": 41751,
+      "kk/popular_science": 174697,
+      "kk/practical": 7059,
+      "kk/programming": 8593,
+      "kk/reviews": 125707,
+      "kk/technical_documentation": 1792,
+      "ru/causal": 9743,
+      "ru/comparison": 7461,
+      "ru/conversation": 125278,
+      "ru/education": 112916,
+      "ru/encyclopedia": 940740,
+      "ru/mathematical_explanations": 155863,
+      "ru/popular_science": 319227,
+      "ru/practical": 1465,
+      "ru/programming": 73874,
+      "ru/technical_documentation": 6183
+    },
+    "sha256": {
+      "test.jsonl": "7403ed41783391a9d67cef35607155d8b3257b261de4a306f5cd432645285d67",
+      "tokens/test.bin": "d7af602572d3b661b77d7a1eabdd7f93c621e64c354fa9d5df776e763de4d399",
+      "tokens/test.en.bin": "57c7fe27700194b3c12cd2a4ddc922f382406b415097b7948709e0f8c7e79dad",
+      "tokens/test.kk.bin": "27ecded77ee75d3e19341c77bebf0b3661046cb50386da2baeaffbe9c8270c7c",
+      "tokens/test.ru.bin": "65558e9f410fb07abcf3d7101d54647f83e83450bb54619d90cf643543b6d722",
+      "tokens/train.bin": "3f26bb970c2dea86cc3487cd8c7d0fef960a0271ba62c5644b5eab0aa9552543",
+      "tokens/train.en.bin": "0346846302497bf9da1a42a0b1502f6378f1648123e669753f40ae549274489c",
+      "tokens/train.kk.bin": "d8c7af21ff0d9b0046e570fd10f2860568397ce7e281c0d5d7539bc2491ae742",
+      "tokens/train.ru.bin": "99e03f1f75e2429e2c9ba7c8cc72520988553aa65d8d4761c52761fc8838d4d7",
+      "tokens/validation.bin": "6832124be3d86b13e4fc6d7e53347421f37262db14a519c316b2b602f6dbf028",
+      "tokens/validation.en.bin": "bd9f35c7f7383cb4eb12c30a5abec9bf7f5332228bbcf44cf6e031525f24aae7",
+      "tokens/validation.kk.bin": "419b060e6abef454006a2883a71aa9a89cfe0e23dfa8d4b04c08ca88dc1e82cc",
+      "tokens/validation.ru.bin": "bfbd2c8ed8a26968a958f93ddd2f30bd2fef10cecef4d77b8d229adef214f1af",
+      "train.jsonl": "d53a617d5f7f11333acdb64176226da6c7c3388577f36443f1ff763109e845a4",
+      "validation.jsonl": "59e79dd048b55c3f6f6c4719f54d880c783b5547fbfd52a9cee3684360bc7b68"
+    },
+    "tokens": {
+      "test": {
+        "distinct_token_ids": 5982,
+        "stored_tokens": {
+          "all": 70367,
+          "en": 20488,
+          "kk": 24146,
+          "ru": 25733
+        }
+      },
+      "train": {
+        "distinct_token_ids": 8092,
+        "stored_tokens": {
+          "all": 5253089,
+          "en": 1750282,
+          "kk": 1750057,
+          "ru": 1752750
+        }
+      },
+      "validation": {
+        "distinct_token_ids": 6875,
+        "stored_tokens": {
+          "all": 164407,
+          "en": 47823,
+          "kk": 56613,
+          "ru": 59971
+        }
+      }
+    },
+    "unique_documents": 11335,
+    "unique_paragraphs": 58068
+  },
+  "holdout_test_removed": 0,
+  "sources": {
+    "belebele_en": {
+      "license": "CC-BY-SA-4.0",
+      "license_url": "https://huggingface.co/datasets/facebook/belebele/blob/7899cdfa4e1e0d733fd77c848e2c273cb1d32be2/README.md",
+      "revision": "7899cdfa4e1e0d733fd77c848e2c273cb1d32be2",
+      "sha256": "15af884c2b5994fdc71199e79d553a1864b08ce1b31894aa87f6be925a064a31",
+      "url": "https://huggingface.co/datasets/facebook/belebele/resolve/7899cdfa4e1e0d733fd77c848e2c273cb1d32be2/data/eng_Latn.jsonl"
+    },
+    "belebele_kk": {
+      "license": "CC-BY-SA-4.0",
+      "license_url": "https://huggingface.co/datasets/facebook/belebele/blob/7899cdfa4e1e0d733fd77c848e2c273cb1d32be2/README.md",
+      "revision": "7899cdfa4e1e0d733fd77c848e2c273cb1d32be2",
+      "sha256": "3baa165870f64091b0eb9181da3671b36ed4b4262ad0533df76a2b881a931ec9",
+      "url": "https://huggingface.co/datasets/facebook/belebele/resolve/7899cdfa4e1e0d733fd77c848e2c273cb1d32be2/data/kaz_Cyrl.jsonl"
+    },
+    "belebele_ru": {
+      "license": "CC-BY-SA-4.0",
+      "license_url": "https://huggingface.co/datasets/facebook/belebele/blob/7899cdfa4e1e0d733fd77c848e2c273cb1d32be2/README.md",
+      "revision": "7899cdfa4e1e0d733fd77c848e2c273cb1d32be2",
+      "sha256": "e8b81853605b97e993af07a34ad2c0a48ccd8dab80956b0650a161e8fea00de5",
+      "url": "https://huggingface.co/datasets/facebook/belebele/resolve/7899cdfa4e1e0d733fd77c848e2c273cb1d32be2/data/rus_Cyrl.jsonl"
+    },
+    "candle": {
+      "license": "Public-Domain",
+      "license_url": "https://www.gutenberg.org/ebooks/14474",
+      "revision": "8e778424cd5462a2d553cc0c5c141846994039f2",
+      "sha256": "17cab46de9cf71387eb732c34068fecc9c60917bb083b788c5348bd44d9a9290",
+      "url": "https://raw.githubusercontent.com/GITenberg/The-Chemical-History-of-a-Candle_14474/8e778424cd5462a2d553cc0c5c141846994039f2/14474-8.txt"
+    },
+    "kazsandra": {
+      "license": "CC-BY-4.0",
+      "license_url": "https://huggingface.co/datasets/issai/kazsandra",
+      "revision": "d769cf7f7bd62b59f88915508d4bc062310b54d6",
+      "sha256": "174103fab7d443b7d85346e0b5ecbc18034aa582fef1ff4ba6c3ef72ef674f90",
+      "url": "https://raw.githubusercontent.com/IS2AI/KazSAnDRA/d769cf7f7bd62b59f88915508d4bc062310b54d6/dataset/01_pc_train_ib.zip"
+    },
+    "oasst_train": {
+      "license": "Apache-2.0",
+      "license_url": "https://huggingface.co/datasets/OpenAssistant/oasst1/blob/fdf72ae0827c1cda404aff25b6603abec9e3399b/README.md",
+      "revision": "fdf72ae0827c1cda404aff25b6603abec9e3399b",
+      "sha256": "bbfadf5ed1278ba2208c837fdcad865adf65f5df55d80abadab2745db13fcb5e",
+      "url": "https://huggingface.co/datasets/OpenAssistant/oasst1/resolve/fdf72ae0827c1cda404aff25b6603abec9e3399b/data/train-00000-of-00001-b42a775f407cee45.parquet"
+    },
+    "pride": {
+      "license": "Public-Domain",
+      "license_url": "https://www.gutenberg.org/ebooks/1342",
+      "revision": "81db45c9c48c592f0b77f01fc59e677ad0a5634e",
+      "sha256": "48e0522844402a86a3ea98f0947ba85ea54838db3c59022299298ed968a5a163",
+      "url": "https://raw.githubusercontent.com/GITenberg/Pride-and-Prejudice_1342/81db45c9c48c592f0b77f01fc59e677ad0a5634e/1342-0.txt"
+    },
+    "python_functools": {
+      "license": "PSF-2.0",
+      "license_url": "https://docs.python.org/3.12/license.html",
+      "revision": "4a5632fbf9bf59477c540e3f53fa7cdbeea3e3f5",
+      "sha256": "de4a1d37c795e2a065124b5c49357893433bc6bb111b41277ccc9930ef08d4c9",
+      "url": "https://raw.githubusercontent.com/python/cpython/4a5632fbf9bf59477c540e3f53fa7cdbeea3e3f5/Lib/functools.py"
+    },
+    "python_statistics": {
+      "license": "PSF-2.0",
+      "license_url": "https://docs.python.org/3.12/license.html",
+      "revision": "4a5632fbf9bf59477c540e3f53fa7cdbeea3e3f5",
+      "sha256": "5d12d67adc29c15b0520de33db7db0cf149ce97b40276bb691e5ca9216c495e4",
+      "url": "https://raw.githubusercontent.com/python/cpython/4a5632fbf9bf59477c540e3f53fa7cdbeea3e3f5/Doc/library/statistics.rst"
+    },
+    "python_tutorial": {
+      "license": "PSF-2.0",
+      "license_url": "https://docs.python.org/3.12/license.html",
+      "revision": "4a5632fbf9bf59477c540e3f53fa7cdbeea3e3f5",
+      "sha256": "1e589edc233e3654a8a64073e1cce668304453c1d64e163955df8e08dec73f66",
+      "url": "https://raw.githubusercontent.com/python/cpython/4a5632fbf9bf59477c540e3f53fa7cdbeea3e3f5/Doc/tutorial/controlflow.rst"
+    },
+    "wiki_en": {
+      "license": "CC-BY-SA-3.0",
+      "license_url": "https://huggingface.co/datasets/wikimedia/wikipedia/blob/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/README.md",
+      "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+      "sha256": "382e7f6f09e488b24793a7f7cfc659879d5a22da2cf2efec6491665f0c019677",
+      "url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.en/train-00000-of-00041.parquet"
+    },
+    "wiki_kk": {
+      "license": "CC-BY-SA-3.0",
+      "license_url": "https://huggingface.co/datasets/wikimedia/wikipedia/blob/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/README.md",
+      "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+      "sha256": "7ecd6679b1635942941a67744eca1f677ec01fca9b60406253bda128ebf80dc4",
+      "url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.kk/train-00000-of-00001.parquet"
+    },
+    "wiki_ky": {
+      "license": "CC-BY-SA-3.0",
+      "license_url": "https://huggingface.co/datasets/wikimedia/wikipedia/blob/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/README.md",
+      "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+      "sha256": "6a78185aa199009f3948acb7913cff083fd077c6786e0510aeeb8cb7b8f1d353",
+      "url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.ky/train-00000-of-00001.parquet"
+    },
+    "wiki_ru": {
+      "license": "CC-BY-SA-3.0",
+      "license_url": "https://huggingface.co/datasets/wikimedia/wikipedia/blob/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/README.md",
+      "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+      "sha256": "9f8eaf92accb29a4641010655a50d1c8a5880d22020a5c98ea2666a28c7be66a",
+      "url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.ru/train-00000-of-00021.parquet"
+    },
+    "wiki_simple": {
+      "license": "CC-BY-SA-3.0",
+      "license_url": "https://huggingface.co/datasets/wikimedia/wikipedia/blob/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/README.md",
+      "revision": "b04c8d1ceb2f5cd4588862100d08de323dccfbaa",
+      "sha256": "31bded16768a47c286becd292079122f5d7d4397a17b87d4250a00ccd581e6f0",
+      "url": "https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.simple/train-00000-of-00001.parquet"
+    }
+  },
+  "tokenizer": "c9931e24cbcc4963",
+  "tokenizer_sha256": "f8fc642c8319346167aa0b42ffa17166917be986c5caab4cda62144a7ff75496"
+}

@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 from llm.data.binary import read_jsonl
 from llm.data.corpus_overlap import HoldoutIndex
@@ -54,24 +52,29 @@ def anchors(documents: Iterable[Document], *, stride: int = 1) -> dict[str, set[
     return dict(by_phrase)
 
 
-def find_historical(phrases: dict[str, set[str]], paths: Iterable[Path]) -> dict:
+def archive_matches(phrases: dict[str, set[str]], paths: Iterable[Path]) -> dict:
+    index: dict[str, dict[tuple[str, ...], set[str]]] = defaultdict(dict)
+    for phrase, identifiers in phrases.items():
+        words = phrase.split()
+        index[words[0]][tuple(words[1:])] = identifiers
     result = {}
-    with NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".txt") as patterns:
-        patterns.write("\n".join(sorted(phrases)) + "\n")
-        patterns.flush()
-        for path in paths:
-            scan = subprocess.run(
-                ["rg", "-ioF", "-f", patterns.name, "--", str(path)],
-                capture_output=True,
-                text=True,
-                check=False,
+    for path in paths:
+        affected: set[str] = set()
+        for row in read_jsonl(path):
+            entries = (
+                [row["text"]]
+                if "text" in row
+                else [message["content"] for message in row["messages"]]
             )
-            if scan.returncode > 1:
-                raise ValueError(f"historical search failed for {path}: {scan.stderr}")
-            affected = {
-                key for line in scan.stdout.splitlines() for key in phrases.get(line.casefold(), ())
-            }
-            result[str(path)] = sorted(affected)
+            for text in entries:
+                words = text.casefold().split()
+                for offset in range(len(words) - MIN_FLANK + 1):
+                    endings = index.get(words[offset])
+                    if endings is not None:
+                        affected.update(
+                            endings.get(tuple(words[offset + 1 : offset + MIN_FLANK]), ())
+                        )
+        result[str(path)] = sorted(affected)
     return result
 
 
@@ -99,7 +102,7 @@ def main() -> None:
         ]
         scanned = [path for path in requested if path.is_file()]
         result = {
-            "historical_matches": find_historical(phrases, scanned),
+            "historical_matches": archive_matches(phrases, scanned),
             "missing": [str(path) for path in requested if path not in scanned],
         }
         output = "historical_overlap.json"
@@ -109,7 +112,7 @@ def main() -> None:
         for arm in ("a", "b"):
             candidate = corpus / arm / "train.jsonl"
             result[arm] = matches(index, read_documents(candidate))
-        result["short_original_anchors"] = find_historical(
+        result["short_original_anchors"] = archive_matches(
             original_anchors, (corpus / arm / "train.jsonl" for arm in ("a", "b"))
         )
         output = "verified_overlap.json"
