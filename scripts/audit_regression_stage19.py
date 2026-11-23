@@ -44,9 +44,9 @@ def group_of(name: str) -> str:
     return next(label for pattern, label in GROUPS if pattern.search(name))
 
 
-def perplexity_grid(device: str) -> dict:
+def perplexity_grid(checkpoints: dict[str, str], device: str) -> dict:
     grid: dict = {}
-    for label, path in CHECKPOINTS.items():
+    for label, path in checkpoints.items():
         engine = load_engine(path, "data/tokenizer", device)
         grid[label] = {
             name: language_losses(engine, Path(root), batches, split=split)
@@ -56,11 +56,11 @@ def perplexity_grid(device: str) -> dict:
     return grid
 
 
-def weight_changes() -> dict:
-    base = load_file(Path(CHECKPOINTS["v2_start"]) / MODEL_FILE)
+def weight_changes(checkpoints: dict[str, str]) -> dict:
+    base = load_file(Path(checkpoints["v2_start"]) / MODEL_FILE)
     result: dict = {}
     deltas: dict[str, dict[str, torch.Tensor]] = {}
-    for label, path in CHECKPOINTS.items():
+    for label, path in checkpoints.items():
         if label == "v2_start":
             continue
         current = load_file(Path(path) / MODEL_FILE)
@@ -128,12 +128,20 @@ def training_logs() -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="mps")
+    parser.add_argument("--extra", nargs="*", default=[], help="name=checkpoint")
+    parser.add_argument("--only-extra", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    extra = dict(item.split("=", 1) for item in args.extra)
+    checkpoints = (
+        {"v2_start": CHECKPOINTS["v2_start"], **extra}
+        if args.only_extra
+        else {**CHECKPOINTS, **extra}
+    )
     report = {
-        "perplexity": perplexity_grid(args.device),
-        "weights": weight_changes(),
-        "logs": training_logs(),
+        "perplexity": perplexity_grid(checkpoints, args.device),
+        "weights": weight_changes(checkpoints),
+        "logs": {} if args.only_extra else training_logs(),
     }
     args.output.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
     print(f"written {args.output}")

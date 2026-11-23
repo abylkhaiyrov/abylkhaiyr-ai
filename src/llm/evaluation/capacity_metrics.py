@@ -7,6 +7,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
+from typing import Protocol
 
 import numpy as np
 
@@ -15,6 +16,20 @@ from llm.evaluation.diagnostic import EncodedOption, Scored, encode_options, sco
 from llm.evaluation.diagnostic_bank import Item
 from llm.inference.engine import InferenceEngine
 from llm.tokenizer.bpe import BPETokenizer
+
+
+class Judged(Protocol):
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def task(self) -> str: ...
+
+    @property
+    def family(self) -> str: ...
+
+    @property
+    def answer(self) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -111,7 +126,7 @@ def score_bank(
 
 
 def paired_summary(
-    pairs: Sequence[tuple[Sequence[Prediction], Sequence[Prediction]]],
+    pairs: Sequence[tuple[Sequence[Judged], Sequence[Judged]]],
     *,
     method: str = "normalized",
     repetitions: int = 10_000,
