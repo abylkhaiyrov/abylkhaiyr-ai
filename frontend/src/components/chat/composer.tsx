@@ -54,7 +54,7 @@ export function Composer({ generating, disabled, disabledReason, onSend, onStop,
           <Button size="icon" className="h-8 w-8 rounded-full" aria-label={t("chat.send")} disabled={!canSend} title={disabled ? (disabledReason ?? undefined) : undefined} onClick={submit}><ArrowUp size={16} /></Button>
         )}
       </div>
-      <p className="mt-1.5 text-center text-[11px] text-muted-foreground">{disabledReason ?? t("chat.hint")}</p>
+      <p className="mt-1.5 text-center text-xs text-muted-foreground">{disabledReason ?? t("chat.hint")}</p>
     </div>
   );
 }

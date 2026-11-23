@@ -42,3 +42,4 @@ data/v4_1/
 frontend/test-results/
 frontend/playwright-report/
 data/v5/
+frontend/.auth/

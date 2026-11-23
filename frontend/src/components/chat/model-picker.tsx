@@ -38,7 +38,7 @@ export function ModelPicker({ models, selectedId, locked, onSelect, advancedHref
     <div ref={ref} className="relative">
       <Button variant="ghost" size="sm" aria-haspopup="listbox" aria-expanded={open} disabled={locked} title={locked ? t("chat.modelLocked") : undefined} onClick={() => setOpen((value) => !value)} className="max-w-[16rem] font-semibold text-foreground">
         <span className="truncate">{selected?.display_name ?? t("chat.noModel")}</span>
-        {selected && CAUTION.has(selected.quality_status) ? <span className="rounded bg-warning/15 px-1 text-[10px] uppercase text-warning">{t(`checkpointStatus.${selected.quality_status}`)}</span> : null}
+        {selected && CAUTION.has(selected.quality_status) ? <span className="rounded bg-warning/15 px-1 text-[11px] uppercase text-warning">{t(`checkpointStatus.${selected.quality_status}`)}</span> : null}
         <ChevronDown size={13} />
       </Button>
       {open ? (
@@ -60,10 +60,10 @@ export function ModelPicker({ models, selectedId, locked, onSelect, advancedHref
                 >
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{model.display_name}</span>
-                    <span className={cn("rounded px-1 text-[10px] uppercase", CAUTION.has(model.quality_status) ? "bg-warning/15 text-warning" : "bg-muted")}>{t(`checkpointStatus.${model.quality_status}`)}</span>
+                    <span className={cn("rounded px-1 text-[11px] uppercase", CAUTION.has(model.quality_status) ? "bg-warning/15 text-warning" : "bg-muted")}>{t(`checkpointStatus.${model.quality_status}`)}</span>
                     {model.quality_status === "validated" || model.quality_status === "production" ? <BadgeCheck size={13} className="text-success" aria-label={t("roles.verified")} /> : null}
                   </span>
-                  <span className="flex flex-wrap gap-x-2 text-[11px] text-muted-foreground">
+                  <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
                     <span>{t("chat.family", { value: model.family })}</span>
                     {model.parameters ? <span>{t("chat.parameters", { value: new Intl.NumberFormat(undefined, { notation: "compact" }).format(model.parameters) })}</span> : null}
                     <span>{t(`modelUse.${model.recommended_use}`)}</span>

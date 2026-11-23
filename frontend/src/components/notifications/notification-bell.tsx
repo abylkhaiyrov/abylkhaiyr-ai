@@ -31,7 +31,7 @@ export function NotificationBell() {
     <div ref={ref} className="relative">
       <Button variant="ghost" size="icon" aria-haspopup="dialog" aria-expanded={open} aria-label={unread > 0 ? t("notification.bellUnread", { count: unread }) : t("notification.title")} onClick={() => setOpen((value) => !value)}>
         <Bell size={16} />
-        {unread > 0 ? <span className="absolute right-0.5 top-0.5 grid min-h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-accent-foreground">{unread > 99 ? "99+" : unread}</span> : null}
+        {unread > 0 ? <span className="absolute right-0.5 top-0.5 grid min-h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[11px] font-semibold leading-none text-accent-foreground">{unread > 99 ? "99+" : unread}</span> : null}
       </Button>
       {open ? (
         <div role="dialog" aria-label={t("notification.title")} className="absolute right-0 top-full z-40 mt-1 w-[22rem] max-w-[92vw] rounded-xl border bg-background shadow-xl animate-rise">

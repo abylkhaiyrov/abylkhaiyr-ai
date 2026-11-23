@@ -45,7 +45,7 @@ function UserMenu() {
           <div className="px-2.5 py-2">
             <p className="truncate text-[13px] font-semibold">{`${user.first_name} ${user.last_name}`.trim() || user.username}</p>
             <p className="truncate text-xs text-muted-foreground">{user.email ?? user.username}</p>
-            <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground">{t(`role.account.${user.role}`)}</p>
+            <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">{t(`role.account.${user.role}`)}</p>
           </div>
           <Link role="menuitem" className={item} to="/profile"><UserRound size={14} />{t("account.profile")}</Link>
           <Link role="menuitem" className={item} to="/settings"><Settings size={14} />{t("nav.settings")}</Link>

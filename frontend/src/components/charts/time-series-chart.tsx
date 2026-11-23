@@ -147,7 +147,7 @@ export function TimeSeriesChart({
           </div>
           <div className="mt-2 border-t hairline pt-2">
             <Summary series={series} goal={goal} formatY={fmtY} unit={unit} />
-            {markers.length > 0 ? <p className="mt-1.5 text-[11px] text-muted-foreground">┆ {t("chart.checkpointMarkers")}</p> : null}
+            {markers.length > 0 ? <p className="mt-1.5 text-xs text-muted-foreground">┆ {t("chart.checkpointMarkers")}</p> : null}
           </div>
         </>
       ) : (

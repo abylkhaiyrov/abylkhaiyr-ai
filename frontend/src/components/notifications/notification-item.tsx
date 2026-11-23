@@ -40,7 +40,7 @@ export function NotificationItem({ notification, onOpen, onDelete, compact = fal
         </span>
         <span className="block truncate text-xs text-muted-foreground">{description}</span>
         {subtitle && !compact ? <span className="block truncate text-xs text-muted-foreground/80">{subtitle}</span> : null}
-        <span className="mt-0.5 block text-[11px] text-muted-foreground">{format.relative(notification.created_at)}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{format.relative(notification.created_at)}</span>
       </button>
       <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100" aria-label={t("notification.delete")} onClick={() => onDelete(notification)}>
         <Trash2 size={13} />

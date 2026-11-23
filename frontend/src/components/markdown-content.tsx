@@ -29,7 +29,7 @@ function CodeBlock({ children, className }: { children?: ReactNode; className?: 
   }
   return (
     <div className="my-4 overflow-hidden rounded-lg border hairline bg-muted/40">
-      <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center justify-between px-3 py-1.5 text-xs text-muted-foreground">
         <span className="font-mono">{language || "code"}</span>
         <button
           type="button"
