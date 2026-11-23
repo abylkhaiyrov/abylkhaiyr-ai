@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import signal
-import subprocess
 import sys
 import time
 from dataclasses import asdict
 from pathlib import Path
-from threading import Event
 
 from train_stage18 import (
     ROOT as STAGE18_ROOT,
@@ -21,9 +18,9 @@ from train_stage18 import (
 )
 
 from llm.core.config import ExperimentConfig
-from llm.core.errors import ResourceError
 from llm.training.checkpoint import CheckpointManager
-from llm.training.session import exclusive_session, graceful_shutdown, run_training
+from llm.training.series import run_series
+from llm.training.session import exclusive_session, run_training
 
 ROOT = Path("experiments/stage19")
 CHECKPOINTS = Path("checkpoints/stage19")
@@ -55,31 +52,12 @@ def arm_configuration(arm: str) -> ExperimentConfig:
 
 
 def run_queue(deadline: float, arms: tuple[str, ...], state_file: Path) -> None:
-    stop = Event()
-    with graceful_shutdown(stop):
-        for arm in arms:
-            if step_of(arm) >= TARGET:
-                continue
-            if stop.is_set() or time.time() >= deadline:
-                return
-            command = [
-                sys.executable,
-                str(Path(__file__)),
-                "--job",
-                arm,
-                "--state",
-                str(state_file),
-            ]
-            with subprocess.Popen(command) as child:
-                while child.poll() is None:
-                    if stop.wait(0.5):
-                        child.send_signal(signal.SIGTERM)
-                        child.wait()
-                        return
-                if child.returncode:
-                    raise subprocess.CalledProcessError(child.returncode, command)
-            if step_of(arm) != TARGET:
-                raise ResourceError(f"arm {arm} stopped before the comparison point")
+    run_series(
+        arms,
+        deadline,
+        lambda arm: [sys.executable, str(Path(__file__)), "--job", arm, "--state", str(state_file)],
+        lambda arm: step_of(arm) >= TARGET,
+    )
 
 
 def step_of(arm: str) -> int:

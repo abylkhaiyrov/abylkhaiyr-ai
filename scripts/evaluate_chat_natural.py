@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from llm.data.binary import read_jsonl
+from llm.data.refusals import is_refusal
 from llm.evaluation.comparison import load_engine
 from llm.evaluation.metrics import normalize_words, prompt_echo, repeated_ngram_ratio
 from llm.evaluation.v4_review import accepted, proportion, script_matches
@@ -14,15 +15,6 @@ from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.tokenizer.bpe import Message
 
-REFUSAL_MARKERS = (
-    "не хочу выдумывать",
-    "would rather not invent",
-    "ойдан шығарғым келмейді",
-    "i do not know of a",
-    "не знаю страны",
-    "нет информации о ней",
-    "i may simply not have information",
-)
 CONFIGS: dict[str, dict[str, Any]] = {
     "greedy_rp1.1": {"greedy": True, "repetition_penalty": 1.1},
     "greedy_rp1.0": {"greedy": True, "repetition_penalty": 1.0},
@@ -51,7 +43,7 @@ def judge(case: dict, text: str, finished: bool) -> dict[str, Any]:
         "language_match": script_matches(case["language"], text),
         "echo": prompt_echo(case["question"], text),
         "repetition": repeated_ngram_ratio(words) if len(words) >= 6 else 0.0,
-        "canned_refusal": any(marker in folded for marker in REFUSAL_MARKERS),
+        "canned_refusal": is_refusal(text),
         "topic_proxy": topical if (case["topic_any"] or case["topic_all"]) else None,
         "correct": accepted(text, case["accept"]) if case["accept"] else None,
     }
