@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { useFormat } from "@/hooks/use-format";
 import { useMetricFormat } from "@/hooks/use-metric-format";
-import { useModelRegistry } from "@/hooks/use-runtime";
+import { CatalogTable } from "@/components/models/catalog-table";
+import { useModelCatalog, useModelRegistry } from "@/hooks/use-runtime";
 import { useApiError } from "@/hooks/use-api-error";
 import { api, type ModelRole } from "@/lib/api";
 import { modelAvailabilityKey } from "@/lib/models";
@@ -29,14 +30,17 @@ export function ModelsPage() {
   const push = useToastStore((state) => state.push);
   const describe = useApiError();
   const query = useModelRegistry();
+  const catalog = useModelCatalog();
+  const [view, setView] = useState<"catalog" | "checkpoints">("catalog");
   const settle = () => void client.invalidateQueries({ queryKey: ["models"] });
   const fail = (error: Error) => push("error", describe(error));
   const load = useMutation({ mutationFn: (id: string) => api.switchModel(id), onSuccess: settle, onError: fail });
   const unload = useMutation({ mutationFn: api.unloadModel, onSuccess: settle, onError: fail });
   return (
     <div className="grid gap-4">
-      <PageHeader title={t("models.title")} subtitle={t("models.subtitle")} />
-      <Query query={query}>
+      <PageHeader title={t("models.title")} subtitle={t("models.subtitle")} actions={<Tabs value={view} onChange={setView} items={[{ value: "catalog", label: t("models.catalog") }, { value: "checkpoints", label: t("models.checkpointRegistry") }]} />} />
+      {view === "catalog" ? <Query query={catalog}>{(entries) => <CatalogTable catalog={entries} />}</Query> : null}
+      {view === "checkpoints" ? <Query query={query}>
         {(registry) => (
           <>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -62,7 +66,7 @@ export function ModelsPage() {
                       return (
                         <tr key={model.id}>
                           <td className="max-w-64"><p className="truncate font-medium" title={model.id}>{model.display_name}</p><p className="truncate text-xs text-muted-foreground" title={model.id}>{model.id}</p></td>
-                          <td><span className="rounded bg-muted px-1.5 py-0.5 text-xs uppercase">{t(`modelStage.${model.stage}`, { defaultValue: model.stage })}</span></td>
+                          <td><span className="rounded bg-muted px-1.5 py-0.5 text-xs uppercase">{t(`modelStage.${model.stage}`, { defaultValue: model.stage })}</span><p className="mt-1 text-xs text-muted-foreground">{t(`checkpointStatus.${model.status}`)}</p></td>
                           <td><div className="flex flex-wrap gap-1">{model.roles.map((role) => <span key={role} className="rounded border px-1.5 py-0.5 text-xs">{t(`role.${role}`)}</span>)}</div></td>
                           <td className="tabular-nums">{format.compact(model.parameters)}</td>
                           <td className="tabular-nums">{format.number(model.context_length, 0)}</td>
@@ -91,39 +95,7 @@ export function ModelsPage() {
             )}
           </>
         )}
-      </Query>
-    </div>
-  );
-}
-
-export function ProcessesPage() {
-  const { t } = useTranslation();
-  const format = useFormat();
-  const query = useQuery({ queryKey: ["processes"], queryFn: api.processes, staleTime: 30_000 });
-  return (
-    <div className="grid gap-4">
-      <PageHeader title={t("processes.title")} subtitle={t("processes.subtitle")} />
-      <Query query={query}>
-        {(items) => items.length === 0 ? <EmptyState title={t("processes.empty")} /> : (
-          <div className="overflow-x-auto border-y hairline">
-            <table className="data-table">
-              <thead><tr><th>{t("processes.kind")}</th><th>PID</th><th>{t("processes.status")}</th><th>{t("processes.started")}</th><th>CPU</th><th>{t("processes.memory")}</th></tr></thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="font-medium">{t(`stage.${item.kind}`, { defaultValue: t(`modelStage.${item.kind}`, { defaultValue: item.kind }) })}{item.model_name ? <span className="ml-2 text-xs text-muted-foreground">{item.model_name}</span> : null}</td>
-                    <td className="font-mono text-xs">{item.pid ?? "—"}</td>
-                    <td><StatusBadge value={item.status} /></td>
-                    <td>{format.dateTime(item.started_at)}</td>
-                    <td className="tabular-nums">{format.percent(item.cpu_percent, 0)}</td>
-                    <td className="tabular-nums">{format.bytes(item.memory_bytes)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Query>
+      </Query> : null}
     </div>
   );
 }

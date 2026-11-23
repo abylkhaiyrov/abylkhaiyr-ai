@@ -17,7 +17,7 @@ export function ModelRolesCard({ runtime }: { runtime: RuntimeState }) {
             <li key={role} className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">{t(`role.${role}`)}</p>
-                <p className="truncate font-medium" title={model?.id}>{model?.display_name ?? t("roles.none")}</p>
+                <p className="truncate font-medium" title={model?.id}>{model?.display_name ?? t(role === "production" ? "dashboard.noProduction" : "roles.none")}</p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1 text-xs">
                 {model?.stage ? <span className="rounded bg-muted px-1.5 py-0.5 uppercase">{t(`modelStage.${model.stage}`, { defaultValue: model.stage })}</span> : null}

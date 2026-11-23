@@ -127,9 +127,64 @@ export type RoleModel = {
   created_at: string;
 };
 
+export type RunStatus = "running" | "completed" | "stopped" | "failed";
+
+export type RunEntry = {
+  id: string;
+  kind: "pipeline" | "training";
+  name: string;
+  model_name: string;
+  version: string | null;
+  stage: string;
+  status: RunStatus;
+  origin: "pipeline_state" | "metrics";
+  created_at: string | null;
+  updated_at: string | null;
+  step: number | null;
+  max_steps: number | null;
+  percent: number | null;
+  current_stage: string | null;
+  output_dir: string | null;
+  state_dir: string | null;
+  config_path: string | null;
+  checkpoint: string | null;
+  failure_reason: string | null;
+  validation_loss: number | null;
+  best_validation_loss: number | null;
+};
+
+export type RunsSummary = { active: RunEntry | null; latest: RunEntry | null; completed_count: number; total: number };
+
+export type RunQuery = { status?: RunStatus; stage?: string; version?: string; q?: string; sort?: "newest" | "oldest"; limit?: number; offset?: number };
+
+export type RunPage = { items: RunEntry[]; total: number };
+
+export type CheckpointStatus = "production" | "validated" | "candidate" | "experimental" | "rejected";
+
+export type CatalogModel = {
+  id: string;
+  display_name: string;
+  family: string;
+  version: string | null;
+  parameters: number | null;
+  context_length: number | null;
+  quality_status: CheckpointStatus;
+  stage: string;
+  capabilities: string[];
+  available: boolean;
+  availability_reason: string | null;
+  recommended_use: "chat" | "research";
+  representative_checkpoint: string;
+  checkpoint_count: number;
+  allowed: boolean;
+};
+
+export type UserModel = Pick<CatalogModel, "id" | "display_name" | "family" | "version" | "parameters" | "context_length" | "quality_status" | "capabilities" | "available" | "recommended_use">;
+
 export type RuntimeState = {
   generated_at: string;
   pipeline: Pipeline | null;
+  runs: RunsSummary;
   compute: { busy: boolean; holder: { kind: string; pid: number | null; stage: string | null } | null };
   models: Record<ModelRole, RoleModel | null>;
   production: { checkpoint: string; stage: string | null; ready: boolean; pass_rate: number | null; limitations: string[] } | null;
@@ -168,6 +223,7 @@ export type Model = {
   vocab_size: number | null;
   context_length: number | null;
   roles: ModelRole[];
+  status: CheckpointStatus;
   verified: boolean;
   verified_stage: string | null;
   metrics?: Metric;
@@ -185,6 +241,7 @@ export type Process = {
   output_dir: string | null;
   started_at: string;
   completed_at: string | null;
+  duration_seconds?: number | null;
   exit_code: number | null;
   error_reason: string | null;
   cpu_percent: number | null;
@@ -291,8 +348,12 @@ const userPage = shape<UserPage>({ items: arrayOf(me), total: number });
 const notification = shape<AppNotification>({ id: string, type: string, title: string, is_read: boolean });
 const notificationPage = shape<NotificationPage>({ items: arrayOf(notification), total: number, unread: number });
 const pipelineGuard = shape<Pipeline>({ id: string, stages: arrayOf(shape<PipelineStage>({ key: string, status: string })), running: boolean });
-const runtimeGuard = shape<RuntimeState>({ generated_at: string, pipeline: nullable(pipelineGuard), compute: shape({ busy: boolean }), models: record(anything), events: arrayOf(anything) });
-const registryGuard = shape<ModelRegistry>({ roles: record(anything), models: arrayOf(shape<Model>({ id: string, roles: arrayOf(string) })) });
+const runEntry = shape<RunEntry>({ id: string, kind: string, name: string, status: string, updated_at: nullable(string) });
+const runsSummary = shape<RunsSummary>({ active: nullable(runEntry), latest: nullable(runEntry), completed_count: number, total: number });
+const catalogModel = shape<CatalogModel>({ id: string, display_name: string, quality_status: string, representative_checkpoint: string, allowed: boolean, available: boolean });
+const userModel = shape<UserModel>({ id: string, display_name: string, quality_status: string });
+const runtimeGuard = shape<RuntimeState>({ generated_at: string, pipeline: nullable(pipelineGuard), runs: runsSummary, compute: shape({ busy: boolean }), models: record(anything), events: arrayOf(anything) });
+const registryGuard = shape<ModelRegistry>({ roles: record(anything), models: arrayOf(shape<Model>({ id: string, roles: arrayOf(string), status: string })) });
 const systemGuard = shape<SystemSnapshot>({ recorded_at: string, cpu: shape({ percent: number }), memory: shape({ total_bytes: number }), gpu: shape({ device: string }), disk: shape({ total_bytes: number }) });
 const chatSummary = shape<ChatSummary>({ id: string, title: string, pinned: boolean, updated_at: string });
 const chatGuard = shape<Chat>({ id: string, title: string, messages: arrayOf(shape<ChatMessage>({ id: string, role: string, content: string, variants: arrayOf(anything), reasoning_trace: arrayOf(anything) })) });
@@ -338,6 +399,12 @@ export const api = {
   unloadModel: () => http<{ loaded: boolean }>("/models/unload", body("POST")),
   datasets: () => http<Dataset[]>("/datasets", {}, listOf<Dataset>(shape({ name: string, size_bytes: number }))),
   experiments: () => http<Experiment[]>("/experiments", {}, listOf<Experiment>(named)),
+  catalogRuns: (query: RunQuery = {}) =>
+    http<RunPage>(`/catalog/runs?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape<RunPage>({ items: arrayOf(runEntry), total: number })),
+  modelCatalog: () => http<CatalogModel[]>("/models/catalog", {}, listOf<CatalogModel>(catalogModel)),
+  setAllowedModels: (ids: string[]) => http<CatalogModel[]>("/models/allowed", body("PUT", { ids }), listOf<CatalogModel>(catalogModel)),
+  userModels: () => http<UserModel[]>("/chat/models", {}, listOf<UserModel>(userModel)),
+  processEvents: (id: string) => http<{ level: string; message: string; created_at: string }[]>(`/processes/${encodeURIComponent(id)}/events`, {}, listOf(shape({ message: string, created_at: string }))),
   pipelines: () => http<Pipeline[]>("/pipelines", {}, listOf(pipelineGuard)),
   evaluations: () => http<Evaluation[]>("/evaluation", {}, listOf<Evaluation>(shape({ path: string, experiment: string, dataset: nullable(string), stage: nullable(string), model: nullable(string), checkpoint: nullable(string), results: record(number) }))),
   logs: (category?: string) => http<{ items: { category: string; source: string; message: string }[]; total: number }>(`/logs${category ? `?category=${category}` : ""}`, {}, shape({ items: arrayOf(shape({ message: string })), total: number })),

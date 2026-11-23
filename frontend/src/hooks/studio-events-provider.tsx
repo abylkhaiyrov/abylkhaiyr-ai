@@ -64,6 +64,9 @@ export function StudioEventsProvider({ children, enabled }: { children: ReactNod
         queryClient.setQueryData(["models"], event.data);
         void queryClient.invalidateQueries({ queryKey: ["evaluation"] }, { cancelRefetch: false });
         void queryClient.invalidateQueries({ queryKey: ["pipelines"] }, { cancelRefetch: false });
+        void queryClient.invalidateQueries({ queryKey: ["model-catalog"] }, { cancelRefetch: false });
+        void queryClient.invalidateQueries({ queryKey: ["catalog-runs"] }, { cancelRefetch: false });
+        void queryClient.invalidateQueries({ queryKey: ["processes"] }, { cancelRefetch: false });
       } else if (event.type === "system.update") {
         queryClient.setQueryData(["system"], event.data);
         queryClient.setQueryData<SystemSnapshot[]>(["system-history"], (previous) => {

@@ -14,8 +14,8 @@ import { ErrorState, LoadingState } from "@/components/data-state";
 import { useApiError } from "@/hooks/use-api-error";
 import { useChatGeneration } from "@/hooks/use-chat-generation";
 import { useRole } from "@/hooks/use-auth";
-import { useModelRegistry, useRuntime } from "@/hooks/use-runtime";
-import { api, type ChatMessage, type ChatSummary, type GenerationSettings, type Model } from "@/lib/api";
+import { useModelCatalog, useModelRegistry, useRuntime } from "@/hooks/use-runtime";
+import { api, type CatalogModel, type ChatMessage, type ChatSummary, type GenerationSettings, type Model } from "@/lib/api";
 import { DEFAULT_SETTINGS } from "@/lib/chat-settings";
 import { isActive } from "@/lib/generation";
 import { defaultModel, modelById } from "@/lib/models";
@@ -54,6 +54,7 @@ export function ChatPage() {
   const chat = useQuery({ queryKey: ["chat", selected, messageLimit], queryFn: () => api.chat(selected ?? "", messageLimit), enabled: selected !== null, staleTime: 30_000, placeholderData: (previous) => previous });
   const activeModelInfo = useQuery({ queryKey: ["chat-model"], queryFn: api.chatModel, enabled: !isAdmin, staleTime: 60_000 });
   const registry = useModelRegistry().data;
+  const catalog = useModelCatalog().data;
   const runtime = useRuntime().data;
 
   const adminModel: Model | null = useMemo(
@@ -145,6 +146,10 @@ export function ChatPage() {
     setDraftModel(next.id);
     if (selected) updateChat.mutate({ id: selected, payload: modelPayload(next) });
   };
+  const pickCatalogModel = (entry: CatalogModel) => {
+    const checkpoint = modelById(registry, entry.representative_checkpoint);
+    if (checkpoint) pickModel(checkpoint);
+  };
   const saveSettings = (next: Required<GenerationSettings>, prompt: string) => {
     if (selected) updateChat.mutate({ id: selected, payload: { generation_settings: next, system_prompt: prompt } });
     else push("info", t("chat.settingsAfterFirst"));
@@ -192,7 +197,7 @@ export function ChatPage() {
           <Button variant="ghost" size="icon" className="lg:hidden" aria-label={t("chat.history")} onClick={() => setDrawer(true)}><PanelLeft size={16} /></Button>
           <Button variant="ghost" size="icon" className="hidden lg:inline-flex" aria-label={t(historyOpen ? "chat.hideHistory" : "chat.showHistory")} aria-pressed={historyOpen} onClick={toggleHistory}><PanelLeft size={16} /></Button>
           {isAdmin ? (
-            <ModelPicker registry={registry} selected={adminModel} locked={running} onSelect={pickModel} />
+            <ModelPicker catalog={catalog} selected={adminModel} locked={running} onSelect={pickCatalogModel} />
           ) : (
             <span className="px-2 text-[13px] font-semibold" title={t("chat.activeModel")}>{model?.display_name ?? t("chat.noModel")}</span>
           )}
