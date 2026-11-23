@@ -1,12 +1,12 @@
 import asyncio
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from llm.inference.sampling import SamplingParams
@@ -104,6 +104,50 @@ def create_studio_router(
     ) -> list[dict[str, Any]]:
         return studio.runtime.pipeline_history()
 
+    @router.get("/catalog/runs")
+    def run_catalog_page(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+        status_filter: Annotated[str | None, Query(alias="status")] = None,
+        stage: str | None = None,
+        version: str | None = None,
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        sort: Annotated[Literal["newest", "oldest"], Query()] = "newest",
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        return studio.run_catalog.page(
+            status=status_filter,
+            stage=stage,
+            version=version,
+            query=q,
+            oldest_first=sort == "oldest",
+            limit=limit,
+            offset=offset,
+        )
+
+    @router.get("/catalog/runs/{run_id}")
+    def run_catalog_entry(
+        run_id: str,
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+    ) -> dict[str, Any]:
+        entry = studio.run_catalog.get(run_id)
+        if entry is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run_not_found")
+        pipeline = (
+            next(
+                (
+                    item
+                    for item in studio.runtime.pipeline_history()
+                    if f"pipeline:{item['id']}" == run_id
+                ),
+                None,
+            )
+            if entry["kind"] == "pipeline"
+            else None
+        )
+        detail = studio.catalog.detail(entry["name"]) if entry["kind"] == "training" else None
+        return {"run": entry, "pipeline": pipeline, "detail": detail}
+
     @router.get("/runtime")
     def runtime_state(
         _: Annotated[tuple[Any, str], Depends(admin_identity)],
@@ -133,6 +177,16 @@ def create_studio_router(
     @router.get("/processes")
     def processes(_: Annotated[tuple[Any, str], Depends(admin_identity)]) -> list[dict[str, Any]]:
         return studio.list_processes()
+
+    @router.get("/processes/{process_id}/events")
+    def process_events(
+        process_id: str,
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+    ) -> Sequence[dict[str, Any]]:
+        events = studio.processes.events(process_id)
+        if events is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="process_not_found")
+        return events
 
     @router.post("/training")
     def start_training(

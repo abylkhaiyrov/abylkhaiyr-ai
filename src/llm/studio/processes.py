@@ -18,6 +18,7 @@ from llm.studio.models import ManagedProcess, ProcessEvent
 
 RESOURCE_INTENSIVE_KINDS = {"pretrain", "sft", "dpo", "evaluation", "sweep"}
 RUNNING_STATUSES = {"pending", "running", "pausing", "paused"}
+ENDED_STATUS = {"pausing": "completed", "stopped": "stopped"}
 LIST_TTL_SECONDS = 2.0
 
 
@@ -128,23 +129,26 @@ class ProcessManager:
     def _refresh_managed_processes(self) -> None:
         with self.session_factory.begin() as database:
             rows = database.scalars(
-                select(ManagedProcess).where(ManagedProcess.status.in_(RUNNING_STATUSES))
+                select(ManagedProcess).where(
+                    ManagedProcess.pid.is_not(None),
+                    ManagedProcess.status.in_(RUNNING_STATUSES | {"stopped"}),
+                )
             ).all()
             for row in rows:
-                process = self._owned_process(row)
-                if process is None:
-                    row.status = "completed" if row.status == "pausing" else "failed"
-                    row.completed_at = datetime.now(UTC).replace(tzinfo=None)
-                    row.error_reason = (
-                        None if row.status == "completed" else "Process is no longer available"
+                if self._owned_process(row) is not None:
+                    continue
+                row.status = ENDED_STATUS.get(row.status, "failed")
+                row.pid = None
+                row.completed_at = row.completed_at or datetime.now(UTC).replace(tzinfo=None)
+                failed = row.status == "failed"
+                row.error_reason = "Process is no longer available" if failed else row.error_reason
+                database.add(
+                    ProcessEvent(
+                        process_id=row.id,
+                        level="error" if failed else "info",
+                        message="Process ended",
                     )
-                    database.add(
-                        ProcessEvent(
-                            process_id=row.id,
-                            level="info" if row.status == "completed" else "error",
-                            message="Process ended",
-                        )
-                    )
+                )
 
     def _discover_cli_processes(self) -> None:
         with self.session_factory.begin() as database:
@@ -228,29 +232,47 @@ class ProcessManager:
 
     @staticmethod
     def _serialize(record: ManagedProcess) -> dict:
+        active = record.status in RUNNING_STATUSES
         cpu_percent = None
         memory_bytes = None
-        if record.pid is not None:
+        if active and record.pid is not None:
             try:
                 process = psutil.Process(record.pid)
                 cpu_percent = process.cpu_percent(interval=None)
                 memory_bytes = process.memory_info().rss
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+        finished = record.completed_at
         return {
             "id": record.id,
-            "pid": record.pid,
+            "pid": record.pid if active else None,
             "kind": record.kind,
             "status": record.status,
             "command": record.command,
             "config_path": record.config_path,
             "output_dir": record.output_dir,
             "started_at": record.started_at.isoformat(),
-            "completed_at": (
-                None if record.completed_at is None else record.completed_at.isoformat()
+            "completed_at": None if finished is None else finished.isoformat(),
+            "duration_seconds": (
+                None if finished is None else (finished - record.started_at).total_seconds()
             ),
             "exit_code": record.exit_code,
             "error_reason": record.error_reason,
             "cpu_percent": cpu_percent,
             "memory_bytes": memory_bytes,
         }
+
+    def events(self, process_id: str, limit: int = 200) -> Sequence[dict] | None:
+        with self.session_factory() as database:
+            if database.get(ManagedProcess, process_id) is None:
+                return None
+            rows = database.scalars(
+                select(ProcessEvent)
+                .where(ProcessEvent.process_id == process_id)
+                .order_by(ProcessEvent.created_at.desc(), ProcessEvent.id.desc())
+                .limit(limit)
+            ).all()
+        return [
+            {"level": row.level, "message": row.message, "created_at": row.created_at.isoformat()}
+            for row in reversed(rows)
+        ]

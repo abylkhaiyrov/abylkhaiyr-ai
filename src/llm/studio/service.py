@@ -21,7 +21,9 @@ from llm.studio.model_manager import ModelManager
 from llm.studio.model_registry import production_info
 from llm.studio.models import Chat, GenerationJob, MessageRecord, ProcessEvent, SystemMetric
 from llm.studio.notifications import NotificationService
+from llm.studio.pipeline_view import parse_time
 from llm.studio.processes import ProcessError, ProcessManager
+from llm.studio.run_catalog import RunCatalog
 from llm.studio.runtime import RuntimeState
 from llm.studio.telemetry import (
     checkpoint_inventory,
@@ -78,6 +80,9 @@ class StudioService:
         self.processes = ProcessManager(self.session_factory, self.root)
         self.runtime = RuntimeState(self.root)
         self.catalog = ExperimentCatalog(self.root, self.runtime)
+        self.run_catalog = RunCatalog(
+            self.runtime.pipeline_history, self.catalog.runs, self.processes.list
+        )
         self.storage_metrics = storage_snapshot(self.root)
         self.storage_metrics_at = time.monotonic()
         self._reconcile_interrupted_jobs()
@@ -121,6 +126,7 @@ class StudioService:
         return {
             "generated_at": snapshot["generated_at"],
             "pipeline": pipeline,
+            "runs": self.run_catalog.summary(),
             "compute": self._compute_state(pipeline, processes),
             "models": self._role_summary(registry),
             "production": production_info(self.root),
@@ -187,29 +193,41 @@ class StudioService:
 
     def list_processes(self) -> list[dict[str, Any]]:
         processes = self.processes.list()
-        pipeline = self.runtime.active_pipeline()
-        if pipeline is not None:
-            processes.insert(
-                0,
-                {
-                    "id": f"pipeline-{pipeline['pid']}",
-                    "pid": pipeline["pid"],
-                    "kind": pipeline["current_stage"] or "pipeline",
-                    "status": "running",
-                    "command": "scripts/run_pipeline.py",
-                    "config_path": None,
-                    "output_dir": pipeline["state_dir"],
-                    "started_at": pipeline["started_at"],
-                    "completed_at": None,
-                    "exit_code": None,
-                    "error_reason": None,
-                    "cpu_percent": pipeline["cpu_percent"],
-                    "memory_bytes": pipeline["memory_bytes"],
-                    "managed": False,
-                    "model_name": pipeline["model_name"],
-                },
-            )
-        return processes
+        pipelines = [
+            self._pipeline_process(item)
+            for item in self.run_catalog.entries()
+            if item["kind"] == "pipeline"
+        ]
+        active = [item for item in pipelines if item["status"] == "running"]
+        history = [item for item in pipelines if item["status"] != "running"]
+        return [*active, *processes, *history]
+
+    def _pipeline_process(self, entry: dict[str, Any]) -> dict[str, Any]:
+        running = entry["status"] == "running"
+        pipeline = self.runtime.active_pipeline() if running else None
+        return {
+            "id": entry["id"],
+            "pid": None if pipeline is None else pipeline["pid"],
+            "kind": entry["current_stage"] or "pipeline",
+            "status": entry["status"],
+            "command": "scripts/run_pipeline.py",
+            "config_path": None,
+            "output_dir": entry["state_dir"],
+            "started_at": entry["created_at"],
+            "completed_at": None if running else entry["updated_at"],
+            "duration_seconds": None if running else self._duration(entry),
+            "exit_code": None,
+            "error_reason": entry["failure_reason"],
+            "cpu_percent": None if pipeline is None else pipeline["cpu_percent"],
+            "memory_bytes": None if pipeline is None else pipeline["memory_bytes"],
+            "managed": False,
+            "model_name": entry["model_name"],
+        }
+
+    @staticmethod
+    def _duration(entry: dict[str, Any]) -> float | None:
+        started, finished = parse_time(entry["created_at"]), parse_time(entry["updated_at"])
+        return None if started is None or finished is None else (finished - started).total_seconds()
 
     def stop_pipeline(self) -> dict[str, Any]:
         pipeline = self.runtime.active_pipeline()
