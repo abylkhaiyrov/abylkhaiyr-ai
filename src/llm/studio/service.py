@@ -83,7 +83,9 @@ class StudioService:
         self.model_policy = ModelAccessPolicy(self.session_factory)
         self.catalog = ExperimentCatalog(self.root, self.runtime)
         self.run_catalog = RunCatalog(
-            self.runtime.pipeline_history, self.catalog.runs, self.processes.list
+            self.runtime.pipeline_history,
+            lambda: self.catalog.runs(include_nested=True),
+            self.processes.list,
         )
         self.storage_metrics = storage_snapshot(self.root)
         self.storage_metrics_at = time.monotonic()

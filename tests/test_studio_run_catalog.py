@@ -190,3 +190,21 @@ def test_finished_process_releases_stale_pid(model_config, tokenizer, tmp_path):
     events = client.get("/api/processes/old/events").json()
     assert events[-1]["message"] == "Process ended"
     assert client.get("/api/processes/missing/events").status_code == 404
+
+
+def test_nested_runs_join_the_catalog_but_not_the_legacy_run_list(
+    model_config, tokenizer, tmp_path
+):
+    nested = tmp_path / "experiments" / "v4" / "pretrain"
+    nested.mkdir(parents=True)
+    (nested / "metrics.jsonl").write_text(json.dumps({"step": 5, "train/loss": 3.0}) + "\n")
+    client = studio_client(model_config, tokenizer, tmp_path)
+    login(client)
+    page = client.get("/api/catalog/runs").json()
+    assert [item["id"] for item in page["items"]] == ["run:v4/pretrain"]
+    assert page["items"][0]["version"] == "v4"
+    assert client.get("/api/runs").json() == []
+    detail = client.get("/api/catalog/runs/run:v4/pretrain")
+    assert detail.status_code == 200
+    assert detail.json()["detail"]["name"] == "v4/pretrain"
+    assert client.get("/api/catalog/runs/run:../secret").status_code == 404

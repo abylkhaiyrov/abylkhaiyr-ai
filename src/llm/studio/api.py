@@ -131,7 +131,7 @@ def create_studio_router(
             offset=offset,
         )
 
-    @router.get("/catalog/runs/{run_id}")
+    @router.get("/catalog/runs/{run_id:path}")
     def run_catalog_entry(
         run_id: str,
         _: Annotated[tuple[Any, str], Depends(admin_identity)],

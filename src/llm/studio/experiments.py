@@ -16,7 +16,7 @@ from llm.studio.telemetry import read_metrics
 MAX_LOG_LINES = 1000
 LOG_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 SECRET_PATTERN = re.compile(r"(?i)(authorization|password|token|secret)(\s*[=:]\s*)([^\s,]+)")
-SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)?$")
 STAGE_BY_NAME = (("dpo", "dpo"), ("sft", "sft"))
 
 
@@ -76,9 +76,15 @@ class ExperimentCatalog:
             for item in self.configs().values()
         ]
 
-    def runs(self) -> list[dict[str, Any]]:
+    def runs(self, include_nested: bool = False) -> list[dict[str, Any]]:
+        experiments = self.root / "experiments"
+        patterns = (
+            ("*/metrics.jsonl", "*/*/metrics.jsonl") if include_nested else ("*/metrics.jsonl",)
+        )
         names = sorted(
-            path.parent.name for path in (self.root / "experiments").glob("*/metrics.jsonl")
+            path.parent.relative_to(experiments).as_posix()
+            for pattern in patterns
+            for path in experiments.glob(pattern)
         )
         pipeline = self.runtime.pipeline()
         return sorted(
