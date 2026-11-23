@@ -149,7 +149,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Результаты MPS, подбор SFT и выбор checkpoint](docs/stage11_sft.md) ·
 [Model Card](docs/model_card_stage11.md) ·
 [Диагностика: почему модель повторяет вопрос](docs/diagnosis_stage12.md) ·
-[Корпус v4 и continued pretraining](docs/stage13_v4.md).
+[Корпус v4 и continued pretraining](docs/stage13_v4.md) ·
+[Этап 14. Данные v4.1, оценка и эксперименты](docs/stage14_data_eval.md).
 
 ## Проверка качества кода
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -55,6 +56,8 @@ def study_config(
     root: Path,
     checkpoint_dir: Path,
     device: str,
+    mixture: Mapping[str, float] | None = None,
+    learning_rate: float = 2e-4,
 ) -> ExperimentConfig:
     if variant not in VARIANTS:
         raise ValueError(f"unknown SFT variant: {variant}")
@@ -62,16 +65,16 @@ def study_config(
         raise ValueError("SFT steps must be positive")
     if not init.is_dir():
         raise ValueError(f"checkpoint directory does not exist: {init}")
-    mixture = BALANCED_MIXTURE.copy()
+    chosen = dict(BALANCED_MIXTURE if mixture is None else mixture)
     if variant == "dialogue_reading":
-        del mixture["semantic_kk"]
+        chosen.pop("semantic_kk", None)
     groups = root / "sft_groups"
-    for name in mixture:
+    for name in chosen:
         for split in ("train", "validation"):
             if not (groups / f"{split}.{name}.ids.bin").is_file():
                 raise ValueError(f"missing SFT split {split}.{name}")
     optimizer = base.train.optimizer.model_copy(
-        update={"learning_rate": 2e-4, "warmup_steps": min(10, steps // 10)}
+        update={"learning_rate": learning_rate, "warmup_steps": min(10, steps // 10)}
     )
     has_curriculum = variant == "curriculum"
     grad_accum = 2
@@ -96,7 +99,7 @@ def study_config(
             "protected_steps": [steps],
             "sft_replay_fraction": 0.15 if variant == "replay" else 0.0,
             "sft_replay_dir": str(root.parent / "tokens"),
-            "mixture": mixture,
+            "mixture": chosen,
             "curriculum_start": CURRICULUM_START if has_curriculum else {},
             "curriculum_batches": steps * grad_accum if has_curriculum else 0,
         }

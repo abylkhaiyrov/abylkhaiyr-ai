@@ -23,10 +23,17 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=80)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--device", default="mps")
+    parser.add_argument("--mixture", default=None, help="group=weight,group=weight")
+    parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--plan-only", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
+    mixture = (
+        {key: float(value) for key, value in (item.split("=") for item in args.mixture.split(","))}
+        if args.mixture
+        else None
+    )
     base = load_experiment_config(args.config)
     config = study_config(
         base,
@@ -37,6 +44,8 @@ def main() -> None:
         args.data,
         args.checkpoint_dir,
         args.device,
+        mixture,
+        args.learning_rate,
     )
     tokenizer = BPETokenizer.load(config.tokenizer.path)
     exposure = planned_exposure(config, tokenizer, args.steps)
