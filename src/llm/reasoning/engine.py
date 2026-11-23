@@ -11,6 +11,7 @@ from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
 from llm.reasoning.intent import classify_intent, classify_task
 from llm.reasoning.sandbox import SandboxLimits, run_program
+from llm.reasoning.stages import FACTUAL, FORMAT
 from llm.reasoning.tools import (
     answers_match,
     extract_code,
@@ -75,10 +76,14 @@ GENERAL_MIN_TOKENS = 3
 
 
 class Verifier(Protocol):
+    check: str
+
     def verify(self, problem: Problem, text: str) -> Candidate: ...
 
 
 class MathVerifier:
+    check = FACTUAL
+
     def verify(self, problem: Problem, text: str) -> Candidate:
         answer = extract_final_answer(text)
         correct, total = verify_annotations(text)
@@ -89,6 +94,8 @@ class MathVerifier:
 
 
 class LogicVerifier:
+    check = FACTUAL
+
     def verify(self, problem: Problem, text: str) -> Candidate:
         answer = extract_text_answer(text)
         if answer is None:
@@ -98,6 +105,8 @@ class LogicVerifier:
 
 
 class CodeVerifier:
+    check = FACTUAL
+
     def verify(self, problem: Problem, text: str) -> Candidate:
         code = extract_code(text)
         if not is_valid_python(code):
@@ -110,6 +119,8 @@ class CodeVerifier:
 
 
 class GeneralVerifier:
+    check = FORMAT
+
     def verify(self, problem: Problem, text: str) -> Candidate:
         quality = 1.0 - repeated_ngram_ratio(text.split(), 2)
         usable = (
@@ -354,7 +365,14 @@ class ReasoningEngine:
                     valid_syntax=valid_code,
                     has_tests=problem.tests is not None,
                 )
-            self._emit(on_event, "verification", "running", attempt=attempt + 1, kind=problem.kind)
+            self._emit(
+                on_event,
+                "verification",
+                "running",
+                attempt=attempt + 1,
+                kind=problem.kind,
+                check=verifier.check,
+            )
             candidate = verifier.verify(problem, text)
             if problem.kind == "general" and not finished:
                 candidate = replace(candidate, score=candidate.score * 0.5)
@@ -364,6 +382,7 @@ class ReasoningEngine:
                 "verification",
                 "completed",
                 attempt=attempt + 1,
+                check=verifier.check,
                 verified=candidate.verified,
                 score=round(candidate.score, 4),
             )

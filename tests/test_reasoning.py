@@ -218,3 +218,13 @@ def test_sandbox_cannot_read_an_unshared_file(tmp_path):
     result = run_python(f"from pathlib import Path; print(Path({str(private)!r}).read_text())")
     assert not result.passed
     assert "private test data" not in result.stdout
+
+
+def test_a_budget_from_a_profile_without_reasoning_still_produces_an_answer():
+    from llm.studio.inference_profiles import PROFILES
+
+    scripted = ScriptedEngine(["Here is a short answer about weather"])
+    solution = ReasoningEngine(scripted).solve_auto(
+        "Tell me about the weather", budget=PROFILES["medium"].budget(32)
+    )
+    assert solution.text == "Here is a short answer about weather" and scripted.calls == 1

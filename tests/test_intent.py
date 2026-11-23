@@ -8,7 +8,17 @@ CASES = [
     ("Сәлем!", "dialogue"),
     ("Спасибо большое", "dialogue"),
     ("Who are you?", "dialogue"),
-    ("Что ты умеешь делать?", "dialogue"),
+    ("Что ты умеешь делать?", "capability"),
+    ("что умеешь делать?", "capability"),
+    ("что ты умеешь?", "capability"),
+    ("что можешь?", "capability"),
+    ("what can you do?", "capability"),
+    ("не істей аласың?", "capability"),
+    ("Чем можешь помочь?", "capability"),
+    ("Как дела?", "dialogue"),
+    ("Кто ты?", "dialogue"),
+    ("Что такое PostgreSQL?", "information"),
+    ("Что умеет делать PostgreSQL?", "information"),
     ("Сен кімсің?", "dialogue"),
     ("What is the capital of France?", "information"),
     ("Что такое фотосинтез?", "information"),
@@ -45,3 +55,17 @@ def test_only_verifiable_intents_use_tools():
     assert classify_task("Translate into Russian: book") == "general"
     assert classify_task("Hello!") == "general"
     assert classify_task("What is the capital of France?") == "general"
+
+
+def test_capability_examples_do_not_contain_the_evaluated_phrasings():
+    from llm.reasoning.intent_examples import EXAMPLES
+
+    evaluated = {
+        "что умеешь делать?",
+        "что ты умеешь?",
+        "что можешь?",
+        "what can you do?",
+        "не істей аласың?",
+        "чем можешь помочь?",
+    }
+    assert not evaluated & {text.casefold() for text, _ in EXAMPLES}

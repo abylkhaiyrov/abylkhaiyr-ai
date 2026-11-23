@@ -50,7 +50,11 @@ class InferenceProfile:
             max_new_tokens_total=min(
                 self.limits.max_total_new_tokens, per_candidate * self.reasoning.max_candidates
             ),
-            max_seconds=self.tool_budget_seconds,
+            max_seconds=(
+                self.tool_budget_seconds
+                if self.reasoning.enabled
+                else self.generation_timeout_seconds
+            ),
             max_new_tokens_per_candidate=per_candidate,
         )
 

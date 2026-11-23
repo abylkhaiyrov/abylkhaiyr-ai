@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import re
+from functools import cache
 
-DIALOGUE = "dialogue"
-INFORMATION = "information"
+from llm.reasoning import intent_examples
+from llm.reasoning.intent_model import IntentModel
+
+DIALOGUE = intent_examples.DIALOGUE
+INFORMATION = intent_examples.INFORMATION
+CAPABILITY = intent_examples.CAPABILITY
 MATH = "math"
 LOGIC = "logic"
 CODE = "code"
@@ -11,7 +16,7 @@ ANALYSIS = "analysis"
 TRANSLATION = "translation"
 GENERAL = "general"
 
-INTENTS = (DIALOGUE, INFORMATION, MATH, LOGIC, CODE, ANALYSIS, TRANSLATION)
+INTENTS = (DIALOGUE, CAPABILITY, INFORMATION, MATH, LOGIC, CODE, ANALYSIS, TRANSLATION)
 VERIFIED_KINDS = {MATH, LOGIC, CODE}
 
 FLAGS = re.IGNORECASE
@@ -66,6 +71,11 @@ QUESTION_HINTS = re.compile(
 )
 
 
+@cache
+def assistant_model() -> IntentModel:
+    return IntentModel.fit(intent_examples.EXAMPLES)
+
+
 def classify_intent(question: str) -> str:
     if CODE_HINTS.search(question):
         return CODE
@@ -79,6 +89,9 @@ def classify_intent(question: str) -> str:
         return MATH
     if ANALYSIS_HINTS.search(question):
         return ANALYSIS
+    predicted = assistant_model().predict(question).label
+    if predicted is not None:
+        return predicted
     if DIALOGUE_HINTS.search(question):
         return DIALOGUE
     if QUESTION_HINTS.search(question):

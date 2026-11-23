@@ -256,7 +256,7 @@ export type Process = {
   model_name?: string;
 };
 
-export type ReasoningStageEvent = { stage: string; status: string; data: Record<string, unknown>; timestamp?: number };
+export type ReasoningStageEvent = { stage: string; status: string; phase?: string; data: Record<string, unknown>; timestamp?: number };
 
 export type ProfileId = "lite" | "medium" | "high" | "very_high";
 

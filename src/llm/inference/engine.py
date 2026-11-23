@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Generator, Iterator
 from dataclasses import dataclass, replace
 from typing import Protocol
@@ -245,6 +246,10 @@ class InferenceEngine:
     def _chat_ids(self, messages: list[Message], reserved_tokens: int) -> list[int]:
         fitted, _ = self.fit_messages(messages, reserved_tokens)
         return self.tokenizer.encode_conversation(fitted, add_generation_prompt=True)
+
+    def chat_digest(self, messages: list[Message]) -> str:
+        ids = self.tokenizer.encode_conversation(messages, add_generation_prompt=True)
+        return hashlib.sha256(",".join(map(str, ids)).encode()).hexdigest()[:16]
 
     def chat_prompt_tokens(self, messages: list[Message], max_new_tokens: int) -> int:
         params = self._chat_params(SamplingParams(max_new_tokens=max_new_tokens))

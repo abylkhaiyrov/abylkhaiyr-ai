@@ -58,7 +58,7 @@ def main() -> None:
         "--protected",
         nargs="*",
         type=Path,
-        default=[Path("configs/natural_eval_v4.jsonl")],
+        default=[Path("configs/natural_eval_v4.jsonl"), Path("configs/chat_eval_natural_v1.jsonl")],
     )
     parser.add_argument("--sentiment-limit", type=int, default=0)
     parser.add_argument("--definitions", action="store_true")

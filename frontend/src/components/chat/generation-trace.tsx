@@ -4,8 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useFormat } from "@/hooks/use-format";
 import type { ReasoningStageEvent } from "@/lib/api";
 import type { ActiveGeneration } from "@/lib/generation";
-
-type Translate = (key: string, options?: Record<string, unknown>) => string;
+import { doneLabel, stageLabel, type Translate } from "@/lib/trace";
 
 function chips(event: ReasoningStageEvent, t: Translate): string[] {
   const data = event.data ?? {};
@@ -27,7 +26,7 @@ function phaseLabel(events: ReasoningStageEvent[], active: ActiveGeneration | nu
   if (active === null) return null;
   if (active.status === "queued") return active.queuePosition > 0 ? t("trace.queued", { position: active.queuePosition }) : t("trace.waitingCompute");
   const running = [...events].reverse().find((event) => event.status === "running");
-  if (running) return t("trace.running", { stage: t(`trace.stages.${running.stage}`, { defaultValue: running.stage }) });
+  if (running) return t("trace.running", { stage: stageLabel(running, t as Translate) });
   if (!active.text) return events.length === 0 ? t("trace.preparing") : t("trace.generating");
   return t("trace.generating");
 }
@@ -37,7 +36,7 @@ export function GenerationTrace({ events, active }: { events: ReasoningStageEven
   const format = useFormat();
   const [open, setOpen] = useState(false);
   const live = active !== null && ["queued", "running"].includes(active.status);
-  const label = live ? phaseLabel(events, active, t as Translate) : t("trace.done", { count: events.length });
+  const label = live ? phaseLabel(events, active, t as Translate) : doneLabel(events, t as Translate);
   if (!live && events.length === 0) return null;
   return (
     <div className="mb-3 text-xs">
@@ -52,11 +51,12 @@ export function GenerationTrace({ events, active }: { events: ReasoningStageEven
           {events.map((event) => (
             <li key={`${event.stage}-${event.timestamp}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
               {event.status === "running" ? <Loader2 size={11} className="animate-spin text-accent" /> : <CheckCircle2 size={11} className="text-success" />}
-              <span className="text-foreground">{t(`trace.stages.${event.stage}`, { defaultValue: event.stage })}</span>
+              <span className="text-foreground">{stageLabel(event, t as Translate)}</span>
               {chips(event, t as Translate).map((chip) => <span key={chip} className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{chip}</span>)}
               {event.timestamp ? <span className="ml-auto tabular-nums text-muted-foreground">{format.time(event.timestamp * 1000)}</span> : null}
             </li>
           ))}
+          <li className="text-muted-foreground">{t("trace.semanticNotChecked")}</li>
         </ol>
       ) : null}
     </div>

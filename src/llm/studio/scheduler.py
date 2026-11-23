@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from llm.inference.sampling import SamplingParams
 from llm.reasoning.engine import Budget, ReasoningEngine, classify_task
+from llm.reasoning.stages import executed_checks, phase_of
 from llm.studio.inference_profiles import PROFILES, effective_output_tokens, unavailable_reason
 from llm.studio.model_manager import LoadedModelState, ModelManager, ModelManagerError
 from llm.studio.service import TASK_STATUS, StudioService
@@ -403,6 +404,21 @@ class GenerationScheduler:
                 + prefix_tokens
             )
             state.prompt_tokens = input_tokens
+            logger.info(
+                "generation request=%s checkpoint=%s profile=%s messages=%d dropped=%d "
+                "prompt_tokens=%d prompt_digest=%s sampling=%s",
+                state.request_id,
+                loaded.checkpoint_id,
+                params_dict.get("profile"),
+                len(messages),
+                dropped_messages,
+                input_tokens,
+                engine.chat_digest(messages),
+                {
+                    key: params_dict[key]
+                    for key in ("temperature", "top_p", "top_k", "max_tokens", "repetition_penalty")
+                },
+            )
             last_user_text = next(
                 (item["content"] for item in reversed(history_records) if item["role"] == "user"),
                 request.content or "",
@@ -595,6 +611,7 @@ class GenerationScheduler:
                     "checkpoint_id": loaded.checkpoint_id,
                     "device": loaded.device,
                     "reasoning_events": state.reasoning_events,
+                    "checks": executed_checks(state.reasoning_events),
                     "text": state.text,
                 },
             )
@@ -690,6 +707,7 @@ class GenerationScheduler:
         entry = {
             "stage": stage,
             "status": status,
+            "phase": phase_of(stage, data),
             "data": data,
             "timestamp": time.time(),
         }

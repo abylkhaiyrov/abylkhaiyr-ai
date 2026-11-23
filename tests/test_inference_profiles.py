@@ -130,3 +130,10 @@ def test_scheduler_enforces_profile_rbac_and_availability(app):
     unknown = GenerationRequest("r", 1, "c", profile="x", privileged=True)
     assert scheduler._profile_rejection(unknown)["code"] == "invalid_profile"
     assert scheduler._profile_rejection(GenerationRequest("r", 1, "c")) is None
+
+
+def test_budgets_of_profiles_without_reasoning_keep_a_usable_time_limit():
+    for name in ("lite", "medium"):
+        profile = PROFILES[name]
+        assert not profile.reasoning.enabled
+        assert profile.budget(64).max_seconds == profile.generation_timeout_seconds > 0
