@@ -455,16 +455,22 @@ def create_studio_router(
             "device": active.get("device"),
         }
 
+    def require_user_model(model_name: str | None, privileged: bool) -> str | None:
+        if privileged or model_name is None:
+            return None
+        return model_name if studio.resolve_user_checkpoint(model_name) is not None else None
+
     @router.post("/chats", status_code=status.HTTP_201_CREATED)
     def create_chat(
         payload: ChatCreateRequest,
         identity: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
         privileged = identity[0].role == "ADMIN"
+        user_model = require_user_model(payload.model_name, privileged)
         return studio.create_chat(
             identity[0].id,
             payload.title,
-            payload.model_name if privileged else None,
+            payload.model_name if privileged else user_model,
             payload.checkpoint if privileged else None,
             payload.system_prompt,
             payload.generation_settings,
@@ -488,11 +494,12 @@ def create_studio_router(
         identity: Annotated[tuple[Any, str], Depends(require_csrf)],
     ) -> dict[str, Any]:
         privileged = identity[0].role == "ADMIN"
+        user_model = require_user_model(payload.model_name, privileged)
         chat = studio.update_chat(
             identity[0].id,
             chat_id,
             title=payload.title,
-            model_name=payload.model_name if privileged else None,
+            model_name=payload.model_name if privileged else user_model,
             checkpoint=payload.checkpoint if privileged else None,
             system_prompt=payload.system_prompt,
             generation_settings=payload.generation_settings,

@@ -112,3 +112,23 @@ def test_registry_checkpoints_carry_lifecycle_status(app):
         item["status"] in {"production", "validated", "candidate", "experimental", "rejected"}
         for item in models
     )
+
+
+def test_users_can_only_pick_models_the_admin_allowed(app):
+    admin = sign_in(app, "admin", "admin")
+    user, _ = register(app)
+    identifier = admin.get("/api/models/catalog").json()[0]["id"]
+    headers = csrf(user)
+    denied = user.post("/api/chats", headers=headers, json={"model_name": identifier})
+    assert (denied.status_code, denied.json()["model_name"]) == (201, None)
+    admin.put("/api/models/allowed", json={"ids": [identifier]}, headers=csrf(admin))
+    created = user.post("/api/chats", headers=headers, json={"model_name": identifier})
+    assert created.status_code == 201
+    assert created.json()["model_name"] == identifier
+    studio = app.state.studio
+    assert studio.resolve_user_checkpoint(identifier)
+    admin.put("/api/models/allowed", json={"ids": []}, headers=csrf(admin))
+    assert studio.resolve_user_checkpoint(identifier) is None
+    missing = user.post("/api/chats", headers=headers, json={"model_name": "missing"})
+    assert missing.json()["model_name"] is None
+    assert user.post("/api/chats", headers=headers, json={}).status_code == 201

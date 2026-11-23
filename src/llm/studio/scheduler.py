@@ -138,9 +138,7 @@ class GenerationScheduler:
                 "code": "queue_full",
                 "detail": f"Generation queue is full ({self.max_queue_size} requests waiting)",
             }
-        target_checkpoint = (
-            (request.checkpoint_id or chat.get("checkpoint")) if request.privileged else None
-        )
+        target_checkpoint = await self._target_checkpoint(request, chat)
         active_model = self.model_manager.active
         if active_model is None and not target_checkpoint:
             return "rejected", {
@@ -293,9 +291,7 @@ class GenerationScheduler:
         chat: dict[str, Any],
         publish: PublishCallback,
     ) -> LoadedModelState:
-        target_checkpoint = (
-            (request.checkpoint_id or chat.get("checkpoint")) if request.privileged else None
-        )
+        target_checkpoint = await self._target_checkpoint(request, chat)
         active = self.model_manager.active
         training_active = await asyncio.to_thread(self.studio.runtime.training_active)
         if target_checkpoint and (active is None or active.checkpoint_id != target_checkpoint):
@@ -741,6 +737,16 @@ class GenerationScheduler:
                 state.request_id,
                 status,
             )
+
+    async def _target_checkpoint(
+        self, request: GenerationRequest, chat: dict[str, Any]
+    ) -> str | None:
+        if request.privileged:
+            return request.checkpoint_id or chat.get("checkpoint")
+        model_name = chat.get("model_name")
+        if not model_name:
+            return None
+        return await asyncio.to_thread(self.studio.resolve_user_checkpoint, model_name)
 
     def _profile_rejection(self, request: GenerationRequest) -> dict[str, str] | None:
         if request.profile is None:

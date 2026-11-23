@@ -315,6 +315,12 @@ class StudioService:
     def user_models(self) -> list[dict[str, Any]]:
         return user_view(self.model_catalog())
 
+    def resolve_user_checkpoint(self, model_id: str) -> str | None:
+        entry = next((item for item in self.model_catalog() if item["id"] == model_id), None)
+        if entry is None or not entry["allowed"] or not entry["available"]:
+            return None
+        return str(entry["representative_checkpoint"])
+
     def set_allowed_models(self, identifiers: list[str]) -> list[str]:
         return self.model_policy.update(identifiers, self.model_catalog)
 
