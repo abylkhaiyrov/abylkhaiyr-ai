@@ -8,9 +8,7 @@ def test_unreachable_docker_daemon_is_reported_as_unavailable_not_as_a_failed_pr
 ):
     fake = tmp_path / "docker"
     fake.write_text(
-        "#!/bin/sh\n"
-        "echo 'failed to connect to the docker API at unix:///x.sock' >&2\n"
-        "exit 1\n"
+        "#!/bin/sh\necho 'failed to connect to the docker API at unix:///x.sock' >&2\nexit 1\n"
     )
     fake.chmod(0o755)
     monkeypatch.setattr(shutil, "which", lambda name: str(fake))
