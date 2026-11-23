@@ -16,7 +16,7 @@ export function ProfilePicker({ profiles, value, locked, onChange }: ProfilePick
   const current = ordered.find((item) => item.id === value);
   return (
     <span className="inline-flex" title={current ? t("profile.summary", { tokens: current.max_output_tokens, seconds: current.generation_timeout_seconds }) : undefined}>
-      <Select compact aria-label={t("profile.label")} disabled={locked || ordered.length === 0} value={value ?? ""} onChange={(event) => onChange(event.target.value as ProfileId)}>
+      <Select compact className="w-28" aria-label={t("profile.label")} disabled={locked || ordered.length === 0} value={value ?? ""} onChange={(event) => onChange(event.target.value as ProfileId)}>
         {value === null ? <option value="" disabled>{t("profile.choose")}</option> : null}
         {ordered.map((item) => (
           <option key={item.id} value={item.id} disabled={!item.available || !item.allowed}>

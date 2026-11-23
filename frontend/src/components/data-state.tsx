@@ -62,8 +62,8 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
   return (
     <div className="min-w-0">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 truncate text-[15px] font-medium tabular-nums" title={typeof value === "string" ? value : undefined}>{value}</dd>
-      {hint ? <p className="mt-0.5 truncate text-xs text-muted-foreground">{hint}</p> : null}
+      <dd className="mt-0.5 break-words text-[15px] font-medium tabular-nums" title={typeof value === "string" ? value : undefined}>{value}</dd>
+      {hint ? <p className="mt-0.5 break-words text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

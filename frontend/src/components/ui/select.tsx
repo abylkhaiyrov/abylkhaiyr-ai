@@ -6,7 +6,7 @@ type SelectProps = SelectHTMLAttributes<HTMLSelectElement> & { compact?: boolean
 
 export function Select({ className, compact = false, inline = false, children, ...props }: SelectProps) {
   return (
-    <span className={cn("relative inline-grid max-w-full", !compact && !inline && "w-full")}>
+    <span className={cn("relative inline-grid max-w-full", !compact && !inline && "w-full", inline && "min-w-32")}>
       <select
         className={cn(
           "select-field h-8 w-full min-w-0 truncate rounded-md border bg-background px-2.5 text-[13px] text-foreground hover:border-muted-foreground/40 disabled:cursor-not-allowed disabled:opacity-50",
