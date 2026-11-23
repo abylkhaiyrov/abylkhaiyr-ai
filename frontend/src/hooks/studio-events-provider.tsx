@@ -168,7 +168,14 @@ export function StudioEventsProvider({ children, enabled }: { children: ReactNod
       },
     });
     connection.current = current;
+    const wake = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) current.reconnect();
+    };
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", wake);
     return () => {
+      window.removeEventListener("online", wake);
+      document.removeEventListener("visibilitychange", wake);
       current.close();
       connection.current = null;
       setSocketStatus("disconnected");
