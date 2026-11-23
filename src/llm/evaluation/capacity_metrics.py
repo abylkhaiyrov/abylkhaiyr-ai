@@ -115,7 +115,10 @@ def paired_summary(
     *,
     method: str = "normalized",
     repetitions: int = 10_000,
+    confidence: float = 0.95,
 ) -> dict:
+    if not 0 < confidence < 1:
+        raise ValueError("confidence must be between zero and one")
     if not pairs or repetitions < 1:
         raise ValueError("paired evaluation requires seeds and bootstrap draws")
     keys: dict[str, tuple[str, str, int]] = {}
@@ -155,7 +158,8 @@ def paired_summary(
         draws = rng.integers(0, len(members), size=(repetitions, len(members)))
         sums += totals[draws].sum(axis=1)
         denominator += counts[draws].sum(axis=1)
-    lower, upper = np.quantile(sums / denominator, [0.025, 0.975])
+    tail = (1 - confidence) / 2
+    lower, upper = np.quantile(sums / denominator, [tail, 1 - tail])
     deltas = [b - a for a, b in zip(first_rates, second_rates, strict=True)]
     baseline = statistics.mean(first_rates)
     estimate = statistics.mean(deltas)
@@ -171,5 +175,5 @@ def paired_summary(
         "relative_difference": estimate / baseline if baseline else None,
         "seed_differences": deltas,
         "seed_sd": statistics.stdev(deltas) if len(deltas) > 1 else None,
-        "cluster_bootstrap_95": [float(lower), float(upper)],
+        f"cluster_bootstrap_{confidence * 100:g}": [float(lower), float(upper)],
     }

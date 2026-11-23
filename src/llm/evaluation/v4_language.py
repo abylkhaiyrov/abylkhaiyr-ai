@@ -13,13 +13,15 @@ from llm.training.losses import causal_lm_loss_sum
 
 
 @torch.inference_mode()
-def language_losses(engine: InferenceEngine, root: Path, batches: int) -> dict:
+def language_losses(
+    engine: InferenceEngine, root: Path, batches: int, *, split: str = "validation"
+) -> dict:
     vocab_size = engine.tokenizer.vocab_size
     dtype = token_dtype(vocab_size)
     results = {}
     for language in LANGUAGES:
         loader = PackedTokenLoader(
-            root / f"validation.{language}.bin",
+            root / f"{split}.{language}.bin",
             dtype,
             min(512, engine.max_positions),
             1,

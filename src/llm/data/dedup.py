@@ -59,13 +59,28 @@ class MinHashDeduplicator:
         ) % MERSENNE_PRIME
         return (mixed & HASH_MASK).min(axis=0)
 
+    def _keys(self, signature: np.ndarray) -> list[bytes]:
+        return [
+            signature[band * self.rows : (band + 1) * self.rows].tobytes()
+            for band in range(self.bands)
+        ]
+
+    def _matches(self, signature: np.ndarray, keys: list[bytes]) -> bool:
+        return any(
+            float(np.mean(candidate == signature)) >= self.threshold
+            for table, key in zip(self.tables, keys, strict=True)
+            for candidate in table.get(key, ())
+        )
+
+    def matches(self, text: str) -> bool:
+        signature = self.signature(text)
+        return self._matches(signature, self._keys(signature))
+
     def is_duplicate(self, text: str) -> bool:
         signature = self.signature(text)
-        keys = [signature[b * self.rows : (b + 1) * self.rows].tobytes() for b in range(self.bands)]
-        for table, key in zip(self.tables, keys, strict=True):
-            for candidate in table.get(key, ()):
-                if float(np.mean(candidate == signature)) >= self.threshold:
-                    return True
+        keys = self._keys(signature)
+        if self._matches(signature, keys):
+            return True
         for table, key in zip(self.tables, keys, strict=True):
             table.setdefault(key, []).append(signature)
         return False
