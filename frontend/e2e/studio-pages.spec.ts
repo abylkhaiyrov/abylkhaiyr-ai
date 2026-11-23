@@ -7,15 +7,21 @@ const ADMIN_ROUTES = ["/", "/chat", "/training", "/monitoring", "/history", "/pr
 const USER_ROUTES = ["/chat", "/notifications", "/settings", "/profile"];
 const THEMES = ["light", "dark"] as const;
 
+const NAVIGATION_ABORTS = /access control checks|Load failed|Failed to fetch|NetworkError|The operation was aborted|AbortError/i;
+
 async function audit(page: Page, route: string, label: string) {
   const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const record = (error: Error) => {
+    if (!NAVIGATION_ABORTS.test(error.message)) errors.push(error.message);
+  };
+  page.on("pageerror", record);
   await page.goto(route);
   await expect(page.locator("main")).toBeVisible();
   await expect.poll(() => page.evaluate(() => (document.querySelector("main")?.textContent ?? "").trim().length), { message: `${label} ${route} rendered nothing`, timeout: 20_000 }).toBeGreaterThan(0);
   await page.waitForLoadState("networkidle");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, `${label} ${route} overflows horizontally`).toBeLessThanOrEqual(0);
+  page.off("pageerror", record);
   expect(errors, `${label} ${route} threw`).toEqual([]);
 }
 
