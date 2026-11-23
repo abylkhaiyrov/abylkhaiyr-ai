@@ -190,6 +190,8 @@ class ExperimentCatalog:
             "best_validation_loss": best,
             "first_train_loss": None if first is None else finite(first.get("train/loss")),
             "tokens_seen": finite(latest.get("perf/tokens_seen")),
+            "tokens_per_second": finite(latest.get("perf/tokens_per_second")),
+            "data_dir": None if run_config is None else run_config.config.train.data_dir,
             "config_path": (
                 None if run_config is None else str(run_config.path.relative_to(self.root))
             ),

@@ -71,6 +71,12 @@ def pipeline_entry(pipeline: dict[str, Any]) -> dict[str, Any]:
         "failure_reason": pipeline_failure(pipeline) if status == "failed" else None,
         "validation_loss": None,
         "best_validation_loss": None,
+        "validation_perplexity": None,
+        "train_loss": None,
+        "tokens_seen": None,
+        "tokens_per_second": None,
+        "dataset": pipeline.get("dataset"),
+        "duration_seconds": duration(pipeline["started_at"], pipeline["updated_at"]),
     }
 
 
@@ -97,7 +103,18 @@ def training_entry(run: dict[str, Any], status: str, failure: str | None) -> dic
         "failure_reason": failure,
         "validation_loss": run["validation_loss"],
         "best_validation_loss": run["best_validation_loss"],
+        "validation_perplexity": run["validation_perplexity"],
+        "train_loss": run["train_loss"],
+        "tokens_seen": run["tokens_seen"],
+        "tokens_per_second": run.get("tokens_per_second"),
+        "dataset": run.get("data_dir"),
+        "duration_seconds": duration(run["started_at"], run["updated_at"]),
     }
+
+
+def duration(start: str | None, end: str | None) -> float | None:
+    first, last = parse_time(start), parse_time(end)
+    return None if first is None or last is None else max((last - first).total_seconds(), 0.0)
 
 
 def sort_key(entry: dict[str, Any]) -> datetime:

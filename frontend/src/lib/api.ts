@@ -151,6 +151,12 @@ export type RunEntry = {
   failure_reason: string | null;
   validation_loss: number | null;
   best_validation_loss: number | null;
+  validation_perplexity: number | null;
+  train_loss: number | null;
+  tokens_seen: number | null;
+  tokens_per_second: number | null;
+  dataset: string | null;
+  duration_seconds: number | null;
 };
 
 export type RunsSummary = { active: RunEntry | null; latest: RunEntry | null; completed_count: number; total: number };
@@ -429,6 +435,7 @@ export const api = {
   unloadModel: () => http<{ loaded: boolean }>("/models/unload", body("POST")),
   datasets: () => http<Dataset[]>("/datasets", {}, listOf<Dataset>(shape({ name: string, size_bytes: number }))),
   experiments: () => http<Experiment[]>("/experiments", {}, listOf<Experiment>(named)),
+  catalogRun: (id: string) => http<{ run: RunEntry; pipeline: Pipeline | null; detail: RunDetail | null }>(`/catalog/runs/${id.split("/").map(encodeURIComponent).join("/")}`, {}, shape({ run: runEntry })),
   catalogRuns: (query: RunQuery = {}) =>
     http<RunPage>(`/catalog/runs?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape<RunPage>({ items: arrayOf(runEntry), total: number })),
   modelCatalog: () => http<CatalogModel[]>("/models/catalog", {}, listOf<CatalogModel>(catalogModel)),

@@ -126,6 +126,7 @@ class RuntimeState:
             "memory_bytes": running["memory_bytes"] if running else None,
             "cpu_percent": running["cpu_percent"] if running else None,
             "model_name": self._model_name(state_dir, pretrain_config),
+            "dataset": None if pretrain_config is None else pretrain_config.data_dir,
             "started_at": state.get("created_at"),
             "updated_at": state.get("updated_at"),
             "stages": stages,

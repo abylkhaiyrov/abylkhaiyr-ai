@@ -40,6 +40,11 @@ def run(name, updated, status="completed", max_steps=10, step=10):
         "config_path": None,
         "validation_loss": 1.0,
         "best_validation_loss": 0.9,
+        "validation_perplexity": 2.5,
+        "train_loss": 1.1,
+        "tokens_seen": 1000.0,
+        "tokens_per_second": 50.0,
+        "data_dir": "data/v4",
     }
 
 
@@ -208,3 +213,17 @@ def test_nested_runs_join_the_catalog_but_not_the_legacy_run_list(
     assert detail.status_code == 200
     assert detail.json()["detail"]["name"] == "v4/pretrain"
     assert client.get("/api/catalog/runs/run:../secret").status_code == 404
+
+
+def test_entries_carry_history_fields():
+    catalog = build(runs=[run("tiny_v4_sft", "2026-03-01T00:00:00+00:00")])
+    entry = catalog.entries()[0]
+    assert (entry["dataset"], entry["tokens_seen"], entry["validation_perplexity"]) == (
+        "data/v4",
+        1000.0,
+        2.5,
+    )
+    assert entry["duration_seconds"] is None
+    started = run("x", "2026-03-01T01:00:00+00:00")
+    started["started_at"] = "2026-03-01T00:00:00+00:00"
+    assert build(runs=[started]).entries()[0]["duration_seconds"] == 3600.0

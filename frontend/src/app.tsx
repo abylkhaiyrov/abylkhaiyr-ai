@@ -16,6 +16,7 @@ const DashboardPage = lazy(() => import("@/pages/dashboard-page").then((module) 
 const TrainingPage = lazy(() => import("@/pages/training-page").then((module) => ({ default: module.TrainingPage })));
 const MonitoringPage = lazy(() => import("@/pages/monitoring-page").then((module) => ({ default: module.MonitoringPage })));
 const ChatPage = lazy(() => import("@/pages/chat-page").then((module) => ({ default: module.ChatPage })));
+const HistoryPage = lazy(() => import("@/pages/history-page").then((module) => ({ default: module.HistoryPage })));
 const ProcessesPage = lazy(() => import("@/pages/processes-page").then((module) => ({ default: module.ProcessesPage })));
 const ModelsPage = lazy(() => import("@/pages/resource-pages").then((module) => ({ default: module.ModelsPage })));
 const DatasetsPage = lazy(() => import("@/pages/resource-pages").then((module) => ({ default: module.DatasetsPage })));
@@ -95,6 +96,7 @@ function ProtectedApp() {
               <Route index element={<DashboardPage />} />
               <Route path="training" element={<TrainingPage />} />
               <Route path="monitoring" element={<MonitoringPage />} />
+              <Route path="history" element={<HistoryPage />} />
               <Route path="processes" element={<ProcessesPage />} />
               <Route path="models" element={<ModelsPage />} />
               <Route path="datasets" element={<DatasetsPage />} />

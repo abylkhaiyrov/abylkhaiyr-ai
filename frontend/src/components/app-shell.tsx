@@ -16,6 +16,7 @@ import {
   TerminalSquare,
   X,
   type LucideIcon,
+  History as HistoryIcon,
 } from "lucide-react";
 import { Suspense, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch } from "react-router-dom";
@@ -42,6 +43,7 @@ const management: NavItem[] = [
   ["/datasets", "datasets", Database],
   ["/experiments", "experiments", FlaskConical],
   ["/evaluation", "evaluation", ClipboardList],
+  ["/history", "history", HistoryIcon],
   ["/processes", "processes", TerminalSquare],
   ["/logs", "logs", FileText],
   ["/users", "users", Users],

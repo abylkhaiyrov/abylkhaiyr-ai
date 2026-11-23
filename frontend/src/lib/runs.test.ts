@@ -6,6 +6,7 @@ const run = (id: string, status: RunEntry["status"]): RunEntry => ({
   id, kind: "training", name: id, model_name: id, version: null, stage: "sft", status, origin: "metrics",
   created_at: null, updated_at: null, step: null, max_steps: null, percent: null, current_stage: null, output_dir: null,
   state_dir: null, config_path: null, checkpoint: null, failure_reason: null, validation_loss: null, best_validation_loss: null,
+  validation_perplexity: null, train_loss: null, tokens_seen: null, tokens_per_second: null, dataset: null, duration_seconds: null,
 });
 
 describe("pickRun", () => {
