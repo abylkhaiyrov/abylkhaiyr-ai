@@ -14,6 +14,7 @@ from llm.data.v4_dialogues import (
     Dialogue,
     aya_dialogues,
     belebele_dialogues,
+    curated_dialogues,
     dolly_dialogues,
     kazsandra_dialogues,
     oasst_dialogues,
@@ -61,6 +62,8 @@ def main() -> None:
     )
     parser.add_argument("--sentiment-limit", type=int, default=0)
     parser.add_argument("--definitions", action="store_true")
+    parser.add_argument("--definitions-limit", type=int, default=900)
+    parser.add_argument("--curated", type=Path)
     parser.add_argument("--validation-only", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
@@ -103,7 +106,7 @@ def main() -> None:
         path for directory in args.legacy_sft for path in sorted(directory.glob("train.*.jsonl"))
     )
     protected = legacy_prompts(args.protected)
-    holdout = validation_set(candidates, legacy | protected)
+    holdout = validation_set(candidates, legacy)
     holdout.index.block(protected)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=args.output.parent) as staging:
@@ -131,9 +134,15 @@ def main() -> None:
                     kazsandra_dialogues(
                         paths["kazsandra"], quality, tokenizer, args.sentiment_limit
                     ),
+                    *([curated_dialogues(args.curated, tokenizer)] if args.curated else []),
                     *(
                         wiki_definition_dialogues(
-                            f"wiki_{lang}", paths[f"wiki_{lang}"], lang, quality, tokenizer
+                            f"wiki_{lang}",
+                            paths[f"wiki_{lang}"],
+                            lang,
+                            quality,
+                            tokenizer,
+                            args.definitions_limit,
                         )
                         for lang in LANGUAGES
                         if args.definitions

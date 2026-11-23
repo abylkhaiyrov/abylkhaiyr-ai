@@ -366,8 +366,12 @@ def wiki_definition_dialogues(
     language: str,
     quality: CyrillicLanguageFilter,
     tokenizer: BPETokenizer,
+    limit: int,
 ) -> Iterator[Dialogue]:
+    yielded = 0
     for row in parquet_rows(path, ["id", "title", "text"]):
+        if yielded == limit:
+            return
         title = row["title"].strip()
         if partition_of(source, row["id"]) != "train" or TITLE_REJECT.search(title):
             continue
@@ -388,7 +392,18 @@ def wiki_definition_dialogues(
             tokenizer,
         )
         if dialogue is not None:
+            yielded += 1
             yield dialogue
+
+
+def curated_dialogues(path: Path, tokenizer: BPETokenizer) -> Iterator[Dialogue]:
+    for row in read_jsonl(path):
+        messages = tuple(Message(item["role"], item["content"]) for item in row["messages"])
+        if len(tokenizer.encode_conversation(list(messages))) > 512:
+            continue
+        yield Dialogue(
+            "curated", row["id"], f"curated/{row['id']}", row["language"], row["category"], messages
+        )
 
 
 def kazsandra_dialogues(

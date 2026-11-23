@@ -136,6 +136,8 @@ def write_rows(path: Path, rows: Iterable[Dialogue]) -> dict[str, int]:
 
 
 def sft_group(row: Dialogue) -> str:
+    if row.source == "curated":
+        return f"curated_{row.language}"
     if row.category in {"math", "code"}:
         return row.category
     if row.category in SEMANTIC:

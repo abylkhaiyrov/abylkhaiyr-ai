@@ -151,3 +151,26 @@ def test_blocked_prompts_never_reach_training() -> None:
         select_training([row("1", "Which one is better?"), row("2", "What is a lake?")], index)
     )
     assert [item.source_id for item in kept] == ["2"]
+
+
+def test_curated_dialogues_keep_provenance_and_form_their_own_sft_group(
+    tmp_path, tokenizer
+) -> None:
+    from llm.data.v4_dialogues import curated_dialogues
+    from llm.data.v4_splits import sft_group
+
+    path = tmp_path / "curated.jsonl"
+    row = {
+        "id": "curated/ru/smalltalk/0",
+        "language": "ru",
+        "category": "smalltalk",
+        "messages": [
+            {"role": "user", "content": "Привет!"},
+            {"role": "assistant", "content": "Здравствуйте!"},
+        ],
+    }
+    path.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+    [dialogue] = list(curated_dialogues(path, tokenizer))
+    assert dialogue.key == "curated/curated/ru/smalltalk/0"
+    assert dialogue.family == "curated/curated/ru/smalltalk/0"
+    assert sft_group(dialogue) == "curated_ru"
