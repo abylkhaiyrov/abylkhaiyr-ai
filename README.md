@@ -150,7 +150,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Model Card](docs/model_card_stage11.md) ·
 [Диагностика: почему модель повторяет вопрос](docs/diagnosis_stage12.md) ·
 [Корпус v4 и continued pretraining](docs/stage13_v4.md) ·
-[Этап 14. Данные v4.1, оценка и эксперименты](docs/stage14_data_eval.md).
+[Этап 14. Данные v4.1, оценка и эксперименты](docs/stage14_data_eval.md) ·
+[Этап 15. Корпус v5 и расширенная валидация](docs/stage15_conversational_v5.md).
 
 ## Проверка качества кода
 
