@@ -73,6 +73,14 @@ def script_matches(language: str, response: str) -> bool:
     return cyrillic >= 0.8
 
 
+def verbatim_leak(response: str, answers: Sequence[str], minimum_words: int = 5) -> bool:
+    text = " ".join(normalize_words(response))
+    return any(
+        len(words) >= minimum_words and " ".join(words) in text
+        for words in map(normalize_words, answers)
+    )
+
+
 def predictions(
     engine: InferenceEngine,
     rows: Sequence[dict],
@@ -142,3 +150,37 @@ def metrics(rows: Sequence[dict], reviews: Sequence[Review] = ()) -> dict:
         "reviewed_cases": len(seen),
         "human_rubric": {key: proportion(tally[key], eligible[key]) for key in RUBRIC},
     }
+
+
+def cohens_kappa(first: Sequence[bool], second: Sequence[bool]) -> float | None:
+    if len(first) != len(second) or not first:
+        raise ValueError("ratings must be paired and non-empty")
+    size = len(first)
+    observed = sum(a == b for a, b in zip(first, second, strict=True)) / size
+    chance = sum(
+        (sum(a is value for a in first) / size) * (sum(b is value for b in second) / size)
+        for value in (True, False)
+    )
+    return None if chance == 1 else (observed - chance) / (1 - chance)
+
+
+def rater_agreement(
+    first: dict[str, dict[str, bool | None]], second: dict[str, dict[str, bool | None]]
+) -> dict[str, dict]:
+    result = {}
+    for metric in RUBRIC:
+        pairs = [
+            (first[item][metric], second[item][metric])
+            for item in first.keys() & second.keys()
+            if first[item].get(metric) is not None and second[item].get(metric) is not None
+        ]
+        if not pairs:
+            continue
+        left = [bool(a) for a, _ in pairs]
+        right = [bool(b) for _, b in pairs]
+        result[metric] = {
+            "n": len(pairs),
+            "raw_agreement": sum(a == b for a, b in zip(left, right, strict=True)) / len(pairs),
+            "kappa": cohens_kappa(left, right),
+        }
+    return result

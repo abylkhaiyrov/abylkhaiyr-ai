@@ -73,3 +73,30 @@ def test_natural_evaluation_set_is_balanced_and_unique() -> None:
     assert set(cells.values()) == {3}
     assert {language for language, _ in cells} == {"en", "ru", "kk"}
     assert all(bool(row["accept"]) == (row["kind"] == "single") for row in rows)
+
+
+def test_kappa_is_one_for_identical_and_zero_for_chance_level_ratings() -> None:
+    from llm.evaluation.v4_review import cohens_kappa
+
+    assert cohens_kappa([True, False, True, False], [True, False, True, False]) == 1.0
+    assert cohens_kappa([True, True, False, False], [True, False, True, False]) == 0.0
+    assert cohens_kappa([True, True], [True, True]) is None
+
+
+def test_rater_agreement_uses_only_items_rated_by_both() -> None:
+    from llm.evaluation.v4_review import rater_agreement
+
+    first = {"a": {"coherence": True}, "b": {"coherence": False}, "c": {"coherence": True}}
+    second = {"a": {"coherence": True}, "b": {"coherence": False}, "d": {"coherence": None}}
+    result = rater_agreement(first, second)
+    assert result["coherence"]["n"] == 2
+    assert result["coherence"]["raw_agreement"] == 1.0
+
+
+def test_verbatim_leak_needs_a_long_enough_exact_phrase() -> None:
+    from llm.evaluation.v4_review import verbatim_leak
+
+    answers = ["Red and blue. Red is warm while blue is cold."]
+    assert verbatim_leak("Sure: red and blue. Red is warm while blue is cold!", answers)
+    assert not verbatim_leak("Red and blue.", answers)
+    assert not verbatim_leak("Something unrelated entirely.", answers)

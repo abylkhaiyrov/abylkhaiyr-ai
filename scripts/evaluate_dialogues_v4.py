@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument("--predictions", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--annotations", type=Path)
+    parser.add_argument("--exclude-ids", type=Path)
     parser.add_argument("--score-only", action="store_true")
     args = parser.parse_args()
     if args.batch_size < 1 or args.max_new_tokens < 1:
@@ -61,6 +62,10 @@ def main() -> None:
         temporary.replace(args.predictions)
     rows = list(read_jsonl(args.predictions))
     provenance = rows.pop()["provenance"]
+    if args.exclude_ids:
+        excluded = set(json.loads(args.exclude_ids.read_text(encoding="utf-8")))
+        rows = [row for row in rows if row["id"] not in excluded]
+        provenance["excluded_cases"] = len(excluded)
     if provenance["checkpoint_sha256"] != file_sha256(checkpoint / "model.safetensors"):
         parser.error("predictions belong to a different checkpoint")
     if provenance["cases_sha256"] != file_sha256(args.cases):
