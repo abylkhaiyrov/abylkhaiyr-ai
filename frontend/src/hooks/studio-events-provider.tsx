@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { isGenerationEvent, type GenerationEvent, type ServerEvent } from "@/lib/events";
-import type { AppNotification, Metric, SystemSnapshot } from "@/lib/api";
+import type { AppNotification, Metric, RuntimeState, SystemSnapshot } from "@/lib/api";
+import { computeChanged } from "@/lib/runs";
 import { EventContext } from "@/hooks/use-studio-events";
 import i18n from "@/i18n";
 import { openStudioConnection } from "@/lib/studio-connection";
@@ -59,7 +60,12 @@ export function StudioEventsProvider({ children, enabled }: { children: ReactNod
   useEffect(() => {
     function applyData(event: ServerEvent) {
       if (event.type === "runtime.update") {
+        const previous = queryClient.getQueryData<RuntimeState>(["runtime"]);
         queryClient.setQueryData(["runtime"], event.data);
+        if (previous && computeChanged(previous, event.data)) {
+          void queryClient.invalidateQueries({ queryKey: ["processes"] }, { cancelRefetch: false });
+          void queryClient.invalidateQueries({ queryKey: ["catalog-runs"] }, { cancelRefetch: false });
+        }
       } else if (event.type === "models.update") {
         queryClient.setQueryData(["models"], event.data);
         void queryClient.invalidateQueries({ queryKey: ["evaluation"] }, { cancelRefetch: false });

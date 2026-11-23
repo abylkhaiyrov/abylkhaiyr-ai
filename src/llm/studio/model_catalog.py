@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from llm.studio.access_policy import AccessPolicy
+from llm.studio.pagination import matches, paginate
 from llm.studio.run_catalog import version_of
 
 ALLOWED_KEY = "models.allowed"
@@ -139,13 +140,33 @@ def checkpoint_page(
     offset: int,
     limit: int,
 ) -> dict[str, Any]:
-    needle = (query or "").strip().lower()
     matched = [
         item
         for item in models
         if (status is None or item["status"] == status)
         and (stage is None or item["stage"] == stage)
-        and (not needle or needle in f"{item['id']} {item['name']}".lower())
+        and matches(query, item["id"], item["name"])
     ]
     matched.sort(key=lambda item: (item["created_at"] or "", item["id"]), reverse=True)
-    return {"items": matched[offset : offset + limit], "total": len(matched)}
+    return paginate(matched, offset, limit)
+
+
+def catalog_page(
+    entries: list[dict[str, Any]],
+    *,
+    query: str | None,
+    status: str | None,
+    offset: int,
+    limit: int,
+) -> dict[str, Any]:
+    matched = [
+        item
+        for item in entries
+        if (status is None or item["quality_status"] == status)
+        and matches(query, item["id"], item["display_name"])
+    ]
+    return paginate(matched, offset, limit)
+
+
+def allowed_ids(entries: list[dict[str, Any]]) -> list[str]:
+    return [item["id"] for item in entries if item["allowed"]]

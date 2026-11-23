@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { DataPager } from "@/components/data-pager";
 import { EmptyState, ErrorState, LoadingState, PageHeader, Panel } from "@/components/data-state";
 import { Tabs } from "@/components/ui/tabs";
 import { useFormat } from "@/hooks/use-format";
@@ -45,26 +46,29 @@ export function DatasetsPage() {
 export function ExperimentsPage() {
   const { t } = useTranslation();
   const format = useFormat();
-  const query = useQuery({ queryKey: ["experiments"], queryFn: api.experiments, staleTime: 60_000 });
+  const [search, setSearch] = useState("");
   return (
     <div className="grid gap-4">
-      <PageHeader title={t("experiments.title")} subtitle={t("experiments.subtitle")} />
-      <Query query={query}>
-        {(items) => items.length === 0 ? <EmptyState title={t("experiments.empty")} /> : (
-          <div className="overflow-x-auto border-y hairline">
-            <table className="data-table">
-              <thead><tr><th>{t("experiments.name")}</th><th>{t("metric.validation_loss")}</th><th>{t("metric.validation_perplexity")}</th><th>{t("metric.generation_tokens_per_second")}</th></tr></thead>
-              <tbody>
-                {items.map((item) => {
-                  const loss = item.results.validation_loss ?? item.results.test_loss;
-                  const speed = item.results.tokens_per_second ?? item.results.generation_tokens_per_second;
-                  return <tr key={`${item.name}-${String(item.checkpoint ?? "")}`}><td className="font-medium">{item.name}</td><td className="tabular-nums">{format.number(loss, 4)}</td><td className="tabular-nums">{format.number(item.results.test_perplexity ?? (loss === undefined ? undefined : Math.exp(loss)), 2)}</td><td className="tabular-nums">{format.number(speed, 0)}</td></tr>;
-                })}
-              </tbody>
-            </table>
+      <PageHeader title={t("experiments.title")} subtitle={t("experiments.subtitle")} actions={<label className="grid gap-1 text-xs font-medium">{t("history.search")}<input type="search" className="field w-64" value={search} onChange={(event) => setSearch(event.target.value)} /></label>} />
+      <DataPager queryKey={["experiments", search]} load={(offset) => api.experimentPage({ q: search.trim() || undefined, offset })} empty={t("experiments.empty")}>
+        {(items, total) => (
+          <div className="grid gap-2">
+            <p className="text-xs text-muted-foreground" aria-live="polite">{t("history.shown", { shown: items.length, total })}</p>
+            <div className="overflow-x-auto border-y hairline">
+              <table className="data-table">
+                <thead><tr><th>{t("experiments.name")}</th><th>{t("metric.validation_loss")}</th><th>{t("metric.validation_perplexity")}</th><th>{t("metric.generation_tokens_per_second")}</th></tr></thead>
+                <tbody>
+                  {items.map((item) => {
+                    const loss = item.results.validation_loss ?? item.results.test_loss;
+                    const speed = item.results.tokens_per_second ?? item.results.generation_tokens_per_second;
+                    return <tr key={`${item.name}-${String(item.checkpoint ?? "")}`}><td className="max-w-80 truncate font-medium" title={item.name}>{item.name}</td><td className="tabular-nums">{format.number(loss, 4)}</td><td className="tabular-nums">{format.number(item.results.test_perplexity ?? (loss === undefined ? undefined : Math.exp(loss)), 2)}</td><td className="tabular-nums">{format.number(speed, 0)}</td></tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
-      </Query>
+      </DataPager>
     </div>
   );
 }

@@ -197,6 +197,16 @@ def create_studio_router(
     def processes(_: Annotated[tuple[Any, str], Depends(admin_identity)]) -> list[dict[str, Any]]:
         return studio.list_processes()
 
+    @router.get("/processes/page")
+    def process_page(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+        group: Annotated[Literal["active", "queued", "completed", "failed"] | None, Query()] = None,
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 30,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        return studio.process_page(group, q, offset, limit)
+
     @router.get("/processes/{process_id}/events")
     def process_events(
         process_id: str,
@@ -321,21 +331,31 @@ def create_studio_router(
     @router.get("/models/catalog")
     def model_catalog(
         _: Annotated[tuple[Any, str], Depends(admin_identity)],
-    ) -> list[dict[str, Any]]:
-        return studio.model_catalog()
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        status_filter: Annotated[str | None, Query(alias="status", max_length=32)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        return studio.catalog_page(q, status_filter, offset, limit)
+
+    @router.get("/models/allowed")
+    def allowed_models(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+    ) -> dict[str, list[str]]:
+        return {"ids": studio.allowed_model_ids()}
 
     @router.put("/models/allowed")
     def set_allowed_models(
         payload: AllowedModelsRequest,
         _: Annotated[tuple[Any, str], Depends(admin_csrf)],
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, list[str]]:
         try:
             studio.set_allowed_models(payload.ids)
         except ModelPolicyError as error:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
             ) from error
-        return studio.model_catalog()
+        return {"ids": studio.allowed_model_ids()}
 
     @router.get("/chat/models")
     def chat_models(
@@ -427,6 +447,15 @@ def create_studio_router(
         _: Annotated[tuple[Any, str], Depends(admin_identity)],
     ) -> list[dict[str, Any]]:
         return studio.experiments()
+
+    @router.get("/experiments/page")
+    def experiment_page(
+        _: Annotated[tuple[Any, str], Depends(admin_identity)],
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 30,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        return studio.experiment_page(q, offset, limit)
 
     @router.get("/evaluation")
     def evaluation(

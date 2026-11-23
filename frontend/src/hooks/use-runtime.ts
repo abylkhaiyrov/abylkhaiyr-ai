@@ -7,7 +7,7 @@ const LIVE = { staleTime: Infinity, refetchOnReconnect: false } as const;
 export const useRuntime = () => useQuery({ queryKey: ["runtime"], queryFn: api.runtime, enabled: useRole() === "ADMIN", ...LIVE });
 export const useSystem = () => useQuery({ queryKey: ["system"], queryFn: api.system, ...LIVE });
 export const useModelRegistry = () => useQuery({ queryKey: ["models"], queryFn: api.modelRegistry, enabled: useRole() === "ADMIN", ...LIVE });
-export const useModelCatalog = () => useQuery({ queryKey: ["model-catalog"], queryFn: api.modelCatalog, enabled: useRole() === "ADMIN", staleTime: 30_000 });
+export const useModelCatalog = () => useQuery({ queryKey: ["model-catalog", "picker"], queryFn: () => api.modelCatalog({ limit: 20 }), select: (page) => page.items, enabled: useRole() === "ADMIN", staleTime: 30_000 });
 export const useInferenceProfiles = () => useQuery({ queryKey: ["inference-profiles"], queryFn: api.inferenceProfiles, staleTime: 60_000 });
 export const useUserModels = () => useQuery({ queryKey: ["user-models"], queryFn: api.userModels, enabled: useRole() === "USER", staleTime: 60_000 });
 export const useSystemHistory = () =>

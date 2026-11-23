@@ -1,4 +1,4 @@
-import type { Process, RunEntry, RunsSummary } from "@/lib/api";
+import type { Process, RunEntry, RunsSummary, RuntimeState } from "@/lib/api";
 
 export function defaultRun(summary: RunsSummary): RunEntry | null {
   return summary.active ?? summary.latest;
@@ -25,4 +25,9 @@ export function groupProcesses(items: Process[]): Record<ProcessGroup, Process[]
   const groups: Record<ProcessGroup, Process[]> = { active: [], queued: [], completed: [], failed: [] };
   for (const item of items) groups[processGroup(item)].push(item);
   return groups;
+}
+
+export function computeChanged(previous: RuntimeState, next: RuntimeState): boolean {
+  const key = (state: RuntimeState) => `${state.compute.busy}|${state.compute.holder?.pid ?? ""}|${state.compute.holder?.stage ?? ""}|${state.runs.active?.id ?? ""}`;
+  return key(previous) !== key(next);
 }

@@ -22,6 +22,17 @@ ENDED_STATUS = {"pausing": "completed", "stopped": "stopped"}
 LIST_TTL_SECONDS = 2.0
 
 
+FAILED_STATUSES = {"failed", "interrupted"}
+
+
+def process_group(status: str) -> str:
+    if status in {"running", "pausing", "paused"}:
+        return "active"
+    if status == "pending":
+        return "queued"
+    return "failed" if status in FAILED_STATUSES else "completed"
+
+
 class ProcessError(Exception):
     pass
 

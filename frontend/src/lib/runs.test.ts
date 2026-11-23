@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { RunEntry } from "@/lib/api";
-import { groupProcesses, pickRun, processGroup } from "@/lib/runs";
+import type { RunEntry, RuntimeState } from "@/lib/api";
+import { computeChanged, groupProcesses, pickRun, processGroup } from "@/lib/runs";
 
 const run = (id: string, status: RunEntry["status"]): RunEntry => ({
   id, kind: "training", name: id, model_name: id, version: null, stage: "sft", status, origin: "metrics",
@@ -38,5 +38,17 @@ describe("process groups", () => {
     const base = { kind: "sft", command: "", config_path: null, output_dir: null, started_at: "", completed_at: null, exit_code: null, error_reason: null, cpu_percent: null, memory_bytes: null, pid: null };
     const groups = groupProcesses([{ ...base, id: "a", status: "running" }, { ...base, id: "b", status: "failed" }, { ...base, id: "c", status: "completed" }]);
     expect([groups.active.length, groups.failed.length, groups.completed.length, groups.queued.length]).toEqual([1, 1, 1, 0]);
+  });
+});
+
+describe("computeChanged", () => {
+  const state = (busy: boolean, pid: number | null, active: string | null) => ({ compute: { busy, holder: pid === null ? null : { kind: "process", pid, stage: "sft" } }, runs: { active: active ? ({ id: active } as RunEntry) : null } }) as RuntimeState;
+  it("detects a process starting, stopping or switching run", () => {
+    expect(computeChanged(state(false, null, null), state(true, 5, "run:a"))).toBe(true);
+    expect(computeChanged(state(true, 5, "run:a"), state(false, null, null))).toBe(true);
+    expect(computeChanged(state(true, 5, "run:a"), state(true, 5, "run:b"))).toBe(true);
+  });
+  it("ignores unrelated runtime updates", () => {
+    expect(computeChanged(state(true, 5, "run:a"), state(true, 5, "run:a"))).toBe(false);
   });
 });

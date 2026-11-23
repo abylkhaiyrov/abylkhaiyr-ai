@@ -117,7 +117,7 @@ def collect(project, root):
     group = groups[0]["id"]
     detail = admin.get(f"/api/evaluation/groups/{group}").json()
     checkpoints = [row["checkpoint"] for row in detail["rows"]][:2]
-    identifier = admin.get("/api/models/catalog").json()[0]["id"]
+    identifier = admin.get("/api/models/catalog").json()["items"][0]["id"]
     admin.put("/api/models/allowed", json={"ids": [identifier]}, headers=csrf(admin))
     calls = {
         "admin GET /api/runtime": admin.get("/api/runtime"),
@@ -133,6 +133,11 @@ def collect(project, root):
         "admin GET /api/processes/{id}/events": admin.get("/api/processes/proc-1/events"),
         "admin GET /api/models/registry": admin.get("/api/models/registry"),
         "admin GET /api/models/catalog": admin.get("/api/models/catalog"),
+        "admin GET /api/models/allowed": admin.get("/api/models/allowed"),
+        "admin GET /api/processes/page": admin.get(
+            "/api/processes/page", params={"group": "completed"}
+        ),
+        "admin GET /api/experiments/page": admin.get("/api/experiments/page"),
         "admin GET /api/models/checkpoints": admin.get("/api/models/checkpoints"),
         "admin GET /api/inference/profiles": admin.get("/api/inference/profiles"),
         "admin GET /api/evaluation/metrics": admin.get("/api/evaluation/metrics"),

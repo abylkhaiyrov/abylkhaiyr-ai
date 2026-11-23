@@ -27,7 +27,9 @@ from llm.studio.inference_profiles import (
 )
 from llm.studio.model_catalog import (
     ModelAccessPolicy,
+    allowed_ids,
     build_catalog,
+    catalog_page,
     checkpoint_page,
     user_view,
 )
@@ -35,8 +37,9 @@ from llm.studio.model_manager import ModelManager
 from llm.studio.model_registry import production_info
 from llm.studio.models import Chat, GenerationJob, MessageRecord, ProcessEvent, SystemMetric
 from llm.studio.notifications import NotificationService
+from llm.studio.pagination import matches, paginate
 from llm.studio.pipeline_view import parse_time
-from llm.studio.processes import ProcessError, ProcessManager
+from llm.studio.processes import ProcessError, ProcessManager, process_group
 from llm.studio.run_catalog import RunCatalog
 from llm.studio.runtime import RuntimeState
 from llm.studio.telemetry import (
@@ -247,6 +250,33 @@ class StudioService:
         started, finished = parse_time(entry["created_at"]), parse_time(entry["updated_at"])
         return None if started is None or finished is None else (finished - started).total_seconds()
 
+    def process_page(
+        self, group: str | None, query: str | None, offset: int, limit: int
+    ) -> dict[str, Any]:
+        items = [
+            item
+            for item in self.list_processes()
+            if (group is None or process_group(item["status"]) == group)
+            and matches(
+                query,
+                item["id"],
+                item["kind"],
+                item.get("model_name"),
+                item["output_dir"],
+                item["config_path"],
+            )
+        ]
+        items.sort(key=lambda item: item["started_at"] or "", reverse=True)
+        return paginate(items, offset, limit)
+
+    def experiment_page(self, query: str | None, offset: int, limit: int) -> dict[str, Any]:
+        records = [
+            item
+            for item in self.experiments()
+            if matches(query, item.get("name"), item.get("kind"))
+        ]
+        return paginate(records, offset, limit)
+
     def stop_pipeline(self) -> dict[str, Any]:
         pipeline = self.runtime.active_pipeline()
         if pipeline is None:
@@ -318,6 +348,16 @@ class StudioService:
             self.model_manager.registry() if self.model_manager is not None else {"models": []}
         )
         return build_catalog(registry["models"], self.model_policy.allowed())
+
+    def catalog_page(
+        self, query: str | None, status: str | None, offset: int, limit: int
+    ) -> dict[str, Any]:
+        return catalog_page(
+            self.model_catalog(), query=query, status=status, offset=offset, limit=limit
+        )
+
+    def allowed_model_ids(self) -> list[str]:
+        return allowed_ids(self.model_catalog())
 
     def user_models(self) -> list[dict[str, Any]]:
         return user_view(self.model_catalog())

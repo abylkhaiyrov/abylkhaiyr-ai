@@ -5,7 +5,7 @@
     "best_validation_loss": 3.1,
     "checkpoint": null,
     "config_path": null,
-    "created_at": "2026-11-23T09:12:54.058602+00:00",
+    "created_at": "2026-11-23T09:14:39.103848+00:00",
     "current_stage": null,
     "dataset": null,
     "duration_seconds": null,
@@ -25,7 +25,7 @@
     "tokens_per_second": null,
     "tokens_seen": 100.0,
     "train_loss": 3.0,
-    "updated_at": "2026-11-23T09:12:54.058602+00:00",
+    "updated_at": "2026-11-23T09:14:39.103848+00:00",
     "validation_loss": 3.1,
     "validation_perplexity": 22.0,
     "version": "v4"
@@ -34,7 +34,7 @@
     "best_validation_loss": 3.1,
     "checkpoint": null,
     "config_path": null,
-    "created_at": "2026-11-23T09:12:54.058269+00:00",
+    "created_at": "2026-11-23T09:14:39.103654+00:00",
     "current_stage": null,
     "dataset": null,
     "duration_seconds": null,
@@ -54,7 +54,7 @@
     "tokens_per_second": null,
     "tokens_seen": 100.0,
     "train_loss": 3.0,
-    "updated_at": "2026-11-23T09:12:54.058269+00:00",
+    "updated_at": "2026-11-23T09:14:39.103654+00:00",
     "validation_loss": 3.1,
     "validation_perplexity": 22.0,
     "version": "v3"
@@ -111,7 +111,7 @@
    "tokens_per_second": null,
    "tokens_seen": 100.0,
    "train_loss": 3.0,
-   "updated_at": "2026-11-23T09:12:54.058269+00:00",
+   "updated_at": "2026-11-23T09:14:39.103654+00:00",
    "validation_loss": 3.1,
    "validation_perplexity": 22.0
   },
@@ -120,7 +120,7 @@
    "best_validation_loss": 3.1,
    "checkpoint": null,
    "config_path": null,
-   "created_at": "2026-11-23T09:12:54.058269+00:00",
+   "created_at": "2026-11-23T09:14:39.103654+00:00",
    "current_stage": null,
    "dataset": null,
    "duration_seconds": null,
@@ -140,7 +140,7 @@
    "tokens_per_second": null,
    "tokens_seen": 100.0,
    "train_loss": 3.0,
-   "updated_at": "2026-11-23T09:12:54.058269+00:00",
+   "updated_at": "2026-11-23T09:14:39.103654+00:00",
    "validation_loss": 3.1,
    "validation_perplexity": 22.0,
    "version": "v3"
@@ -434,7 +434,7 @@
   "checkpoints": [
    {
     "checkpoint": "checkpoints/a/base",
-    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
+    "evaluated_at": "2026-11-23T09:14:39.103997+00:00",
     "gate_status": "failed",
     "gates": [
      {
@@ -462,7 +462,7 @@
    },
    {
     "checkpoint": "checkpoints/a_sft/best",
-    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
+    "evaluated_at": "2026-11-23T09:14:39.103997+00:00",
     "gate_status": "passed",
     "gates": [
      {
@@ -578,7 +578,7 @@
    {
     "checkpoints": 2,
     "dataset": null,
-    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
+    "evaluated_at": "2026-11-23T09:14:39.103997+00:00",
     "experiment": "stage",
     "gate_status": "failed",
     "id": "stage:547c840d",
@@ -592,7 +592,7 @@
  "admin GET /api/evaluation/groups/{id}": {
   "checkpoints": 2,
   "dataset": null,
-  "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
+  "evaluated_at": "2026-11-23T09:14:39.103997+00:00",
   "experiment": "stage",
   "gate_status": "failed",
   "id": "stage:547c840d",
@@ -601,7 +601,7 @@
   "rows": [
    {
     "checkpoint": "checkpoints/a/base",
-    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
+    "evaluated_at": "2026-11-23T09:14:39.103997+00:00",
     "gate_status": "failed",
     "gates": [
      {
@@ -637,7 +637,7 @@
    },
    {
     "checkpoint": "checkpoints/a_sft/best",
-    "evaluated_at": "2026-11-23T09:12:54.058771+00:00",
+    "evaluated_at": "2026-11-23T09:14:39.103997+00:00",
     "gate_status": "passed",
     "gates": [
      {
@@ -1027,6 +1027,17 @@
    }
   }
  ],
+ "admin GET /api/experiments/page": {
+  "items": [
+   {
+    "name": "probe",
+    "results": {
+     "validation_loss": 3.0
+    }
+   }
+  ],
+  "total": 1
+ },
  "admin GET /api/inference/profiles": [
   {
    "allowed": true,
@@ -1105,27 +1116,35 @@
    "unavailable_reason": "context_too_small"
   }
  ],
- "admin GET /api/models/catalog": [
-  {
-   "allowed": true,
-   "availability_reason": null,
-   "available": true,
-   "capabilities": [
-    "text_completion"
-   ],
-   "checkpoint_count": 1,
-   "context_length": 64,
-   "display_name": "Test-model",
-   "family": "test-model",
-   "id": "test-model",
-   "parameters": 31392,
-   "quality_status": "experimental",
-   "recommended_use": "research",
-   "representative_checkpoint": "test-model",
-   "stage": "pretrain",
-   "version": null
-  }
- ],
+ "admin GET /api/models/allowed": {
+  "ids": [
+   "test-model"
+  ]
+ },
+ "admin GET /api/models/catalog": {
+  "items": [
+   {
+    "allowed": true,
+    "availability_reason": null,
+    "available": true,
+    "capabilities": [
+     "text_completion"
+    ],
+    "checkpoint_count": 1,
+    "context_length": 64,
+    "display_name": "Test-model",
+    "family": "test-model",
+    "id": "test-model",
+    "parameters": 31392,
+    "quality_status": "experimental",
+    "recommended_use": "research",
+    "representative_checkpoint": "test-model",
+    "stage": "pretrain",
+    "version": null
+   }
+  ],
+  "total": 1
+ },
  "admin GET /api/models/checkpoints": {
   "items": [
    {
@@ -1149,7 +1168,7 @@
     "compatibility_issues": [],
     "compatible": true,
     "context_length": 64,
-    "created_at": "2026-11-23T09:12:54.341308+00:00",
+    "created_at": "2026-11-23T09:14:39.383332+00:00",
     "device": "cpu",
     "display_name": "test-model \u00b7 \u2014",
     "evaluated": false,
@@ -1201,7 +1220,7 @@
     "compatibility_issues": [],
     "compatible": true,
     "context_length": 64,
-    "created_at": "2026-11-23T09:12:54.341308+00:00",
+    "created_at": "2026-11-23T09:14:39.383332+00:00",
     "device": "cpu",
     "display_name": "test-model \u00b7 \u2014",
     "evaluated": false,
@@ -1519,6 +1538,45 @@
    "status": "stopped"
   }
  ],
+ "admin GET /api/processes/page": {
+  "items": [
+   {
+    "command": "python -m llm.cli.main train",
+    "completed_at": "2026-01-01T01:00:00",
+    "config_path": null,
+    "cpu_percent": null,
+    "duration_seconds": 3600.0,
+    "error_reason": null,
+    "exit_code": null,
+    "id": "proc-1",
+    "kind": "sft",
+    "memory_bytes": null,
+    "output_dir": "experiments/demo_v3",
+    "pid": null,
+    "started_at": "2026-01-01T00:00:00",
+    "status": "completed"
+   },
+   {
+    "command": "scripts/run_pipeline.py",
+    "completed_at": null,
+    "config_path": null,
+    "cpu_percent": null,
+    "duration_seconds": null,
+    "error_reason": null,
+    "exit_code": null,
+    "id": "pipeline:pipeline_tiny_v2",
+    "kind": "pipeline",
+    "managed": false,
+    "memory_bytes": null,
+    "model_name": "tiny_v2",
+    "output_dir": "experiments/pipeline_tiny_v2",
+    "pid": null,
+    "started_at": null,
+    "status": "stopped"
+   }
+  ],
+  "total": 2
+ },
  "admin GET /api/processes/{id}/events": [],
  "admin GET /api/runs": [
   {
@@ -1537,7 +1595,7 @@
    "tokens_per_second": null,
    "tokens_seen": 100.0,
    "train_loss": 3.0,
-   "updated_at": "2026-11-23T09:12:54.058269+00:00",
+   "updated_at": "2026-11-23T09:14:39.103654+00:00",
    "validation_loss": 3.1,
    "validation_perplexity": 22.0
   },
@@ -1557,7 +1615,7 @@
    "tokens_per_second": null,
    "tokens_seen": null,
    "train_loss": 4.2,
-   "updated_at": "2026-11-23T09:12:54.058021+00:00",
+   "updated_at": "2026-11-23T09:14:39.103508+00:00",
    "validation_loss": 4.3,
    "validation_perplexity": null
   }
@@ -1568,13 +1626,13 @@
    "holder": null
   },
   "events": [],
-  "generated_at": "2026-11-23T09:12:54.341359+00:00",
+  "generated_at": "2026-11-23T09:14:39.383380+00:00",
   "inference_model": "test-model",
   "models": {
    "best_evaluated": null,
    "latest_trained": null,
    "loaded": {
-    "created_at": "2026-11-23T09:12:54.341308+00:00",
+    "created_at": "2026-11-23T09:14:39.383332+00:00",
     "device": "cpu",
     "display_name": "test-model \u00b7 \u2014",
     "id": "test-model",
@@ -1838,7 +1896,7 @@
     "best_validation_loss": 3.1,
     "checkpoint": null,
     "config_path": null,
-    "created_at": "2026-11-23T09:12:54.058602+00:00",
+    "created_at": "2026-11-23T09:14:39.103848+00:00",
     "current_stage": null,
     "dataset": null,
     "duration_seconds": null,
@@ -1858,7 +1916,7 @@
     "tokens_per_second": null,
     "tokens_seen": 100.0,
     "train_loss": 3.0,
-    "updated_at": "2026-11-23T09:12:54.058602+00:00",
+    "updated_at": "2026-11-23T09:14:39.103848+00:00",
     "validation_loss": 3.1,
     "validation_perplexity": 22.0,
     "version": "v4"

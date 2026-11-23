@@ -7,6 +7,7 @@ from typing import Any
 
 from llm.studio.evaluation_metrics import BY_KEY
 from llm.studio.evaluations import evaluation_reports
+from llm.studio.pagination import matches, paginate
 from llm.training.promotion import INSTRUCTION_STAGES, MAX_REPETITION, READY_PASS_RATE
 
 DECISIVE_METRIC = "conv_pass_rate"
@@ -165,14 +166,13 @@ def summarize(group: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_groups(root: Path, query: str | None, offset: int, limit: int) -> dict[str, Any]:
-    needle = (query or "").strip().lower()
     items = [
         summarize(group)
         for group in build_groups(root).values()
-        if not needle or needle in f"{group['experiment']} {group['dataset'] or ''}".lower()
+        if matches(query, group["experiment"], group["dataset"])
     ]
     items.sort(key=lambda item: item["evaluated_at"] or "", reverse=True)
-    return {"items": items[offset : offset + limit], "total": len(items)}
+    return paginate(items, offset, limit)
 
 
 def group_detail(root: Path, identifier: str) -> dict[str, Any] | None:

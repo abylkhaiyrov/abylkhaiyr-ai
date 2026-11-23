@@ -4,7 +4,7 @@ import { adminApi, signIn } from "./support";
 test.skip(!process.env.E2E_BACKEND, "requires a running Studio backend");
 test.describe.configure({ mode: "serial" });
 
-type Catalog = { id: string; display_name: string; available: boolean }[];
+type Catalog = { items: { id: string; display_name: string; available: boolean }[] };
 const stamp = Date.now().toString(36);
 const user = { username: `e2e${stamp}`, email: `e2e${stamp}@example.com`, password: "e2e-user-password-1" };
 
@@ -28,7 +28,7 @@ test("a new user sees an empty state until an admin enables a model", async ({ p
 test("an allowed model is selectable, the profile is saved and the reply streams", async ({ page, request, baseURL }, info) => {
   const admin = await adminApi(request, baseURL ?? "");
   const catalog = await admin.get<Catalog>("/models/catalog");
-  const target = catalog.find((item) => item.available);
+  const target = catalog.items.find((item) => item.available);
   expect(target).toBeTruthy();
   await admin.put("/models/allowed", { ids: [target?.id] });
   await admin.put("/inference/profiles/allowed", { ids: ["lite", "medium", "high", "very_high"] });

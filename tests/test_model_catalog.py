@@ -82,7 +82,7 @@ def test_admin_controls_what_users_see(app):
     admin = sign_in(app, "admin", "admin")
     user, response = register(app)
     assert response.status_code == 201, response.text
-    catalog = admin.get("/api/models/catalog").json()
+    catalog = admin.get("/api/models/catalog").json()["items"]
     assert catalog
     identifier = catalog[0]["id"]
     assert user.get("/api/chat/models").json() == []
@@ -96,7 +96,10 @@ def test_admin_controls_what_users_see(app):
     assert json.loads(denied.json()["detail"])["unknown"] == ["missing"]
     allowed = admin.put("/api/models/allowed", json={"ids": [identifier]}, headers=csrf(admin))
     assert allowed.status_code == 200
-    assert next(item for item in allowed.json() if item["id"] == identifier)["allowed"] is True
+    assert allowed.json() == {"ids": [identifier]}
+    page = admin.get("/api/models/catalog", params={"q": identifier[:4], "limit": 1}).json()
+    assert page["total"] >= 1 and len(page["items"]) == 1
+    assert admin.get("/api/models/allowed").json() == {"ids": [identifier]}
     visible = user.get("/api/chat/models").json()
     assert [item["id"] for item in visible] == [identifier]
     assert "representative_checkpoint" not in visible[0]
@@ -117,7 +120,7 @@ def test_registry_checkpoints_carry_lifecycle_status(app):
 def test_users_can_only_pick_models_the_admin_allowed(app):
     admin = sign_in(app, "admin", "admin")
     user, _ = register(app)
-    identifier = admin.get("/api/models/catalog").json()[0]["id"]
+    identifier = admin.get("/api/models/catalog").json()["items"][0]["id"]
     headers = csrf(user)
     denied = user.post("/api/chats", headers=headers, json={"model_name": identifier})
     assert (denied.status_code, denied.json()["detail"]) == (403, "model_not_allowed")
@@ -186,7 +189,7 @@ def test_scheduler_rejects_forbidden_model_use_explicitly(app):
     admin = sign_in(app, "admin", "admin")
     user, _ = register(app)
     studio = app.state.studio
-    identifier = admin.get("/api/models/catalog").json()[0]["id"]
+    identifier = admin.get("/api/models/catalog").json()["items"][0]["id"]
     admin.put("/api/models/allowed", json={"ids": [identifier]}, headers=csrf(admin))
     chat = user.post("/api/chats", headers=csrf(user), json={"model_name": identifier}).json()
     scheduler = GenerationScheduler(studio, app.state.model_manager, threading.Lock())
@@ -207,3 +210,32 @@ def test_scheduler_rejects_forbidden_model_use_explicitly(app):
         "r", 1, chat["id"], content="hi", privileged=True, checkpoint_id="x"
     )
     assert asyncio.run(scheduler._model_rejection(privileged, record)) is None
+
+
+def test_pagination_helpers_and_new_pages(app):
+    from llm.studio.pagination import MAX_PAGE, matches, paginate
+    from llm.studio.processes import process_group
+
+    assert paginate(list(range(5)), 1, 2) == {"items": [1, 2], "total": 5}
+    assert paginate(list(range(5)), -3, 0)["items"] == [0]
+    assert len(paginate(list(range(1000)), 0, 10_000)["items"]) == MAX_PAGE
+    assert matches(None, "x") and matches("AB", "cab") and not matches("zz", "cab", None)
+    assert [
+        process_group(item)
+        for item in ("running", "pending", "failed", "interrupted", "completed", "stopped")
+    ] == [
+        "active",
+        "queued",
+        "failed",
+        "failed",
+        "completed",
+        "completed",
+    ]
+    admin = sign_in(app, "admin", "admin")
+    user, _ = register(app)
+    for path in ("/api/processes/page", "/api/experiments/page", "/api/models/allowed"):
+        assert user.get(path).status_code == 403
+    assert admin.get("/api/processes/page", params={"group": "bogus"}).status_code == 422
+    assert admin.get("/api/processes/page", params={"limit": 201}).status_code == 422
+    page = admin.get("/api/experiments/page", params={"limit": 5}).json()
+    assert set(page) == {"items", "total"}

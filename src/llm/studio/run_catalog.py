@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from llm.studio.pagination import matches, paginate
 from llm.studio.pipeline_view import FINISHED, parse_time
 
 CACHE_TTL = 2.0
@@ -182,18 +183,16 @@ class RunCatalog:
         limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
-        needle = (query or "").strip().lower()
         matched = [
             item
             for item in self.entries()
             if (status is None or item["status"] == status)
             and (stage is None or item["stage"] == stage)
             and (version is None or item["version"] == version)
-            and (not needle or needle in f"{item['name']} {item['model_name']}".lower())
+            and matches(query, item["name"], item["model_name"])
         ]
         matched.sort(key=sort_key, reverse=not oldest_first)
-        window = matched[max(offset, 0) : max(offset, 0) + min(max(limit, 1), 200)]
-        return {"items": window, "total": len(matched)}
+        return paginate(matched, offset, limit)
 
     def _build(self) -> list[dict[str, Any]]:
         pipelines = self._pipelines()

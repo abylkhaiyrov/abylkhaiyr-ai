@@ -1,29 +1,42 @@
-import { useMemo } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { EmptyState, ErrorState, LoadingState, PageHeader, Panel } from "@/components/data-state";
+import { DataPager } from "@/components/data-pager";
+import { PageHeader, Panel } from "@/components/data-state";
 import { ProcessTable } from "@/components/processes/process-table";
 import { StatusBadge } from "@/components/status-badge";
 import { useFormat } from "@/hooks/use-format";
 import { api } from "@/lib/api";
-import { groupProcesses, type ProcessGroup } from "@/lib/runs";
+import type { ProcessGroup } from "@/lib/runs";
 
 const SECTIONS: ProcessGroup[] = ["active", "queued", "completed", "failed"];
+
+function Section({ group, search }: { group: ProcessGroup; search: string }) {
+  const { t } = useTranslation();
+  const live = group === "active" || group === "queued";
+  return (
+    <DataPager queryKey={["processes", group, search]} load={(offset) => api.processPage({ group, q: search.trim() || undefined, offset, limit: live ? 50 : 20 })} empty={t(`processes.empty.${group}`)}>
+      {(items, total) => (
+        <div className="grid gap-2">
+          <p className="text-xs text-muted-foreground" aria-live="polite">{t("history.shown", { shown: items.length, total })}</p>
+          <ProcessTable items={items} live={live} />
+        </div>
+      )}
+    </DataPager>
+  );
+}
 
 export function ProcessesPage() {
   const { t } = useTranslation();
   const format = useFormat();
-  const processes = useQuery({ queryKey: ["processes"], queryFn: api.processes, staleTime: 30_000 });
+  const [search, setSearch] = useState("");
   const history = useQuery({ queryKey: ["catalog-runs", "history"], queryFn: () => api.catalogRuns({ limit: 20 }), staleTime: 30_000 });
-  const groups = useMemo(() => groupProcesses(processes.data ?? []), [processes.data]);
-  if (processes.isPending) return <LoadingState />;
-  if (processes.isLoadingError) return <ErrorState error={processes.error} retry={() => void processes.refetch()} />;
   return (
     <div className="grid gap-8">
-      <PageHeader title={t("processes.title")} subtitle={t("processes.subtitle")} />
+      <PageHeader title={t("processes.title")} subtitle={t("processes.subtitle")} actions={<label className="grid gap-1 text-xs font-medium">{t("history.search")}<input type="search" className="field w-64" value={search} onChange={(event) => setSearch(event.target.value)} /></label>} />
       {SECTIONS.map((group) => (
-        <Panel key={group} title={`${t(`processes.groups.${group}`)} · ${groups[group].length}`}>
-          {groups[group].length === 0 ? <p className="rounded-md border border-dashed px-3 py-2.5 text-[13px] text-muted-foreground">{t(`processes.empty.${group}`)}</p> : <ProcessTable items={groups[group]} live={group === "active" || group === "queued"} />}
+        <Panel key={group} title={t(`processes.groups.${group}`)}>
+          <Section group={group} search={search} />
         </Panel>
       ))}
       <Panel title={t("processes.history")}>
@@ -44,7 +57,7 @@ export function ProcessesPage() {
               </tbody>
             </table>
           </div>
-        ) : <EmptyState title={t("processes.empty.history")} />}
+        ) : <p className="rounded-md border border-dashed px-3 py-2.5 text-[13px] text-muted-foreground">{t("processes.empty.history")}</p>}
       </Panel>
     </div>
   );

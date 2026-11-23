@@ -40,3 +40,25 @@ test("models page separates the catalog from the checkpoint registry", async ({ 
   expect(await page.locator("tbody tr").count()).toBeLessThan(before);
   await page.screenshot({ path: info.outputPath("models.png"), fullPage: true });
 });
+
+test("catalog and experiments load one server page at a time", async ({ page }) => {
+  await login(page);
+  await page.goto("/models");
+  await expect(page.getByText(/Showing 30 of \d+/)).toBeVisible();
+  const first = await page.locator("tbody tr").count();
+  expect(first).toBeLessThanOrEqual(30);
+  await page.getByRole("button", { name: "Show more" }).click();
+  await expect.poll(() => page.locator("tbody tr").count()).toBeGreaterThan(first);
+  await page.getByLabel("Search by name or model").fill("no-such-model-xyz");
+  await expect(page.getByText("No checkpoints found")).toBeVisible();
+
+  await page.goto("/experiments");
+  await expect(page.getByText(/Showing \d+ of \d+/)).toBeVisible();
+  const total = Number((await page.getByText(/Showing \d+ of \d+/).innerText()).match(/of (\d+)/)?.[1]);
+  const rows = await page.locator("tbody tr").count();
+  expect(rows).toBeLessThanOrEqual(30);
+  if (total > 30) {
+    await page.getByRole("button", { name: "Show more" }).click();
+    await expect.poll(() => page.locator("tbody tr").count()).toBeGreaterThan(rows);
+  }
+});

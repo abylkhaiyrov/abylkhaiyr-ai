@@ -1,5 +1,5 @@
 import { body, http } from "@/lib/http";
-import { anything, arrayOf, boolean, listOf, nullable, number, record, shape, string } from "@/lib/schema";
+import { anything, arrayOf, boolean, listOf, nullable, number, record, shape, string, type Check } from "@/lib/schema";
 
 export type Role = "ADMIN" | "USER";
 export type User = {
@@ -395,6 +395,15 @@ const chatSummary = shape<ChatSummary>({ id: string, title: string, pinned: bool
 const chatGuard = shape<Chat>({ id: string, title: string, messages: arrayOf(shape<ChatMessage>({ id: string, role: string, content: string, variants: arrayOf(anything), reasoning_trace: arrayOf(anything) })) });
 const rows = listOf<Metric>(shape({ step: number }));
 
+type PageQuery = Record<string, string | number | undefined>;
+
+const queryString = (query: PageQuery) =>
+  new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)])).toString();
+
+export type Page<T> = { items: T[]; total: number };
+
+const pageGuard = <T>(item: Check) => shape<Page<T>>({ items: arrayOf(item), total: number });
+
 const runPath = (id: string) => id.split("/").map(encodeURIComponent).join("/");
 
 export const api = {
@@ -439,18 +448,24 @@ export const api = {
   experiments: () => http<Experiment[]>("/experiments", {}, listOf<Experiment>(named)),
   catalogRun: (id: string) => http<{ run: RunEntry; pipeline: Pipeline | null; detail: RunDetail | null }>(`/catalog/runs/${runPath(id)}`, {}, shape({ run: runEntry })),
   catalogRuns: (query: RunQuery = {}) =>
-    http<RunPage>(`/catalog/runs?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape<RunPage>({ items: arrayOf(runEntry), total: number })),
+    http<RunPage>(`/catalog/runs?${queryString({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 })}`, {}, shape<RunPage>({ items: arrayOf(runEntry), total: number })),
   modelCheckpoints: (query: { q?: string; status?: CheckpointStatus; stage?: string; limit?: number; offset?: number } = {}) =>
-    http<{ items: Model[]; total: number }>(`/models/checkpoints?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape({ items: arrayOf(shape({ id: string, status: string })), total: number })),
-  modelCatalog: () => http<CatalogModel[]>("/models/catalog", {}, listOf<CatalogModel>(catalogModel)),
-  setAllowedModels: (ids: string[]) => http<CatalogModel[]>("/models/allowed", body("PUT", { ids }), listOf<CatalogModel>(catalogModel)),
+    http<{ items: Model[]; total: number }>(`/models/checkpoints?${queryString({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 })}`, {}, shape({ items: arrayOf(shape({ id: string, status: string })), total: number })),
+  modelCatalog: (query: { q?: string; status?: CheckpointStatus; limit?: number; offset?: number } = {}) =>
+    http<Page<CatalogModel>>(`/models/catalog?${queryString({ ...query, limit: query.limit ?? 50, offset: query.offset ?? 0 })}`, {}, pageGuard<CatalogModel>(catalogModel)),
+  allowedModels: () => http<{ ids: string[] }>("/models/allowed", {}, shape({ ids: arrayOf(string) })),
+  setAllowedModels: (ids: string[]) => http<{ ids: string[] }>("/models/allowed", body("PUT", { ids }), shape({ ids: arrayOf(string) })),
+  processPage: (query: { group?: "active" | "queued" | "completed" | "failed"; q?: string; limit?: number; offset?: number } = {}) =>
+    http<Page<Process>>(`/processes/page?${queryString({ ...query, limit: query.limit ?? 30, offset: query.offset ?? 0 })}`, {}, pageGuard<Process>(shape({ id: string, status: string }))),
+  experimentPage: (query: { q?: string; limit?: number; offset?: number } = {}) =>
+    http<Page<Experiment>>(`/experiments/page?${queryString({ ...query, limit: query.limit ?? 30, offset: query.offset ?? 0 })}`, {}, pageGuard<Experiment>(named)),
   inferenceProfiles: () => http<InferenceProfile[]>("/inference/profiles", {}, listOf<InferenceProfile>(shape({ id: string, available: boolean, allowed: boolean }))),
   setAllowedProfiles: (ids: string[]) => http<InferenceProfile[]>("/inference/profiles/allowed", body("PUT", { ids }), listOf<InferenceProfile>(shape({ id: string, available: boolean, allowed: boolean }))),
   userModels: () => http<UserModel[]>("/chat/models", {}, listOf<UserModel>(userModel)),
   processEvents: (id: string) => http<{ level: string; message: string; created_at: string }[]>(`/processes/${encodeURIComponent(id)}/events`, {}, listOf(shape({ message: string, created_at: string }))),
   evaluationMetrics: () => http<MetricDefinition[]>("/evaluation/metrics", {}, listOf<MetricDefinition>(shape({ key: string, section: string, direction: string }))),
   evaluationGroups: (query: { q?: string; limit?: number; offset?: number } = {}) =>
-    http<{ items: EvaluationGroupSummary[]; total: number }>(`/evaluation/groups?${new URLSearchParams(Object.entries({ ...query, limit: query.limit ?? 30, offset: query.offset ?? 0 }).filter(([, value]) => value !== undefined && value !== "").map(([key, value]) => [key, String(value)]))}`, {}, shape({ items: arrayOf(shape({ id: string, experiment: string })), total: number })),
+    http<{ items: EvaluationGroupSummary[]; total: number }>(`/evaluation/groups?${queryString({ ...query, limit: query.limit ?? 30, offset: query.offset ?? 0 })}`, {}, shape({ items: arrayOf(shape({ id: string, experiment: string })), total: number })),
   evaluationGroup: (id: string) => http<EvaluationGroup>(`/evaluation/groups/${encodeURIComponent(id)}`, {}, shape<EvaluationGroup>({ id: string, rows: arrayOf(shape({ results: record(number) })) })),
   compareEvaluations: (group: string, checkpoints: string[]) =>
     http<Comparison>(`/evaluation/compare?${new URLSearchParams([["group", group], ...checkpoints.map((item): [string, string] => ["checkpoint", item])])}`, {}, shape<Comparison>({ metrics: arrayOf(shape({ key: string })), verdict: shape({ status: string }) })),

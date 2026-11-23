@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Tabs } from "@/components/ui/tabs";
 import { useApiError } from "@/hooks/use-api-error";
-import { useInferenceProfiles, useModelCatalog, useModelRegistry } from "@/hooks/use-runtime";
+import { useInferenceProfiles, useModelRegistry } from "@/hooks/use-runtime";
 import { api, type CheckpointStatus, type ModelRole } from "@/lib/api";
 import { nextOffset } from "@/lib/history";
 import { useToastStore } from "@/store/toast-store";
@@ -25,7 +25,6 @@ export function ModelsPage() {
   const push = useToastStore((state) => state.push);
   const describe = useApiError();
   const registry = useModelRegistry();
-  const catalog = useModelCatalog();
   const profiles = useInferenceProfiles();
   const [view, setView] = useState<"catalog" | "profiles" | "checkpoints">("catalog");
   const [search, setSearch] = useState("");
@@ -50,7 +49,7 @@ export function ModelsPage() {
   return (
     <div className="grid gap-4">
       <PageHeader title={t("models.title")} subtitle={t("models.subtitle")} actions={<Tabs value={view} onChange={setView} items={[{ value: "catalog", label: t("models.catalog") }, { value: "profiles", label: t("models.profiles") }, { value: "checkpoints", label: t("models.checkpointRegistry") }]} />} />
-      {view === "catalog" ? <Query query={catalog}>{(entries) => <CatalogTable catalog={entries} />}</Query> : null}
+      {view === "catalog" ? <CatalogTable /> : null}
       {view === "profiles" ? <Query query={profiles}>{(items) => <ProfilesTable profiles={items} />}</Query> : null}
       {view === "checkpoints" ? (
         <>
