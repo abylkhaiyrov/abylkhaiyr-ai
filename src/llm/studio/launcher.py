@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import os
 import shutil
 import signal
 import socket
 import subprocess
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import FrameType
+from typing import Self
 
 import uvicorn
 from fastapi import FastAPI
@@ -17,6 +21,43 @@ from llm.studio.protocol import API_VERSION
 
 DEV_HOST = "127.0.0.1"
 STARTUP_TIMEOUT = 30
+SHUTDOWN_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+SignalHandler = Callable[[int, FrameType | None], object] | int | None
+
+
+class StudioServer(uvicorn.Server):
+    @contextlib.contextmanager
+    def capture_signals(self) -> Iterator[None]:
+        yield
+
+    @property
+    def exit_code(self) -> int:
+        failed = getattr(self.lifespan, "should_exit", False)
+        return 0 if self.started and not failed else 1
+
+
+class GracefulShutdown:
+    def __init__(self, server: StudioServer) -> None:
+        self.server = server
+        self.requested = False
+        self.previous: dict[signal.Signals, SignalHandler] = {}
+
+    def __enter__(self) -> Self:
+        self.previous = {sig: signal.signal(sig, self.handle) for sig in SHUTDOWN_SIGNALS}
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        for sig, handler in self.previous.items():
+            signal.signal(sig, handler)
+
+    def handle(self, sig: int, _frame: FrameType | None) -> None:
+        if not self.requested:
+            self.requested = True
+            self.server.should_exit = True
+            return
+        self.server.force_exit = True
+        if sig == signal.SIGINT:
+            raise KeyboardInterrupt
 
 
 def check_port(host: str, port: int) -> None:
@@ -92,7 +133,7 @@ def run_frontend_command(frontend: Path, command: list[str]) -> None:
 
 
 async def run_dev_server(
-    server: uvicorn.Server, frontend: Path, backend_port: int, frontend_port: int
+    server: StudioServer, frontend: Path, backend_port: int, frontend_port: int
 ) -> int:
     backend = asyncio.create_task(server.serve())
     frontend_process: asyncio.subprocess.Process | None = None
@@ -101,6 +142,8 @@ async def run_dev_server(
             while not server.started:
                 if backend.done():
                     backend.result()
+                    if server.should_exit:
+                        return 0
                     raise ConfigError("Studio backend exited before it became ready")
                 await asyncio.sleep(0.05)
             frontend_process = await asyncio.create_subprocess_exec(
@@ -114,7 +157,7 @@ async def run_dev_server(
                 start_new_session=True,
                 env={**os.environ, "STUDIO_BACKEND_PORT": str(backend_port)},
             )
-            while frontend_process.returncode is None:
+            while frontend_process.returncode is None and not server.should_exit:
                 try:
                     _, writer = await asyncio.open_connection(DEV_HOST, frontend_port)
                 except OSError:
@@ -124,6 +167,8 @@ async def run_dev_server(
                     await writer.wait_closed()
                     break
             else:
+                if server.should_exit:
+                    return 0
                 raise ConfigError("Vite exited before it became ready")
         print(f"Studio development server ready at http://{DEV_HOST}:{frontend_port}", flush=True)
         frontend_exit = asyncio.create_task(frontend_process.wait())
@@ -138,7 +183,7 @@ async def run_dev_server(
         finally:
             frontend_exit.cancel()
             await asyncio.gather(frontend_exit, return_exceptions=True)
-        return 0
+        return server.exit_code
     except TimeoutError as error:
         raise ConfigError("Studio did not become ready within 30 seconds") from error
     finally:
@@ -158,14 +203,9 @@ async def run_dev_server(
 def run_studio(
     app: FastAPI, frontend: Path, host: str, port: int, frontend_port: int | None
 ) -> int:
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
-    if frontend_port is not None:
-        signals = (signal.SIGINT, signal.SIGTERM)
-        handlers = {sig: signal.signal(sig, server.handle_exit) for sig in signals}
-        try:
-            return asyncio.run(run_dev_server(server, frontend, port, frontend_port))
-        finally:
-            for sig, handler in handlers.items():
-                signal.signal(sig, handler)
-    server.run()
-    return 0 if server.started else 1
+    server = StudioServer(uvicorn.Config(app, host=host, port=port, log_level="info"))
+    with GracefulShutdown(server):
+        if frontend_port is None:
+            server.run()
+            return server.exit_code
+        return asyncio.run(run_dev_server(server, frontend, port, frontend_port))

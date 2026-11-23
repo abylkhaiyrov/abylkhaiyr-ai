@@ -82,6 +82,9 @@ class StudioService:
         self.storage_metrics_at = time.monotonic()
         self._reconcile_interrupted_jobs()
 
+    def close(self) -> None:
+        self.engine.dispose()
+
     def attach_model_manager(self, manager: ModelManager) -> None:
         self.model_manager = manager
 

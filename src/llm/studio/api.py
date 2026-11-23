@@ -1,6 +1,9 @@
+import asyncio
 import threading
 import time
-from typing import Annotated, Any, Literal
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, status
@@ -13,6 +16,9 @@ from llm.studio.processes import ProcessError
 from llm.studio.security import build_dependencies
 from llm.studio.service import StudioService
 from llm.tokenizer.bpe import Message
+
+if TYPE_CHECKING:
+    from llm.studio.websocket import WebSocketManager
 
 
 class TrainingStartRequest(BaseModel):
@@ -54,19 +60,35 @@ class ChatMessageRequest(BaseModel):
     seed: int | None = None
 
 
+def studio_lifespan(
+    websocket_manager: "WebSocketManager", model_manager: ModelManager, studio: StudioService
+) -> Callable[[Any], AbstractAsyncContextManager[None]]:
+    @asynccontextmanager
+    async def lifespan(_: Any) -> AsyncIterator[None]:
+        async with AsyncExitStack() as stack:
+            stack.push_async_callback(asyncio.to_thread, studio.close)
+            stack.push_async_callback(asyncio.to_thread, model_manager.unload)
+            stack.push_async_callback(websocket_manager.close)
+            yield
+
+    return lifespan
+
+
 def create_studio_router(
     studio: StudioService,
     model_manager: ModelManager,
     inference_lock: threading.Lock,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api")
+    from llm.studio.websocket import WebSocketManager
+
+    websocket_manager = WebSocketManager(studio, model_manager, inference_lock)
+    router = APIRouter(
+        prefix="/api", lifespan=studio_lifespan(websocket_manager, model_manager, studio)
+    )
     deps = build_dependencies(studio)
     current_identity, require_csrf = deps.session, deps.csrf
     admin_identity, admin_csrf = deps.admin, deps.admin_csrf
     router.include_router(create_account_router(studio, deps))
-    from llm.studio.websocket import WebSocketManager
-
-    websocket_manager = WebSocketManager(studio, model_manager, inference_lock)
 
     @router.websocket("/ws")
     async def websocket_endpoint(socket: WebSocket) -> None:

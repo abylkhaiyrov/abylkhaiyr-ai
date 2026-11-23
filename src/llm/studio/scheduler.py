@@ -19,6 +19,7 @@ from llm.tokenizer.bpe import Message
 logger = logging.getLogger(__name__)
 
 MAX_QUEUE_SIZE = 8
+SHUTDOWN_TIMEOUT_SECONDS = 15.0
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_TOP_P = 0.9
 DEFAULT_TOP_K = 40
@@ -85,6 +86,18 @@ class GenerationScheduler:
         self.pending: deque[tuple[GenerationState, GenerationRequest, PublishCallback]] = deque()
         self.active_state: GenerationState | None = None
         self.worker: asyncio.Task[None] | None = None
+
+    async def close(self, timeout: float = SHUTDOWN_TIMEOUT_SECONDS) -> None:
+        for state in self.states.values():
+            state.cancel.set()
+        self.pending.clear()
+        worker = self.worker
+        if worker is None or worker.done():
+            return
+        done, _ = await asyncio.wait({worker}, timeout=timeout)
+        if not done:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
 
     def active_states_for_user(self, user_id: int) -> list[GenerationState]:
         return [

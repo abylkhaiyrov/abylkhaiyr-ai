@@ -35,6 +35,7 @@ IDLE_TIMEOUT_SECONDS = 60
 BROADCAST_SECONDS = 2
 SYSTEM_SECONDS = 5
 ROW_BATCH_LIMIT = 200
+GOING_AWAY = 1001
 
 
 class ClientEvent(BaseModel):
@@ -147,6 +148,20 @@ class WebSocketManager:
     async def _close_quietly(socket: WebSocket, code: int) -> None:
         with contextlib.suppress(RuntimeError, WebSocketDisconnect, OSError, TimeoutError):
             await asyncio.wait_for(socket.close(code=code), timeout=SEND_TIMEOUT_SECONDS)
+
+    async def close(self) -> None:
+        await self.scheduler.close()
+        connections = tuple(self.connections)
+        self.connections.clear()
+        for connection in connections:
+            connection.closed = True
+        await asyncio.gather(
+            *(self._close_quietly(connection.socket, GOING_AWAY) for connection in connections)
+        )
+        broadcaster = self.broadcaster
+        if broadcaster is not None:
+            broadcaster.cancel()
+            await asyncio.gather(broadcaster, return_exceptions=True)
 
     async def writer(self, connection: Connection) -> None:
         try:
