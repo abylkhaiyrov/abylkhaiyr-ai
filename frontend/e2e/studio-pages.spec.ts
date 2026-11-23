@@ -11,12 +11,11 @@ async function audit(page: Page, route: string, label: string) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(route);
-  await page.waitForLoadState("networkidle");
   await expect(page.locator("main")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (document.querySelector("main")?.textContent ?? "").trim().length), { message: `${label} ${route} rendered nothing`, timeout: 20_000 }).toBeGreaterThan(0);
+  await page.waitForLoadState("networkidle");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, `${label} ${route} overflows horizontally`).toBeLessThanOrEqual(0);
-  const blank = await page.evaluate(() => (document.querySelector("main")?.textContent ?? "").trim().length);
-  expect(blank, `${label} ${route} rendered nothing`).toBeGreaterThan(0);
   expect(errors, `${label} ${route} threw`).toEqual([]);
 }
 

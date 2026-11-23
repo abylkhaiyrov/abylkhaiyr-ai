@@ -1,6 +1,7 @@
 name: frontend-e2e
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths: ["frontend/**", "src/llm/studio/**", "tests/**", ".github/workflows/frontend-e2e.yml"]
@@ -122,4 +123,4 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check src tests
       - run: mypy src/llm/studio
-      - run: pytest -q
+      - run: pytest -q tests/test_studio.py tests/test_studio_api.py tests/test_studio_artifacts.py tests/test_studio_runtime.py tests/test_studio_shutdown.py tests/test_studio_run_catalog.py tests/test_accounts.py tests/test_model_catalog.py tests/test_inference_profiles.py tests/test_evaluation_center.py
