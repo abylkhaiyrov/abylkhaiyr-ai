@@ -5,10 +5,9 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from llm.data.binary import read_jsonl
+from llm.evaluation.campaign_suites import load_items
 from llm.evaluation.capacity_metrics import unigram_probabilities
 from llm.evaluation.comparison import load_engine
-from llm.evaluation.diagnostic_bank import Item
 from llm.evaluation.diagnostic_controls import control_report, score_controls
 
 BANKS = {
@@ -16,10 +15,6 @@ BANKS = {
     "historical1152": Path("experiments/stage17/diagnostic_v2.jsonl"),
 }
 UNIGRAM = Path("data/v4_expanded/tokens/train.bin")
-
-
-def load_items(path: Path) -> list[Item]:
-    return [Item(**{**row, "options": tuple(row["options"])}) for row in read_jsonl(path)]
 
 
 def main() -> None:
@@ -34,7 +29,7 @@ def main() -> None:
         engine = load_engine(checkpoint, "data/tokenizer", args.device)
         unigram = unigram_probabilities(UNIGRAM, engine.tokenizer)
         for label, path in BANKS.items():
-            rows = list(score_controls(engine, load_items(path), unigram))
+            rows = list(score_controls(engine, load_items(str(path)), unigram))
             payload = {
                 "checkpoint": checkpoint,
                 "bank": label,

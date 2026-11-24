@@ -75,7 +75,6 @@ corpus:
   arms: [a, b]
   overlap_audit: experiments/stage18/verified_overlap.json
 calibration_file: experiments/stage18/profile.json
-evaluation_suites: [perplexity_grid, diagnostic_controls_v3, refusal_behavior]
 resources:
   ram_margin_gib: 0.25
   disk_reserve_gib: 20.0

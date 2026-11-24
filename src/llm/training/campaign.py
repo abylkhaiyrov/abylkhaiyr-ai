@@ -9,30 +9,18 @@ from typing import Any
 
 import torch
 
-from llm.core.errors import ConfigError, ResourceError
+from llm.core.errors import ConfigError
+from llm.training.assessment import assess
 from llm.training.budget import BudgetClock, TimeLedger
 from llm.training.checkpoint import CheckpointManager
 from llm.training.preflight import frozen_hashes, verify_corpus, verify_lock
+from llm.training.progress import completed_step, is_complete
 from llm.training.resources import resource_gate, resources_available
 from llm.training.series import run_series
 from llm.training.session import exclusive_session, run_training
 from llm.training.spec import ExperimentSpec, load_spec, spec_digest
 
 CALIBRATION_KEY = "peak_device_gb"
-
-
-def completed_step(spec: ExperimentSpec, job: str) -> int:
-    manager = CheckpointManager(spec.checkpoint_dir(job), keep=2)
-    state = manager.latest_valid()
-    if state is None:
-        if manager.list_steps():
-            raise ResourceError(f"no restorable checkpoints for {job}")
-        return 0
-    return int(CheckpointManager.verify(state)["step"])
-
-
-def is_complete(spec: ExperimentSpec, job: str) -> bool:
-    return completed_step(spec, job) >= spec.target_steps
 
 
 def verified_inputs(spec: ExperimentSpec) -> dict[str, str]:
@@ -121,6 +109,10 @@ def run_campaign(spec: ExperimentSpec, spec_path: Path) -> str | None:
     return reason
 
 
+def evaluate_campaign(spec: ExperimentSpec) -> dict[str, Any]:
+    return assess(spec)
+
+
 def run_job(spec: ExperimentSpec, job: str, active_seconds: float | None) -> dict[str, Any]:
     plan = build_plan(spec)
     if load_state(spec, plan) is None:
@@ -144,7 +136,9 @@ def status(spec: ExperimentSpec) -> dict[str, Any]:
         "reused": sorted(spec.reuse),
         "budget": asdict(ledger) if ledger else None,
         "limits": spec.limits.model_dump(),
-        "evaluation_suites": spec.evaluation_suites,
+        "evaluation_suites": [suite.name for suite in spec.evaluation.suites]
+        if spec.evaluation
+        else [],
     }
 
 

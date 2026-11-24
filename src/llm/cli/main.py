@@ -41,6 +41,12 @@ def _sampling(args: argparse.Namespace):
     )
 
 
+def evaluate_and_print(campaign, spec) -> int:
+    report = campaign.evaluate_campaign(spec)
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return 0 if report["accepted"] else 4
+
+
 def cmd_experiment(args: argparse.Namespace) -> int:
     from llm.training import campaign
 
@@ -52,7 +58,11 @@ def cmd_experiment(args: argparse.Namespace) -> int:
     elif args.action == "run":
         reason = campaign.run_campaign(spec, path)
         print(json.dumps({"stopped": reason}))
-        return 0 if reason is None else 3
+        if reason is not None:
+            return 3
+        return evaluate_and_print(campaign, spec) if spec.evaluation else 0
+    elif args.action == "evaluate":
+        return evaluate_and_print(campaign, spec)
     elif args.job is None:
         raise ConfigError("the job action needs a job name")
     else:
@@ -427,7 +437,7 @@ def build_parser() -> argparse.ArgumentParser:
     studio.add_argument("--frontend-port", type=int, default=5173)
 
     experiment = add("experiment", cmd_experiment)
-    experiment.add_argument("action", choices=("plan", "status", "run", "job"))
+    experiment.add_argument("action", choices=("plan", "status", "run", "evaluate", "job"))
     experiment.add_argument("spec")
     experiment.add_argument("job", nargs="?")
     experiment.add_argument("--active-seconds", type=float)

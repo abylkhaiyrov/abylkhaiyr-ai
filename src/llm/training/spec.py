@@ -16,6 +16,7 @@ from llm.core.config import (
     load_experiment_config,
 )
 from llm.core.errors import ConfigError
+from llm.evaluation.plan import EvaluationPlan
 from llm.training.budget import BudgetLimits
 from llm.training.preflight import CorpusCheck
 from llm.training.resources import ResourceBudget
@@ -55,7 +56,7 @@ class ExperimentSpec(StrictModel):
     lock_labels: list[str] = Field(default_factory=list)
     corpus: CorpusCheck | None = None
     calibration_file: str | None = None
-    evaluation_suites: list[str] = Field(default_factory=list)
+    evaluation: EvaluationPlan | None = None
     stopping: StoppingCriteria = Field(default_factory=StoppingCriteria)
     resources: ResourceBudget = Field(default_factory=ResourceBudget)
     limits: BudgetLimits
