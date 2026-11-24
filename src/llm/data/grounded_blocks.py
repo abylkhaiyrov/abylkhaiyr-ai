@@ -8,7 +8,14 @@ from pathlib import Path
 import numpy as np
 
 from llm.data.binary import IGNORE_INDEX, tokenize_sft_split, with_extension
-from llm.data.grounded import Case, Example, eval_cases, row_of, trained_cases, training_examples
+from llm.data.grounded import (
+    Case,
+    Example,
+    eval_cases,
+    row_of,
+    trained_cases,
+    training_examples,
+)
 from llm.data.grounded_text import LANGUAGES
 from llm.tokenizer.bpe import BPETokenizer, Message
 
@@ -143,10 +150,7 @@ def write_reading_block(
     return report
 
 
-def write_cases(path: Path, split: str, seed: int) -> list[Case]:
-    cases = eval_cases(split)
-    if split == "dev":
-        cases += trained_cases(seed)
+def write_cases(path: Path, cases: list[Case]) -> list[Case]:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "".join(json.dumps(asdict(case), ensure_ascii=False) + "\n" for case in cases),
@@ -158,8 +162,10 @@ def write_cases(path: Path, split: str, seed: int) -> list[Case]:
 def write_grounded(output: Path, base: Path, tokenizer: BPETokenizer, seed: int) -> dict:
     report = write_reading_block(output / "reading_b", base, tokenizer, seed)
     sizes = {
-        split: len(write_cases(output / f"{split}.jsonl", split, seed)) for split in ("dev", "test")
+        split: len(write_cases(output / f"{split}.jsonl", eval_cases(split)))
+        for split in ("dev", "test")
     }
+    sizes["trained"] = len(write_cases(output / "trained.jsonl", trained_cases(seed)))
     summary = {"reading_b": report, "cases": sizes, "seed": seed}
     (output / "report.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

@@ -114,7 +114,8 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
             }
         )
     held = [case for case in cases if case.cell != TRAINED]
-    add_metrics(output, held, checks)
+    if held:
+        add_metrics(output, held, checks)
     add_trained(output, [case for case in cases if case.cell == TRAINED], checks)
     return output
 

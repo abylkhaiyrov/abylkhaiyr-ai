@@ -90,6 +90,14 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     if args.sft_profile:
         print(json.dumps(profile_sft(Path(args.sft_profile)), indent=2, ensure_ascii=False))
         return 0
+    if args.hidden:
+        from llm.evaluation.comparison import load_engine
+        from llm.evaluation.grounded import load_cases
+        from llm.evaluation.hidden import diagnose
+
+        engine = load_engine(args.hidden, args.tokenizer, args.device)
+        print(json.dumps(diagnose(engine, load_cases(args.cases), args.limit), indent=2))
+        return 0
     if args.context_probes:
         from llm.data.probes import write_context_probes
 
@@ -490,6 +498,10 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--tokenizer", default="data/tokenizer")
     diagnostics.add_argument("--sft-profile")
     diagnostics.add_argument("--grounded")
+    diagnostics.add_argument("--hidden")
+    diagnostics.add_argument("--cases", default="data/grounded/dev.jsonl")
+    diagnostics.add_argument("--limit", type=int, default=60)
+    diagnostics.add_argument("--device", default="cpu")
     diagnostics.add_argument("--context-probes")
     diagnostics.add_argument("--base", default="data/v3_1")
     diagnostics.add_argument("--seed", type=int, default=1)

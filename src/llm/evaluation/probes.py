@@ -197,7 +197,11 @@ def add_answerability(
         "answerability.hallucination",
         [[outcome(c, texts[c.id][2] == "fabricated_answer") for c in unanswerable]],
     )
-    if answerable and unanswerable:
+    if answerable and unanswerable and len(answerable) == len(unanswerable):
+        behaviour = [outcome(c, not refused[c.id]) for c in answerable]
+        behaviour += [outcome(c, refused[c.id]) for c in unanswerable]
+        output.add_rate("answerability.balanced_accuracy", [behaviour])
+    elif answerable and unanswerable:
         output.metrics["answerability.balanced_accuracy"] = (
             output.metrics["answerability.justified_refusal"]
             + 1

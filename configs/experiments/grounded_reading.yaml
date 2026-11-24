@@ -1,0 +1,318 @@
+name: grounded_reading
+base_config: configs/tiny_v31_sft_stage11.yaml
+initial_checkpoint: checkpoints/tiny_v31_sft_stage11/step-00000120
+job_template: '{arm}-{seed}'
+seeds:
+- 1
+- 2
+- 3
+token_budget: 1962240
+tokens_per_step: 16352
+output_root: experiments/grounded_reading
+checkpoint_root: checkpoints/grounded_reading
+state_file: campaign.json
+train:
+  restore_optimizer: false
+  checkpoint_alias: null
+  protected_steps:
+  - 120
+  keep_checkpoints: 2
+  eval_interval: 40
+  checkpoint_interval: 40
+  eval_batches: 20
+  min_free_disk_gb: 20.0
+optimizer:
+  learning_rate: 0.0001
+  warmup_steps: 12
+  min_lr_ratio: 0.1
+arms:
+  A:
+    data_dir: data/v3_1
+  B:
+    data_dir: data/grounded/reading_b
+frozen_inputs:
+  initial_weights: checkpoints/tiny_v31_sft_stage11/step-00000120/model.safetensors
+  initial_metadata: checkpoints/tiny_v31_sft_stage11/step-00000120/meta.json
+  tokenizer: data/tokenizer/tokenizer.json
+  sft_manifest: data/v3_1/manifest.json
+  grounded_test: data/grounded/test.jsonl
+  grounded_dev: data/grounded/dev.jsonl
+  grounded_report: data/grounded/report.json
+  context_probes_v2: data/diagnostics_v2/probes.jsonl
+  train_reading_en: data/grounded/reading_b/sft_groups/train.reading_en.jsonl
+  train_reading_ru: data/grounded/reading_b/sft_groups/train.reading_ru.jsonl
+  train_reading_kk: data/grounded/reading_b/sft_groups/train.reading_kk.jsonl
+  chat_eval_v1: configs/chat_eval_natural_v1.jsonl
+  chat_eval_v2: configs/chat_eval_natural_v2.jsonl
+  refusal_eval_v4: configs/natural_eval_v4.jsonl
+  refusal_eval_v5: configs/natural_eval_v5.jsonl
+  diagnostic_bank_144: experiments/stage18/diagnostic.jsonl
+  diagnostic_bank_1152: experiments/stage17/diagnostic_v2.jsonl
+  registration: docs/grounded_context_preregistration.md
+calibration_file: experiments/stage18/profile.json
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+limits:
+  active_seconds: 3600
+  absolute_seconds: 14400
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
+evaluation:
+  baseline: checkpoints/tiny_v31_sft_stage11/step-00000120
+  device: mps
+  tokenizer: data/tokenizer
+  repetitions: 10000
+  independence:
+    evaluation:
+    - configs/chat_eval_natural_v2.jsonl
+    - configs/natural_eval_v4.jsonl
+    - data/diagnostics_v2/probes.jsonl
+    training:
+    - data/v3_1/sft_groups/train.*.jsonl
+    - data/v2/sft/train.jsonl
+    - data/grounded/reading_b/sft_groups/train.reading_*.jsonl
+    max_overlap: 0.7
+  suites:
+  - name: perplexity
+    options:
+      sets:
+        v2_validation:
+        - data/v2/tokens
+        - validation
+        - 200
+        v2_test:
+        - data/v2/tokens
+        - test
+        - 200
+  - name: mcq
+    options:
+      unigram: data/v4_expanded/tokens/train.bin
+      banks:
+        diagnostic144: experiments/stage18/diagnostic.jsonl
+        historical1152: experiments/stage17/diagnostic_v2.jsonl
+  - name: chat_natural
+    label: chat1
+    options:
+      tag: chat1
+      cases: configs/chat_eval_natural_v1.jsonl
+      configs:
+      - greedy_rp1.1
+      - studio_default
+      seeds:
+      - 0
+      - 1
+      - 2
+  - name: chat_natural
+    label: chat2
+    options:
+      tag: chat2
+      cases: configs/chat_eval_natural_v2.jsonl
+      configs:
+      - greedy_rp1.1
+      - studio_default
+      seeds:
+      - 0
+      - 1
+      - 2
+  - name: refusal_behavior
+    options:
+      modes:
+      - greedy
+  - name: core
+    options:
+      methods:
+      - arithmetic
+      - factual
+      - instruction_following
+      - context_usage
+      - multiturn_dialogue
+  - name: probes
+    options:
+      file: data/diagnostics_v2/probes.jsonl
+      unigram: data/v4_expanded/tokens/train.bin
+  - name: grounded
+    options:
+      file: data/grounded/test.jsonl
+      training:
+      - data/grounded/reading_b/sft_groups/train.reading_*.jsonl
+  gates:
+  - name: primary_ctx_fact_floor_flat
+    metric: probe.ctx_fact.free.all
+    arm: B
+    against: baseline
+    kind: min_value
+    value: 0.3
+    bound: interval
+  - name: primary_ctx_fact_floor_question_first
+    metric: probe.ctx_fact_qfirst.free.all
+    arm: B
+    against: baseline
+    kind: min_value
+    value: 0.3
+    bound: interval
+  - name: primary_ctx_fact_above_A_flat
+    metric: probe.ctx_fact.free.all
+    arm: B
+    against: A
+    kind: min_delta
+    value: 0.0
+    bound: interval
+  - name: primary_ctx_fact_above_A_question_first
+    metric: probe.ctx_fact_qfirst.free.all
+    arm: B
+    against: A
+    kind: min_delta
+    value: 0.0
+    bound: interval
+  - name: secondary_answerability_floor
+    metric: answerability.balanced_accuracy
+    arm: B
+    against: baseline
+    kind: min_value
+    value: 0.6001
+  - name: secondary_answerability_above_A
+    metric: answerability.balanced_accuracy
+    arm: B
+    against: A
+    kind: min_delta
+    value: 0.0
+    bound: interval
+  - name: grounded_new_structure_above_A
+    metric: ctx.fact_accuracy.cell.structure
+    arm: B
+    against: A
+    kind: min_delta
+    value: 0.0
+    bound: interval
+  - name: grounded_new_question_type_above_A
+    metric: ctx.fact_accuracy.cell.question
+    arm: B
+    against: A
+    kind: min_delta
+    value: 0.0
+    bound: interval
+  - name: grounded_intervention_above_A
+    metric: ctx.intervention_accuracy
+    arm: B
+    against: A
+    kind: min_delta
+    value: 0.0
+    bound: interval
+  - name: hallucination_not_worse
+    metric: ctx.hallucination
+    arm: B
+    against: A
+    kind: max_delta
+    value: 0.05
+  - name: unjustified_refusal_not_worse
+    metric: ctx.unjustified_refusal
+    arm: B
+    against: A
+    kind: max_delta
+    value: 0.05
+  - name: no_more_invented_answers_chat
+    metric: chat2.greedy_rp1.1.answered_unanswerable
+    arm: B
+    against: A
+    kind: max_delta
+    value: 0.1
+  - name: no_more_invented_answers_natural
+    metric: refusal.greedy.answered_unanswerable
+    arm: B
+    against: A
+    kind: max_delta
+    value: 0.1
+  - name: justified_refusal_kept_chat
+    metric: chat2.greedy_rp1.1.justified_refusal
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.1
+  - name: justified_refusal_kept_natural
+    metric: refusal.greedy.justified
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.1
+  - name: verifiable_answers_kept
+    metric: chat2.greedy_rp1.1.correct
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.03
+  - name: sampled_answers_kept
+    metric: chat2.studio_default.correct
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.03
+  - name: knowledge_bank_kept
+    metric: mcq.historical1152.calibrated.all
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.01
+  - name: knowledge_bank_lower_bound
+    metric: mcq.historical1152.calibrated.all
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.03
+    bound: interval
+  - name: instruction_following_kept
+    metric: core.instruction_following_accuracy
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.1
+  - name: context_use_kept
+    metric: core.context_retrieval_accuracy
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.1
+  - name: echo_not_worse
+    metric: chat2.greedy_rp1.1.echo
+    arm: B
+    against: A
+    kind: max_delta
+    value: 0.03
+  - name: repetition_not_worse
+    metric: chat2.greedy_rp1.1.repetition
+    arm: B
+    against: A
+    kind: max_delta
+    value: 0.02
+  - name: completion_kept
+    metric: chat2.greedy_rp1.1.finished
+    arm: B
+    against: A
+    kind: min_delta
+    value: -0.03
+  - name: english_perplexity
+    metric: ppl.v2_validation.en
+    arm: B
+    against: A
+    kind: max_ratio
+    value: 1.02
+  - name: russian_perplexity
+    metric: ppl.v2_validation.ru
+    arm: B
+    against: A
+    kind: max_ratio
+    value: 1.02
+  - name: kazakh_perplexity
+    metric: ppl.v2_validation.kk
+    arm: B
+    against: A
+    kind: max_ratio
+    value: 1.02
+  - name: continuation_keeps_v31_language_model
+    metric: ppl.v2_validation.en
+    arm: B
+    against: baseline
+    kind: max_ratio
+    value: 1.1
