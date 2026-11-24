@@ -223,7 +223,7 @@ def summarize_arms(
 
 
 def register(spec: ExperimentSpec, report: dict[str, Any]) -> None:
-    path = Path(spec.output_root).parent / REGISTRY_FILE.name
+    path = Path(spec.output_root) / REGISTRY_FILE.name
     details = {
         "kind": "evaluation",
         "accepted": report["accepted"],

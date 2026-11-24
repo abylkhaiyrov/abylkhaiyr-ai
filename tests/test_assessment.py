@@ -121,7 +121,7 @@ def test_assessment_accepts_only_when_every_registered_gate_passes(
     assert report["arms"]["baseline"][METRIC] == pytest.approx(0.5)
     decision = json.loads((tmp_path / "out" / "evaluation" / "decision.json").read_text())
     assert decision["accepted"] is True
-    registry = load_registry(tmp_path / "registry.jsonl")
+    registry = load_registry(tmp_path / "out" / "registry.jsonl")
     assert registry[-1]["promoted"] is False and registry[-1]["accepted"] is True
     again, replay = outputs_by_call([0.0, 0.0, 0.0])
     assert assess(spec, {"chat_natural": again})["accepted"] and not replay
