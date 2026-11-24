@@ -84,7 +84,12 @@ def cmd_kernels(args: argparse.Namespace) -> int:
 
 def cmd_diagnostics(args: argparse.Namespace) -> int:
     from llm.data.probes import write_diagnostics
+    from llm.data.sft_profile import profile_sft
     from llm.tokenizer.bpe import BPETokenizer
+
+    if args.sft_profile:
+        print(json.dumps(profile_sft(Path(args.sft_profile)), indent=2, ensure_ascii=False))
+        return 0
 
     summary = write_diagnostics(Path(args.output), BPETokenizer.load(args.tokenizer))
     print(json.dumps(summary, indent=2))
@@ -467,6 +472,7 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics = add("diagnostics", cmd_diagnostics)
     diagnostics.add_argument("--output", default="data/diagnostics")
     diagnostics.add_argument("--tokenizer", default="data/tokenizer")
+    diagnostics.add_argument("--sft-profile")
 
     benchmark = add("benchmark", cmd_benchmark)
     add_model_arguments(benchmark)
