@@ -60,6 +60,16 @@ def cmd_experiment(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_kernels(args: argparse.Namespace) -> int:
+    from llm.core.hardware import resolve_device
+    from llm.optimization.kernels import AttentionShape, measure_attention, report
+
+    shape = AttentionShape(args.batch, args.heads, args.kv_heads, args.length, args.head_dim)
+    timings = measure_attention(shape, resolve_device(args.device), args.repeats)
+    print(json.dumps({"shape": shape.__dict__, "variants": report(timings)}, indent=2))
+    return 0
+
+
 def cmd_hardware(args: argparse.Namespace) -> int:
     from llm.core.hardware import detect_hardware
     from llm.core.profiles import PROFILES, available_profiles
@@ -421,6 +431,15 @@ def build_parser() -> argparse.ArgumentParser:
     experiment.add_argument("spec")
     experiment.add_argument("job", nargs="?")
     experiment.add_argument("--active-seconds", type=float)
+
+    kernels = add("kernels", cmd_kernels)
+    kernels.add_argument("--device", default="auto")
+    kernels.add_argument("--batch", type=int, default=8)
+    kernels.add_argument("--heads", type=int, default=6)
+    kernels.add_argument("--kv-heads", type=int, default=2)
+    kernels.add_argument("--length", type=int, default=512)
+    kernels.add_argument("--head-dim", type=int, default=64)
+    kernels.add_argument("--repeats", type=int, default=7)
 
     benchmark = add("benchmark", cmd_benchmark)
     add_model_arguments(benchmark)
