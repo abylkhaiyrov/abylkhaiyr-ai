@@ -147,12 +147,14 @@ def assess(
             )
             check_inputs(baseline, outputs[job])
     results: list[GateResult] = []
+    per_seed: dict[str, list[dict[str, float]]] = {}
     for gate in plan.gates:
         suite = suite_of(baseline, gate.metric)
         candidate = arm_runs(spec, gate.arm, seeds, outputs, baseline)
         reference = arm_runs(spec, gate.against, seeds, outputs, baseline)
         measurement = paired_measurement(reference, candidate, suite, gate.metric, plan.repetitions)
         results.append(judge_gate(gate, measurement))
+        per_seed[gate.name] = seed_differences(seeds, reference, candidate, suite, gate.metric)
     accepted, reasons = decide(results)
     report = {
         "specification": spec_digest(spec),
@@ -164,11 +166,33 @@ def assess(
             {"name": r.gate.name, "passed": r.passed, "observed": r.observed, "detail": r.detail}
             for r in results
         ],
+        "per_seed": per_seed,
         "arms": summarize_arms(spec, seeds, outputs, baseline),
     }
     (directory / "decision.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     register(spec, report)
     return report
+
+
+def seed_differences(
+    seeds: list[int],
+    reference: list[Mapping[str, SuiteOutput]],
+    candidate: list[Mapping[str, SuiteOutput]],
+    suite: str,
+    metric: str,
+) -> list[dict[str, float]]:
+    rows = []
+    for seed, ref, cand in zip(seeds, reference, candidate, strict=True):
+        if metric in ref[suite].metrics and metric in cand[suite].metrics:
+            rows.append(
+                {
+                    "seed": seed,
+                    "reference": ref[suite].metrics[metric],
+                    "candidate": cand[suite].metrics[metric],
+                    "delta": cand[suite].metrics[metric] - ref[suite].metrics[metric],
+                }
+            )
+    return rows
 
 
 def suite_of(baseline: Mapping[str, SuiteOutput], metric: str) -> str:

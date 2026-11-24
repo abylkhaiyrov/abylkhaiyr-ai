@@ -115,6 +115,9 @@ def test_assessment_accepts_only_when_every_registered_gate_passes(
     assert report["accepted"] and report["promoted"] is False
     assert [g["passed"] for g in report["gates"]] == [True, True]
     assert report["arms"]["B"][METRIC] == pytest.approx(1.0)
+    assert report["per_seed"]["improves"] == [
+        {"seed": 1, "reference": 0.5, "candidate": 1.0, "delta": 0.5}
+    ]
     assert report["arms"]["baseline"][METRIC] == pytest.approx(0.5)
     decision = json.loads((tmp_path / "out" / "evaluation" / "decision.json").read_text())
     assert decision["accepted"] is True
