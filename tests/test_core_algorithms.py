@@ -5,6 +5,8 @@ import torch
 from torch.nn import functional
 
 from llm.core.config import ModelConfig
+from llm.core.errors import DataError
+from llm.data.binary import MixtureLoader
 from llm.model.attention import build_attention_mask, reference_attention, repeat_kv, sdpa_attention
 from llm.model.mlp import swiglu
 from llm.model.norm import rms_norm
@@ -181,3 +183,68 @@ def test_float32_model_matches_float64_model_within_tolerance(model_config):
     ids = torch.randint(0, model_config.vocab_size, (2, 12))
     with torch.no_grad():
         assert torch.allclose(single(ids).double(), double(ids), atol=1e-4)
+
+
+class ConstantLoader:
+    def __init__(self, value: int) -> None:
+        self.value = value
+        self.served = 0
+
+    def next_batch(self) -> tuple[torch.Tensor, ...]:
+        self.served += 1
+        return (torch.full((1, 1), self.value),)
+
+    def set_batch_size(self, batch_size: int) -> None:
+        return None
+
+    def state_dict(self) -> dict[str, int]:
+        return {"served": self.served}
+
+    def load_state_dict(self, state: dict[str, int]) -> None:
+        self.served = state["served"]
+
+
+def drawn(loader: MixtureLoader, count: int) -> list[int]:
+    return [int(loader.next_batch()[0]) for _ in range(count)]
+
+
+def test_curriculum_interpolates_linearly_between_start_and_final_weights():
+    groups = {"easy": ConstantLoader(0), "hard": ConstantLoader(1)}
+    mixture = MixtureLoader(
+        groups,
+        {"easy": 0.2, "hard": 0.8},
+        seed=0,
+        start_weights={"easy": 0.9, "hard": 0.1},
+        ramp_batches=100,
+    )
+    assert mixture.probabilities.tolist() == pytest.approx([0.9, 0.1])
+    early = drawn(mixture, 40)
+    mixture.counter = 100
+    assert mixture.probabilities.tolist() == pytest.approx([0.2, 0.8])
+    late = drawn(mixture, 400)
+    assert sum(early) / len(early) < sum(late) / len(late)
+
+
+def test_curriculum_progress_is_restored_with_the_loader_state():
+    def build() -> MixtureLoader:
+        groups = {"easy": ConstantLoader(0), "hard": ConstantLoader(1)}
+        return MixtureLoader(
+            groups,
+            {"easy": 0.2, "hard": 0.8},
+            seed=3,
+            start_weights={"easy": 0.9, "hard": 0.1},
+            ramp_batches=50,
+        )
+
+    uninterrupted = build()
+    expected = drawn(uninterrupted, 80)
+    first = build()
+    head = drawn(first, 30)
+    resumed = build()
+    resumed.load_state_dict(first.state_dict())
+    assert head + drawn(resumed, 50) == expected
+
+
+def test_mixture_rejects_weights_for_unknown_groups():
+    with pytest.raises(DataError):
+        MixtureLoader({"a": ConstantLoader(0)}, {"b": 1.0}, seed=0)
