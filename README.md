@@ -173,7 +173,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Этап 19. Регресс PPL и целостность оценки](docs/stage19_pretraining_regression.md) ·
 [Этап 20. Корпуса A, B и B с replay v2](docs/stage20_pretraining_corpora.md); [регистрация и аудит отказов SFT](docs/stage20_preregistration.md) ·
 [Ядро: единый запуск экспериментов, проверки, профиль](docs/core_refactoring.md) ·
-[Пилот контроля экспозиции отказов v31: регистрация](docs/sft_sampling_preregistration.md), [результат](docs/sft_sampling_results.md).
+[Пилот контроля экспозиции отказов v31: регистрация](docs/sft_sampling_preregistration.md), [результат](docs/sft_sampling_results.md),
+[Фундаментальная диагностика обучения Tiny](docs/fundamental_learning_diagnostics.md).
 
 ## Проверка качества кода
 

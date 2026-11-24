@@ -136,9 +136,9 @@ def status(spec: ExperimentSpec) -> dict[str, Any]:
         "reused": sorted(spec.reuse),
         "budget": asdict(ledger) if ledger else None,
         "limits": spec.limits.model_dump(),
-        "evaluation_suites": [suite.name for suite in spec.evaluation.suites]
-        if spec.evaluation
-        else [],
+        "evaluation_suites": (
+            [suite.name for suite in spec.evaluation.suites] if spec.evaluation else []
+        ),
     }
 
 
