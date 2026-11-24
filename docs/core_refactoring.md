@@ -69,7 +69,7 @@ Attention (`llm kernels`, батч 8, 6 голов, 2 KV-головы, длин�
 | Causal LM | `CausalLMObjective`, `causal_lm_loss_sum`, взвешивание по числу обучаемых токенов | сумма и деление на токены учитывают накопление | `test_math`, `test_training` (накопление эквивалентно большому батчу) |
 | SFT | `ConversationLoader`, маска ассистента `IGNORE_INDEX` | доля токенов отказов зависит от смеси групп (аудит этапа 20) | `test_data`, `test_stage20` (маскирование отказов) |
 | DPO | `DPOObjective`, `dpo_loss`, эталон заморожен | требует эталонной копии в памяти | `test_math`, `test_core_algorithms` |
-| Curriculum | `curriculum_start`, `curriculum_batches` | в смеси групп | `test_mixture` |
+| Curriculum | `curriculum_start`, `curriculum_batches` | в смеси групп | тестов расписания нет (`test_data` проверяет только порядок примеров математики); пробел остаётся |
 | Смесь данных | `MixtureLoader` с весами | повтор малых групп по эпохам | `test_mixture`, аудит этапа 20 |
 | LR | `learning_rate_at`: прогрев, косинус до `min_lr_ratio` | возобновление по шагу | `test_math`, `test_stage19` |
 | Weight decay | по размерности параметра (матрицы да, нормализации нет) | совпадает с torch AdamW | `test_math` |

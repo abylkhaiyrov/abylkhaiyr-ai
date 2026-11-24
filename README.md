@@ -171,7 +171,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Этап 17. Ёмкость модели и качество данных](docs/stage17_capacity_scaling.md) ·
 [Этап 18. Балансировка корпуса и семантическое обобщение](docs/stage18_corpus_quality.md) ·
 [Этап 19. Регресс PPL и целостность оценки](docs/stage19_pretraining_regression.md) ·
-[Этап 20. Корпуса A, B и B с replay v2](docs/stage20_pretraining_corpora.md); [регистрация и аудит отказов SFT](docs/stage20_preregistration.md).
+[Этап 20. Корпуса A, B и B с replay v2](docs/stage20_pretraining_corpora.md); [регистрация и аудит отказов SFT](docs/stage20_preregistration.md) ·
+[Ядро: единый запуск экспериментов, проверки, профиль](docs/core_refactoring.md).
 
 ## Проверка качества кода
 
