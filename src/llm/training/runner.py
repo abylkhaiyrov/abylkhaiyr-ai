@@ -210,7 +210,7 @@ def build_trainer(config: ExperimentConfig, resume: bool) -> Trainer:
     )
     if train.init_from and train.restore_optimizer and not resume:
         source = CheckpointManager(train.init_from, keep=1).latest_valid() or Path(train.init_from)
-        CheckpointManager.load_optimizer_state(source, trainer.optimizer)
+        CheckpointManager.load_optimizer_state(source, trainer.optimizer, trainer.model)
         apply_weight_decay(trainer.optimizer, train.optimizer.weight_decay)
     if resume:
         trainer.resume()

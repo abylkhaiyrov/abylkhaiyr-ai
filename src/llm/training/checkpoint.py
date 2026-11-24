@@ -183,6 +183,7 @@ class CheckpointManager:
         save_model_weights(model, temporary / MODEL_FILE)
         payload = {
             "optimizer": optimizer.state_dict(),
+            "optimizer_layout": optimizer_layout(model, optimizer),
             "scaler": scaler.state_dict() if scaler is not None else None,
             "state": state.__dict__,
             "loader": loader_state,
@@ -295,10 +296,15 @@ class CheckpointManager:
         return None
 
     @staticmethod
-    def load_optimizer_state(path: Path, optimizer: torch.optim.Optimizer) -> None:
+    def load_optimizer_state(
+        path: Path, optimizer: torch.optim.Optimizer, model: nn.Module | None = None
+    ) -> None:
         CheckpointManager.verify(path)
         payload = load_training_state(path / STATE_FILE)
-        optimizer.load_state_dict(align_optimizer_state(payload["optimizer"], optimizer))
+        saved = align_optimizer_state(
+            payload["optimizer"], optimizer, model, payload.get("optimizer_layout")
+        )
+        optimizer.load_state_dict(saved)
 
     def restore(
         self,
@@ -316,25 +322,94 @@ class CheckpointManager:
         payload = load_training_state(path / STATE_FILE)
         load_model_weights(model, path / MODEL_FILE)
         if optimizer is not None:
-            optimizer.load_state_dict(align_optimizer_state(payload["optimizer"], optimizer))
+            saved = align_optimizer_state(
+                payload["optimizer"], optimizer, model, payload.get("optimizer_layout")
+            )
+            optimizer.load_state_dict(saved)
         if scaler is not None and payload["scaler"] is not None:
             scaler.load_state_dict(payload["scaler"])
         restore_rng_state(payload["rng"], device)
         return TrainingState(**payload["state"]), payload["loader"]
 
 
-def align_optimizer_state(
-    saved: dict[str, Any], optimizer: torch.optim.Optimizer
+def optimizer_layout(model: nn.Module, optimizer: torch.optim.Optimizer) -> list[list[str]]:
+    names = {id(parameter): name for name, parameter in model.named_parameters()}
+    return [
+        [names[id(parameter)] for parameter in group["params"]] for group in optimizer.param_groups
+    ]
+
+
+def state_shape(saved: dict[str, Any], parameter_id: int) -> tuple[int, ...] | None:
+    entry = saved["state"].get(parameter_id)
+    return tuple(entry["exp_avg"].shape) if entry is not None else None
+
+
+def match_by_shape(
+    saved: dict[str, Any], remaining: list[int], current: dict[str, Any]
+) -> int | None:
+    expected = [tuple(parameter.shape) for parameter in current["params"]]
+    for index in remaining:
+        group = saved["param_groups"][index]
+        if len(group["params"]) != len(expected):
+            continue
+        shapes = [state_shape(saved, parameter_id) for parameter_id in group["params"]]
+        if all(
+            shape is None or shape == want for shape, want in zip(shapes, expected, strict=True)
+        ):
+            return index
+    return None
+
+
+def remap_by_names(
+    saved: dict[str, Any],
+    layout: list[list[str]],
+    optimizer: torch.optim.Optimizer,
+    model: nn.Module,
 ) -> dict[str, Any]:
-    remaining = list(saved["param_groups"])
+    owner = {
+        name: parameter_id
+        for names, group in zip(layout, saved["param_groups"], strict=True)
+        for name, parameter_id in zip(names, group["params"], strict=True)
+    }
+    saved_group = {name: index for index, names in enumerate(layout) for name in names}
+    identity = {id(parameter): name for name, parameter in model.named_parameters()}
+    state: dict[int, Any] = {}
+    groups = []
+    counter = 0
+    for current in optimizer.param_groups:
+        defaults = {key: value for key, value in current.items() if key != "params"}
+        names = [identity[id(parameter)] for parameter in current["params"]]
+        if any(name not in owner for name in names):
+            raise CheckpointError("optimizer state does not match the model parameters")
+        reference = saved["param_groups"][saved_group[names[0]]]
+        ids = []
+        for name in names:
+            if owner[name] in saved["state"]:
+                state[counter] = saved["state"][owner[name]]
+            ids.append(counter)
+            counter += 1
+        carried = {key: value for key, value in reference.items() if key != "params"}
+        groups.append({**defaults, **carried, "params": ids})
+    return {**saved, "state": state, "param_groups": groups}
+
+
+def align_optimizer_state(
+    saved: dict[str, Any],
+    optimizer: torch.optim.Optimizer,
+    model: nn.Module | None = None,
+    layout: list[list[str]] | None = None,
+) -> dict[str, Any]:
+    if model is not None and layout is not None:
+        return remap_by_names(saved, layout, optimizer, model)
+    remaining = list(range(len(saved["param_groups"])))
     ordered = []
     for current in optimizer.param_groups:
-        size = len(current["params"])
-        index = next((i for i, group in enumerate(remaining) if len(group["params"]) == size), None)
+        index = match_by_shape(saved, remaining, current)
         if index is None:
             raise CheckpointError("optimizer state does not match the model parameter groups")
+        remaining.remove(index)
         defaults = {key: value for key, value in current.items() if key != "params"}
-        ordered.append({**defaults, **remaining.pop(index)})
+        ordered.append({**defaults, **saved["param_groups"][index]})
     return {**saved, "param_groups": ordered}
 
 
