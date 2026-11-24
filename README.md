@@ -172,7 +172,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Этап 18. Балансировка корпуса и семантическое обобщение](docs/stage18_corpus_quality.md) ·
 [Этап 19. Регресс PPL и целостность оценки](docs/stage19_pretraining_regression.md) ·
 [Этап 20. Корпуса A, B и B с replay v2](docs/stage20_pretraining_corpora.md); [регистрация и аудит отказов SFT](docs/stage20_preregistration.md) ·
-[Ядро: единый запуск экспериментов, проверки, профиль](docs/core_refactoring.md).
+[Ядро: единый запуск экспериментов, проверки, профиль](docs/core_refactoring.md) ·
+[Пилот контроля экспозиции отказов v31: регистрация](docs/sft_sampling_preregistration.md), [результат](docs/sft_sampling_results.md).
 
 ## Проверка качества кода
 
