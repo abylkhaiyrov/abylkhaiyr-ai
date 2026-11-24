@@ -19,6 +19,7 @@ data/tokenizer/
 data/*.log
 checkpoints/
 experiments/
+!configs/experiments/
 data/v2/corpus/
 data/v2/sft/
 data/v2/sft_groups/

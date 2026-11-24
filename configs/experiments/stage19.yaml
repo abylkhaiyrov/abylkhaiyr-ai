@@ -1,0 +1,86 @@
+name: stage19
+base_config: configs/tiny_v2.yaml
+initial_checkpoint: checkpoints/tiny_v2/step-00006000
+job_template: "{arm}"
+seeds: [1]
+token_budget: 4997120
+tokens_per_step: 16384
+output_root: experiments/stage19
+checkpoint_root: checkpoints/stage19
+state_file: lr_campaign.json
+train:
+  restore_optimizer: false
+  data_dir: data/stage18/a
+  dataset_version: stage18-a
+  mixture: {}
+  micro_batch_size: 8
+  gradient_accumulation_steps: 4
+  dynamic_batch_size: true
+  min_micro_batch_size: 2
+  num_threads: 4
+  eval_interval: 61
+  eval_batches: 6
+  log_interval: 10
+  checkpoint_interval: 61
+  protected_steps: [305]
+  keep_checkpoints: 2
+  checkpoint_alias: null
+  fast_causal: true
+  max_ram_fraction: 0.90
+  min_free_disk_gb: 20.0
+optimizer:
+  learning_rate: 5.0e-5
+  warmup_steps: 10
+  min_lr_ratio: 1.0
+  foreach: true
+arms:
+  L1:
+    optimizer: {learning_rate: 5.0e-5, min_lr_ratio: 1.0}
+  L2:
+    optimizer: {learning_rate: 5.0e-5, min_lr_ratio: 1.0}
+    train: {restore_optimizer: true}
+  L3:
+    optimizer: {learning_rate: 1.0e-4, min_lr_ratio: 1.0}
+  L4:
+    optimizer: {learning_rate: 2.0e-4, min_lr_ratio: 0.25}
+frozen_inputs:
+  corpus: data/stage18/manifest.json
+  diagnosis: experiments/stage18/diagnostic.jsonl
+  generation: experiments/stage18/free_cases.jsonl
+  overlap_audit: experiments/stage18/verified_overlap.json
+  historical_diagnostic: experiments/stage17/diagnostic_v2.jsonl
+  historical_generation: configs/natural_eval_v4.jsonl
+  unigram: data/v4_expanded/tokens/train.bin
+  initial_weights: checkpoints/tiny_v2/step-00006000/model.safetensors
+  initial_metadata: checkpoints/tiny_v2/step-00006000/meta.json
+  tokenizer: data/tokenizer/tokenizer.json
+  registration: docs/stage19_preregistration.md
+lock_file: configs/stage18_pilot_lock.json
+lock_labels:
+  - corpus
+  - diagnosis
+  - generation
+  - overlap_audit
+  - historical_diagnostic
+  - historical_generation
+  - unigram
+  - initial_weights
+  - initial_metadata
+  - tokenizer
+corpus:
+  manifest: data/stage18/manifest.json
+  root: data/stage18
+  arms: [a, b]
+  overlap_audit: experiments/stage18/verified_overlap.json
+calibration_file: experiments/stage18/profile.json
+evaluation_suites: [perplexity_grid, diagnostic_controls_v3]
+resources:
+  ram_margin_gib: 0.75
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+limits:
+  active_seconds: 1800
+  absolute_seconds: 7200
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
