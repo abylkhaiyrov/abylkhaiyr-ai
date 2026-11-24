@@ -22,8 +22,8 @@ from llm.tokenizer.bpe import Message
 NAME = re.compile(r"[A-ZА-ЯӘҒҚҢӨҰҮҺІ][\w-]{3,}|\d+")
 SENTENCE_END = ".!?\n"
 MAX_NEW_TOKENS = 40
-ANSWERABLE_KINDS = ("ctx_fact", "known_entity")
-UNANSWERABLE_KINDS = ("ctx_missing", "fictional_entity")
+ANSWERABLE_KINDS = ("ctx_fact", "ctx_fact_qfirst", "known_entity")
+UNANSWERABLE_KINDS = ("ctx_missing", "ctx_missing_qfirst", "fictional_entity")
 
 
 def load_probes(path: str) -> list[Probe]:

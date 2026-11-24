@@ -211,3 +211,18 @@ def test_probe_suite_reports_free_form_choice_and_answerability_metrics(
         set(record) >= {"prompt", "expects", "answer", "finish_reason", "check"}
         for record in output.records
     )
+
+
+def test_every_context_probe_exists_in_both_prompt_layouts():
+    probes = {probe.id: probe for probe in build_probes(build_world())}
+    flat = [
+        probe
+        for probe in probes.values()
+        if probe.kind.startswith("ctx_") and not probe.kind.endswith("_qfirst")
+    ]
+    assert flat
+    for probe in flat:
+        twin = probes[probe.id.replace(probe.kind, probe.kind + "_qfirst", 1)]
+        assert twin.expects == probe.expects and twin.accept == probe.accept
+        question, document = twin.prompt.split("\n\n", 1)
+        assert "\n" not in question and probe.prompt == f"{document} {question}"

@@ -228,3 +228,28 @@ def test_assessment_stops_before_scoring_when_evaluation_overlaps_training(
     with pytest.raises(ConfigError, match="overlap"):
         assess(type(spec).model_validate(payload), {"chat_natural": suite})
     assert not calls
+
+
+def test_cached_results_are_discarded_when_an_evaluation_file_changes(
+    tmp_path, tokenizer, model_config, monkeypatch
+):
+    spec = evaluated_spec(
+        tmp_path,
+        tokenizer,
+        model_config,
+        monkeypatch,
+        [gate_payload("g", "B", "A", "min_delta", 0.0)],
+    )
+    questions = tmp_path / "bank.jsonl"
+    questions.write_text("one\n", encoding="utf-8")
+    payload = spec.model_dump(mode="json")
+    payload["evaluation"]["suites"][0]["options"] = {"cases": str(questions)}
+    changed = type(spec).model_validate(payload)
+    suite, calls = outputs_by_call([0.5] * 12)
+    assess(changed, {"chat_natural": suite})
+    first = len(calls)
+    assess(changed, {"chat_natural": suite})
+    assert len(calls) == first
+    questions.write_text("two\n", encoding="utf-8")
+    assess(changed, {"chat_natural": suite})
+    assert len(calls) == 2 * first

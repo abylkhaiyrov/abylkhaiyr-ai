@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from llm.core.checksums import file_sha256
 from llm.core.errors import ConfigError
 from llm.evaluation.campaign_suites import SUITES, Suite
 from llm.evaluation.capacity_metrics import paired_summary
@@ -23,6 +24,21 @@ from llm.training.spec import ExperimentSpec, spec_digest
 
 def digest(payload: object) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def option_files(value: object) -> dict[str, str]:
+    found: dict[str, str] = {}
+    if isinstance(value, str):
+        path = Path(value)
+        if path.is_file():
+            found[value] = file_sha256(path)
+    elif isinstance(value, Mapping):
+        for item in value.values():
+            found.update(option_files(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.update(option_files(item))
+    return found
 
 
 def fingerprint(checkpoint: str) -> str:
@@ -43,7 +59,13 @@ def evaluate_checkpoint(
     results: dict[str, SuiteOutput] = {}
     engine = None
     for suite in plan.suites:
-        stamp = digest({"weights": weights, "suite": suite.model_dump()})
+        stamp = digest(
+            {
+                "weights": weights,
+                "suite": suite.model_dump(),
+                "files": option_files(suite.options),
+            }
+        )
         path = directory / f"{label}.{suite.key}.json"
         if path.exists():
             saved = json.loads(path.read_text(encoding="utf-8"))

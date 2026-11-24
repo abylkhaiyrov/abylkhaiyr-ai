@@ -244,6 +244,13 @@ def fact_probes(world: World, rng: random.Random) -> list[Probe]:
     return probes
 
 
+FORMATS = (("", "{doc} {question}"), ("_qfirst", "{question}\n\n{doc}"))
+
+
+def arranged(text: str, question: str) -> list[tuple[str, str]]:
+    return [(suffix, layout.format(doc=text, question=question)) for suffix, layout in FORMATS]
+
+
 def with_suffix(language: str, prompt: str) -> str:
     return f"{prompt} {ANSWER_SUFFIX[language]}"
 
@@ -284,36 +291,42 @@ def context_pair(
     language: str, index: int, text: str, facts: Sequence[Fact], world: World, rng: random.Random
 ) -> list[Probe]:
     first = facts[0]
-    river, founder = facts[0], facts[1]
-    target = river if index % 2 == 0 else founder
+    target = facts[0] if index % 2 == 0 else facts[1]
     rival = facts[3] if index % 2 == 0 else facts[4]
     question = QUESTIONS[language][target.relation][HELD_OUT_QUESTION].format(E=first.entity)
     options, answer = choices(rng, target.value, world.values[target.relation])
     missing = QUESTIONS[language]["mountain"][HELD_OUT_QUESTION].format(E=first.entity)
-    return [
-        probe(
-            f"ctx_fact/{language}/{index}/{target.relation}",
-            "ctx_fact",
-            3,
-            language,
-            target.relation,
-            f"{text} {question}",
-            ANSWER,
-            target.value,
-            options,
-            answer,
-            rejected=(rival.value,),
-        ),
-        probe(
-            f"ctx_missing/{language}/{index}/mountain",
-            "ctx_missing",
-            4,
-            language,
-            "mountain",
-            f"{text} {missing}",
-            REFUSAL,
-        ),
-    ]
+    probes = []
+    for (suffix, asked), (_, unasked) in zip(
+        arranged(text, question), arranged(text, missing), strict=True
+    ):
+        probes.append(
+            probe(
+                f"ctx_fact{suffix}/{language}/{index}/{target.relation}",
+                f"ctx_fact{suffix}",
+                3,
+                language,
+                target.relation,
+                asked,
+                ANSWER,
+                target.value,
+                options,
+                answer,
+                rejected=(rival.value,),
+            )
+        )
+        probes.append(
+            probe(
+                f"ctx_missing{suffix}/{language}/{index}/mountain",
+                f"ctx_missing{suffix}",
+                4,
+                language,
+                "mountain",
+                unasked,
+                REFUSAL,
+            )
+        )
+    return probes
 
 
 def context_semantics(
@@ -324,19 +337,6 @@ def context_semantics(
     negated = NEGATED_STATEMENT[language].format(E=entity, W=wrong, X=right)
     question = QUESTIONS[language]["river"][HELD_OUT_QUESTION].format(E=entity)
     options, answer = choices(rng, right, world.values["river"])
-    negation = probe(
-        f"ctx_negation/{language}/{index}",
-        "ctx_negation",
-        3,
-        language,
-        "negation",
-        f"{negated} {question}",
-        ANSWER,
-        right,
-        options,
-        answer,
-        rejected=(wrong,),
-    )
     causes = CAUSES[language]
     true_cause, other_cause = rng.sample(range(len(causes)), 2)
     first, second = facts[0].entity, facts[3].entity
@@ -346,21 +346,43 @@ def context_semantics(
             CAUSE_STATEMENT[language].format(E=second, C=causes[other_cause][0]),
         ]
     )
+    cause_question = CAUSE_QUESTION[language].format(E=first)
     cause_options = tuple(cause for cause, _ in causes)
-    cause = probe(
-        f"ctx_cause/{language}/{index}",
-        "ctx_cause",
-        3,
-        language,
-        "cause",
-        f"{text} {CAUSE_QUESTION[language].format(E=first)}",
-        ANSWER,
-        causes[true_cause][1],
-        cause_options,
-        true_cause,
-        rejected=(causes[other_cause][1],),
-    )
-    return [negation, cause]
+    probes = []
+    for (suffix, negation_prompt), (_, cause_prompt) in zip(
+        arranged(negated, question), arranged(text, cause_question), strict=True
+    ):
+        probes.append(
+            probe(
+                f"ctx_negation{suffix}/{language}/{index}",
+                f"ctx_negation{suffix}",
+                3,
+                language,
+                "negation",
+                negation_prompt,
+                ANSWER,
+                right,
+                options,
+                answer,
+                rejected=(wrong,),
+            )
+        )
+        probes.append(
+            probe(
+                f"ctx_cause{suffix}/{language}/{index}",
+                f"ctx_cause{suffix}",
+                3,
+                language,
+                "cause",
+                cause_prompt,
+                ANSWER,
+                causes[true_cause][1],
+                cause_options,
+                true_cause,
+                rejected=(causes[other_cause][1],),
+            )
+        )
+    return probes
 
 
 def entity_probes(world: World) -> list[Probe]:
