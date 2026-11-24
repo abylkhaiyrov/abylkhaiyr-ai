@@ -174,7 +174,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Этап 20. Корпуса A, B и B с replay v2](docs/stage20_pretraining_corpora.md); [регистрация и аудит отказов SFT](docs/stage20_preregistration.md) ·
 [Ядро: единый запуск экспериментов, проверки, профиль](docs/core_refactoring.md) ·
 [Пилот контроля экспозиции отказов v31: регистрация](docs/sft_sampling_preregistration.md), [результат](docs/sft_sampling_results.md),
-[Фундаментальная диагностика обучения Tiny](docs/fundamental_learning_diagnostics.md).
+[Фундаментальная диагностика обучения Tiny](docs/fundamental_learning_diagnostics.md),
+[Grounded Context: регистрация](docs/grounded_context_preregistration.md), [результат (отрицательный)](docs/grounded_context_results.md).
 
 ## Проверка качества кода
 
