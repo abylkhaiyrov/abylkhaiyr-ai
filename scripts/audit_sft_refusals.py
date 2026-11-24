@@ -9,11 +9,12 @@ from typing import Any
 
 import numpy as np
 
-from llm.core.config import load_experiment_config
+from llm.core.config import ExperimentConfig, load_experiment_config
 from llm.data.binary import IGNORE_INDEX, read_jsonl, with_extension
 from llm.data.refusals import DETECTORS, KINDS, assistant_answers, phrasing_counts
 from llm.tokenizer.bpe import BPETokenizer, Message
 from llm.training.runner import _build_loaders
+from llm.training.spec import load_spec
 
 
 def encode(row: dict, tokenizer: BPETokenizer, masked: str | None) -> tuple[list[int], list[int]]:
@@ -74,8 +75,9 @@ def group_statistics(directory: Path, tokenizer: BPETokenizer) -> dict[str, Any]
     return report
 
 
-def exposed_tokens(config_path: Path, root: Path, tokenizer: BPETokenizer, steps: int) -> int:
-    config = load_experiment_config(config_path)
+def exposed_tokens(
+    config: ExperimentConfig, root: Path, tokenizer: BPETokenizer, steps: int
+) -> int:
     config = config.model_copy(
         update={"train": config.train.model_copy(update={"data_dir": str(root)})}
     )
@@ -116,13 +118,15 @@ def masked_root(base: Path, scratch: Path, tokenizer: BPETokenizer, kind: str) -
     return scratch
 
 
-def exposure(config_path: Path, base: Path, tokenizer: BPETokenizer, steps: int) -> dict[str, Any]:
-    total = exposed_tokens(config_path, base, tokenizer, steps)
+def exposure(
+    config: ExperimentConfig, base: Path, tokenizer: BPETokenizer, steps: int
+) -> dict[str, Any]:
+    total = exposed_tokens(config, base, tokenizer, steps)
     result: dict[str, Any] = {"assistant_tokens_seen": total, "steps": steps, "kinds": {}}
     for kind in KINDS:
         with tempfile.TemporaryDirectory() as scratch:
             hidden = exposed_tokens(
-                config_path,
+                config,
                 masked_root(base, Path(scratch) / "root", tokenizer, kind),
                 tokenizer,
                 steps,
@@ -134,17 +138,23 @@ def exposure(config_path: Path, base: Path, tokenizer: BPETokenizer, steps: int)
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=Path("configs/tiny_v31_sft_stage11.yaml"))
+    parser.add_argument("--spec", type=Path)
+    parser.add_argument("--job")
     parser.add_argument("--data", type=Path, default=Path("data/v3_1"))
     parser.add_argument("--tokenizer", type=Path, default=Path("data/tokenizer"))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     tokenizer = BPETokenizer.load(args.tokenizer)
-    config = load_experiment_config(args.config)
+    config = (
+        load_spec(args.spec).job_configuration(args.job)
+        if args.spec
+        else load_experiment_config(args.config)
+    )
     report = {
         "groups": group_statistics(args.data / "sft_groups", tokenizer),
         "mixture": dict(config.train.mixture),
         "replay_fraction": config.train.sft_replay_fraction,
-        "exposure": exposure(args.config, args.data, tokenizer, config.train.max_steps),
+        "exposure": exposure(config, args.data, tokenizer, config.train.max_steps),
     }
     args.output.write_text(
         json.dumps(report, indent=1, ensure_ascii=False) + "\n", encoding="utf-8"

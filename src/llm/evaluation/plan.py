@@ -15,7 +15,12 @@ REPETITIONS = 10_000
 
 class SuiteSpec(StrictModel):
     name: str
+    label: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def key(self) -> str:
+        return self.label or self.name
 
 
 class EvaluationPlan(StrictModel):
@@ -32,4 +37,7 @@ class EvaluationPlan(StrictModel):
         unknown = [suite.name for suite in self.suites if suite.name not in SUITES]
         if unknown:
             raise ValueError(f"unknown evaluation suite: {', '.join(unknown)}")
+        labels = [suite.key for suite in self.suites]
+        if len(labels) != len(set(labels)):
+            raise ValueError("evaluation suite labels must be unique")
         return self

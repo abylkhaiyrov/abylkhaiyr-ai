@@ -126,7 +126,7 @@ class ExperimentSpec(StrictModel):
             update["data_dir"] = arm.data_dir
         if arm.dataset_version is not None:
             update["dataset_version"] = arm.dataset_version
-        if arm.mixture or "mixture" not in update:
+        if arm.mixture:
             update["mixture"] = dict(arm.mixture)
         try:
             train = TrainConfig.model_validate({**base.train.model_dump(), **update})

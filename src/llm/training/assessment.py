@@ -44,11 +44,11 @@ def evaluate_checkpoint(
     engine = None
     for suite in plan.suites:
         stamp = digest({"weights": weights, "suite": suite.model_dump()})
-        path = directory / f"{label}.{suite.name}.json"
+        path = directory / f"{label}.{suite.key}.json"
         if path.exists():
             saved = json.loads(path.read_text(encoding="utf-8"))
             if saved["stamp"] == stamp:
-                results[suite.name] = SuiteOutput.from_json(saved["output"])
+                results[suite.key] = SuiteOutput.from_json(saved["output"])
                 continue
         if engine is None:
             engine = load_engine(checkpoint, plan.tokenizer, plan.device)
@@ -58,7 +58,7 @@ def evaluate_checkpoint(
             + "\n",
             encoding="utf-8",
         )
-        results[suite.name] = output
+        results[suite.key] = output
     return results
 
 
@@ -148,7 +148,7 @@ def assess(
             check_inputs(baseline, outputs[job])
     results: list[GateResult] = []
     for gate in plan.gates:
-        suite = suite_of(plan, gate.metric)
+        suite = suite_of(baseline, gate.metric)
         candidate = arm_runs(spec, gate.arm, seeds, outputs, baseline)
         reference = arm_runs(spec, gate.against, seeds, outputs, baseline)
         measurement = paired_measurement(reference, candidate, suite, gate.metric, plan.repetitions)
@@ -171,19 +171,11 @@ def assess(
     return report
 
 
-def suite_of(plan: EvaluationPlan, metric: str) -> str:
-    prefix = metric.split(".", 1)[0]
-    mapping = {
-        "ppl": "perplexity",
-        "mcq": "mcq",
-        "core": "core",
-        "chat": "chat_natural",
-        "refusal": "refusal_behavior",
-    }
-    name = mapping.get(prefix, prefix)
-    if name not in {suite.name for suite in plan.suites}:
-        raise ConfigError(f"gate metric {metric} belongs to an unregistered suite")
-    return name
+def suite_of(baseline: Mapping[str, SuiteOutput], metric: str) -> str:
+    owners = [key for key, output in baseline.items() if metric in output.metrics]
+    if len(owners) != 1:
+        raise ConfigError(f"gate metric {metric} comes from an unregistered suite")
+    return owners[0]
 
 
 def summarize_arms(
@@ -222,3 +214,24 @@ def register(spec: ExperimentSpec, report: dict[str, Any]) -> None:
         if gate["observed"] is not None
     }
     record_experiment(f"{spec.name}-evaluation", details, results, path)
+
+
+def fix_baseline(spec: ExperimentSpec, suites: Mapping[str, Suite] = SUITES) -> dict[str, Any]:
+    plan = spec.evaluation
+    if plan is None:
+        raise ConfigError("the experiment declares no evaluation")
+    if plan.independence is not None:
+        verify_independence(plan.independence)
+    directory = Path(spec.output_root) / "evaluation"
+    results = evaluate_checkpoint(BASELINE, plan.baseline, plan, directory, suites)
+    manifest = {
+        "specification": spec_digest(spec),
+        "checkpoint": plan.baseline,
+        "weights": fingerprint(plan.baseline),
+        "metrics": {key: output.metrics for key, output in results.items()},
+        "inputs": {key: output.inputs for key, output in results.items()},
+    }
+    (directory / "baseline_manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    return manifest

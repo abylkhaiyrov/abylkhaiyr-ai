@@ -10,6 +10,7 @@ import torch
 from torch import Tensor
 
 from llm.core.errors import DataError
+from llm.data.sampling import ExposureCap
 from llm.tokenizer.bpe import BPETokenizer, Message
 
 UINT16_LIMIT = 1 << 16
@@ -178,6 +179,7 @@ class ConversationLoader:
         shuffle: bool = True,
         pad_multiple: int = PAD_MULTIPLE,
         bucket_window: int = 0,
+        exposure_cap: ExposureCap | None = None,
     ) -> None:
         prefix = Path(prefix)
         self.ids = np.memmap(with_extension(prefix, ".ids.bin"), dtype=dtype, mode="r")
@@ -194,6 +196,9 @@ class ConversationLoader:
         self.bucket_window = bucket_window
         self.seed = seed
         self.shuffle = shuffle
+        self.exposure_cap = (
+            exposure_cap if exposure_cap is not None and exposure_cap.active else None
+        )
         self.epoch = 0
         self.cursor = 0
         self.order = self._make_order()
@@ -201,6 +206,8 @@ class ConversationLoader:
     def _make_order(self) -> np.ndarray:
         if not self.shuffle:
             return np.arange(self.count)
+        if self.exposure_cap is not None:
+            return self.exposure_cap.order(self.epoch)
         rng = np.random.default_rng(self.seed + self.epoch)
         order = rng.permutation(self.count)
         return self._bucketed(order, rng) if self.bucket_window else order
@@ -223,7 +230,7 @@ class ConversationLoader:
     def next_batch(self) -> tuple[Tensor, ...]:
         picked: list[int] = []
         while len(picked) < self.batch_size:
-            if self.cursor >= self.count:
+            if self.cursor >= len(self.order):
                 self.epoch += 1
                 self.cursor = 0
                 self.order = self._make_order()
@@ -260,7 +267,7 @@ class PackedConversationLoader(ConversationLoader):
         self.carry: int | None = None
 
     def _take(self) -> int:
-        if self.cursor >= self.count:
+        if self.cursor >= len(self.order):
             self.epoch += 1
             self.cursor = 0
             self.order = self._make_order()

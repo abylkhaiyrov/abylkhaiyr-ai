@@ -13,6 +13,7 @@ checkpoint_root: checkpoints/stage20
 state_file: campaign.json
 train:
   restore_optimizer: false
+  mixture: {}
   micro_batch_size: 8
   gradient_accumulation_steps: 4
   dynamic_batch_size: true

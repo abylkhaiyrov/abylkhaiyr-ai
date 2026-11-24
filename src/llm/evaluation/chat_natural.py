@@ -123,10 +123,11 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
     cases = list(read_jsonl(path))
     output = SuiteOutput(inputs={str(path): file_sha256(path)})
     seeds = tuple(options.get("seeds", SEEDS))
+    tag = options.get("tag", "chat")
     for label in options.get("configs", list(CONFIGS)):
         runs = runs_for(engine, cases, CONFIGS[label], seeds)
         for key in RATE_KEYS:
-            output.add_rate(f"chat.{label}.{key}", [outcomes(rows, key) for rows in runs])
+            output.add_rate(f"{tag}.{label}.{key}", [outcomes(rows, key) for rows in runs])
         repetition = [row["repetition"] for rows in runs for row in rows]
-        output.metrics[f"chat.{label}.repetition"] = sum(repetition) / len(repetition)
+        output.metrics[f"{tag}.{label}.repetition"] = sum(repetition) / len(repetition)
     return output

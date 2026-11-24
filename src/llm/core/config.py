@@ -122,6 +122,10 @@ class OptimizerConfig(StrictModel):
     foreach: bool = False
 
 
+class SamplerConfig(StrictModel):
+    refusal_share_cap: float | None = Field(default=None, gt=0, lt=1)
+
+
 class TrainConfig(StrictModel):
     stage: Literal["pretrain", "sft", "dpo"] = "pretrain"
     data_dir: str = "data/processed"
@@ -164,6 +168,7 @@ class TrainConfig(StrictModel):
     dataset_version: str | None = None
     sft_replay_dir: str | None = None
     sft_replay_fraction: float = Field(default=0.0, ge=0, lt=1)
+    sampler: SamplerConfig = Field(default_factory=SamplerConfig)
     optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
 
 

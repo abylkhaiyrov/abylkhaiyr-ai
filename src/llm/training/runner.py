@@ -20,6 +20,7 @@ from llm.data.binary import (
     token_dtype,
 )
 from llm.data.preference import PreferenceLoader
+from llm.data.sampling import ExposureCap, capped_labels
 from llm.model.transformer import CausalLM
 from llm.optimization.memory import configure_threads
 from llm.tokenizer.bpe import BPETokenizer
@@ -73,6 +74,7 @@ def _conversation_mixture(
             pack = train is not None and train.pack_sequences
             loader_class = PackedConversationLoader if pack else ConversationLoader
             window = train.bucket_window if train is not None and not pack else 0
+            cap = exposure_cap(prefix, train, split, seed)
             loaders[name] = loader_class(
                 prefix,
                 dtype,
@@ -83,6 +85,7 @@ def _conversation_mixture(
                 shuffle,
                 pad_multiple=train.pad_multiple if train is not None else PAD_MULTIPLE,
                 bucket_window=window,
+                exposure_cap=cap,
             )
     start = None
     if train is not None and train.curriculum_start and split == "train":
@@ -91,6 +94,14 @@ def _conversation_mixture(
     return MixtureLoader(
         loaders, {name: weights[name] for name in loaders}, seed, start, ramp if start else 0
     )
+
+
+def exposure_cap(
+    prefix: Path, train: TrainConfig | None, split: str, seed: int
+) -> ExposureCap | None:
+    if train is None or split != "train" or train.sampler.refusal_share_cap is None:
+        return None
+    return ExposureCap(capped_labels(prefix), train.sampler.refusal_share_cap, seed)
 
 
 def _with_replay(

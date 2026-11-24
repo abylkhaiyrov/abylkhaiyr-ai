@@ -10,7 +10,7 @@ from typing import Any
 import torch
 
 from llm.core.errors import ConfigError
-from llm.training.assessment import assess
+from llm.training.assessment import assess, fix_baseline
 from llm.training.budget import BudgetClock, TimeLedger
 from llm.training.checkpoint import CheckpointManager
 from llm.training.preflight import frozen_hashes, verify_corpus, verify_lock
@@ -144,3 +144,7 @@ def status(spec: ExperimentSpec) -> dict[str, Any]:
 
 def open_spec(path: str) -> tuple[ExperimentSpec, Path]:
     return load_spec(path), Path(path)
+
+
+def evaluate_baseline(spec: ExperimentSpec) -> dict[str, Any]:
+    return fix_baseline(spec)
