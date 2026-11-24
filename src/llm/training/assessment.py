@@ -155,7 +155,9 @@ def assess(
         measurement = paired_measurement(reference, candidate, suite, gate.metric, plan.repetitions)
         results.append(judge_gate(gate, measurement))
         per_seed[gate.name] = seed_differences(seeds, reference, candidate, suite, gate.metric)
-    accepted, reasons = decide(results)
+    accepted, reasons = (
+        decide(results) if results else (None, ["no gates registered: diagnostic run"])
+    )
     report = {
         "specification": spec_digest(spec),
         "seeds": seeds,

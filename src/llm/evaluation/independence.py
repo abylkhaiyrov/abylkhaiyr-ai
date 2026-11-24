@@ -63,12 +63,20 @@ def overlaps(check: IndependenceCheck) -> list[Overlap]:
     found = []
     for path in expand(check.evaluation):
         for row in read_jsonl(path):
-            question = row["question"] if "question" in row else row["messages"][-1]["content"]
+            question = question_of(row)
             tokens = words(question)
             parts = shingles(tokens)
             fraction = len(parts & grams) / len(parts) if parts else 0.0
             found.append(Overlap(str(path), question, fraction, tuple(tokens) in exact))
     return found
+
+
+def question_of(row: dict) -> str:
+    if "question" in row:
+        return str(row["question"])
+    if "prompt" in row:
+        return str(row["prompt"])
+    return str(row["messages"][-1]["content"])
 
 
 def verify_independence(check: IndependenceCheck) -> None:

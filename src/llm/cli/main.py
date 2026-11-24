@@ -44,7 +44,7 @@ def _sampling(args: argparse.Namespace):
 def evaluate_and_print(campaign, spec) -> int:
     report = campaign.evaluate_campaign(spec)
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    return 0 if report["accepted"] else 4
+    return 4 if report["accepted"] is False else 0
 
 
 def cmd_experiment(args: argparse.Namespace) -> int:
@@ -79,6 +79,15 @@ def cmd_kernels(args: argparse.Namespace) -> int:
     shape = AttentionShape(args.batch, args.heads, args.kv_heads, args.length, args.head_dim)
     timings = measure_attention(shape, resolve_device(args.device), args.repeats)
     print(json.dumps({"shape": shape.__dict__, "variants": report(timings)}, indent=2))
+    return 0
+
+
+def cmd_diagnostics(args: argparse.Namespace) -> int:
+    from llm.data.probes import write_diagnostics
+    from llm.tokenizer.bpe import BPETokenizer
+
+    summary = write_diagnostics(Path(args.output), BPETokenizer.load(args.tokenizer))
+    print(json.dumps(summary, indent=2))
     return 0
 
 
@@ -454,6 +463,10 @@ def build_parser() -> argparse.ArgumentParser:
     kernels.add_argument("--length", type=int, default=512)
     kernels.add_argument("--head-dim", type=int, default=64)
     kernels.add_argument("--repeats", type=int, default=7)
+
+    diagnostics = add("diagnostics", cmd_diagnostics)
+    diagnostics.add_argument("--output", default="data/diagnostics")
+    diagnostics.add_argument("--tokenizer", default="data/tokenizer")
 
     benchmark = add("benchmark", cmd_benchmark)
     add_model_arguments(benchmark)

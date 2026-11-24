@@ -1,0 +1,69 @@
+name: learning_probe
+base_config: configs/tiny_v31_sft_stage11.yaml
+initial_checkpoint: checkpoints/tiny_v31_sft_stage11/step-00000120
+job_template: "{arm}-{seed}"
+seeds: [1, 2, 3]
+token_budget: 460800
+tokens_per_step: 1536
+output_root: experiments/learning_probe
+checkpoint_root: checkpoints/learning_probe
+state_file: campaign.json
+train:
+  restore_optimizer: false
+  mixture: {}
+  sft_replay_dir: null
+  sft_replay_fraction: 0.0
+  pack_sequences: false
+  checkpoint_alias: null
+  micro_batch_size: 8
+  gradient_accumulation_steps: 1
+  sequence_length: 191
+  eval_interval: 100
+  checkpoint_interval: 100
+  eval_batches: 9
+  log_interval: 50
+  protected_steps: [300]
+  keep_checkpoints: 2
+  dataset_version: probes
+  min_free_disk_gb: 20.0
+optimizer:
+  learning_rate: 1.0e-4
+  warmup_steps: 10
+  min_lr_ratio: 0.1
+arms:
+  single:
+    data_dir: data/diagnostics/single
+  multi:
+    data_dir: data/diagnostics/multi
+frozen_inputs:
+  initial_weights: checkpoints/tiny_v31_sft_stage11/step-00000120/model.safetensors
+  initial_metadata: checkpoints/tiny_v31_sft_stage11/step-00000120/meta.json
+  tokenizer: data/tokenizer/tokenizer.json
+  probes: data/diagnostics/probes.jsonl
+  train_single: data/diagnostics/single/sft/train.jsonl
+  train_multi: data/diagnostics/multi/sft/train.jsonl
+calibration_file: experiments/stage18/profile.json
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+limits:
+  active_seconds: 1500
+  absolute_seconds: 7200
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
+evaluation:
+  baseline: checkpoints/tiny_v31_sft_stage11/step-00000120
+  device: mps
+  tokenizer: data/tokenizer
+  repetitions: 10000
+  independence:
+    evaluation: [data/diagnostics/probes.jsonl]
+    training: [data/v3_1/sft_groups/train.*.jsonl, data/v2/sft/train.jsonl]
+    max_overlap: 0.5
+  suites:
+    - name: probes
+      options:
+        file: data/diagnostics/probes.jsonl
+        unigram: data/v4_expanded/tokens/train.bin

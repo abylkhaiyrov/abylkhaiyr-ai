@@ -25,6 +25,7 @@ class SuiteOutput:
     metrics: dict[str, float] = field(default_factory=dict)
     items: dict[str, list[list[Outcome]]] = field(default_factory=dict)
     inputs: dict[str, str] = field(default_factory=dict)
+    records: list[dict[str, Any]] = field(default_factory=list)
 
     def add_rate(self, name: str, runs: Sequence[Sequence[Outcome]]) -> None:
         pooled = [outcome.value for run in runs for outcome in run]
@@ -37,6 +38,7 @@ class SuiteOutput:
         return {
             "metrics": self.metrics,
             "inputs": self.inputs,
+            "records": self.records,
             "items": {
                 name: [[vars(outcome) for outcome in run] for run in runs]
                 for name, runs in self.items.items()
@@ -52,4 +54,5 @@ class SuiteOutput:
                 for name, runs in payload["items"].items()
             },
             payload["inputs"],
+            payload.get("records", []),
         )

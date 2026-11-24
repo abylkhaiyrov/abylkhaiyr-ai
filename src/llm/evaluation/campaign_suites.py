@@ -6,7 +6,7 @@ from typing import Any
 
 from llm.core.checksums import file_sha256
 from llm.data.binary import read_jsonl
-from llm.evaluation import chat_natural, refusal_behavior
+from llm.evaluation import chat_natural, probes, refusal_behavior
 from llm.evaluation.capacity_metrics import unigram_probabilities
 from llm.evaluation.diagnostic_bank import Item
 from llm.evaluation.diagnostic_controls import choices, score_controls
@@ -65,4 +65,5 @@ SUITES: dict[str, Suite] = {
     "core": core,
     "chat_natural": chat_natural.evaluate,
     "refusal_behavior": refusal_behavior.evaluate,
+    "probes": probes.evaluate,
 }
