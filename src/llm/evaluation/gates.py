@@ -55,11 +55,11 @@ def judge_gate(gate: Gate, measurement: Measurement | None) -> GateResult:
         passed = observed <= gate.value
         relation = "<="
     elif gate.kind == "min_value":
-        observed = measurement.candidate
+        observed = low if use_interval else measurement.candidate
         passed = observed >= gate.value
         relation = ">="
     else:
-        observed = measurement.candidate
+        observed = high if use_interval else measurement.candidate
         passed = observed <= gate.value
         relation = "<="
     label = "95% bound" if use_interval else "estimate"

@@ -90,6 +90,22 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     if args.sft_profile:
         print(json.dumps(profile_sft(Path(args.sft_profile)), indent=2, ensure_ascii=False))
         return 0
+    if args.context_probes:
+        from llm.data.probes import write_context_probes
+
+        print(json.dumps(write_context_probes(Path(args.context_probes)), indent=2))
+        return 0
+    if args.grounded:
+        from llm.data.grounded_blocks import write_grounded
+
+        summary = write_grounded(
+            Path(args.grounded),
+            Path(args.base),
+            BPETokenizer.load(args.tokenizer),
+            args.seed,
+        )
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return 0
 
     summary = write_diagnostics(Path(args.output), BPETokenizer.load(args.tokenizer))
     print(json.dumps(summary, indent=2))
@@ -473,6 +489,10 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--output", default="data/diagnostics")
     diagnostics.add_argument("--tokenizer", default="data/tokenizer")
     diagnostics.add_argument("--sft-profile")
+    diagnostics.add_argument("--grounded")
+    diagnostics.add_argument("--context-probes")
+    diagnostics.add_argument("--base", default="data/v3_1")
+    diagnostics.add_argument("--seed", type=int, default=1)
 
     benchmark = add("benchmark", cmd_benchmark)
     add_model_arguments(benchmark)

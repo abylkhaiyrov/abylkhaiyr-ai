@@ -38,6 +38,9 @@ OPTIONS = 4
 HELD_OUT_QUESTION = 3
 ALTERNATE_QUESTION = 4
 BUILD_SEED = 2718
+POOL_CAP = 280
+CONTEXT_PROBE_SEED = 3141
+CONTEXT_PROBE_DOCUMENTS = 40
 VARIANTS = {"single": 1, "multi": TRAIN_QUESTIONS}
 ANSWER = "answer"
 REFUSAL = "refusal"
@@ -86,14 +89,15 @@ def names(rng: random.Random, syllables: Sequence[str], count: int, used: set[st
     return found
 
 
-def build_world(seed: int = BUILD_SEED) -> World:
+def build_world(seed: int = BUILD_SEED, fresh: int = FRESH_ENTITIES) -> World:
     rng = random.Random(seed)
     used: set[str] = set()
-    entities = names(rng, ENTITY_SYLLABLES, TAUGHT_ENTITIES + FRESH_ENTITIES, used)
+    entities = names(rng, ENTITY_SYLLABLES, TAUGHT_ENTITIES + fresh, used)
+    size = min(3 * len(entities), POOL_CAP)
     pools = {
-        "river": names(rng, ENTITY_SYLLABLES, 3 * len(entities), used),
-        "founder": names(rng, PERSON_SYLLABLES, 3 * len(entities), used),
-        "mountain": names(rng, ENTITY_SYLLABLES, 3 * len(entities), used),
+        "river": names(rng, ENTITY_SYLLABLES, size, used),
+        "founder": names(rng, PERSON_SYLLABLES, size, used),
+        "mountain": names(rng, ENTITY_SYLLABLES, size, used),
     }
     taught = tuple(
         Fact(entity, relation, pools[relation][index], LANGUAGES[index % len(LANGUAGES)])
@@ -270,10 +274,10 @@ def context_facts(world: World, rng: random.Random, index: int) -> tuple[Fact, .
     )
 
 
-def context_probes(world: World, rng: random.Random) -> list[Probe]:
+def context_probes(world: World, rng: random.Random, documents: int = CONTEXT_DOCS) -> list[Probe]:
     probes = []
     for language in LANGUAGES:
-        for index in range(CONTEXT_DOCS):
+        for index in range(documents):
             facts = context_facts(world, rng, index)
             shown = [
                 fact
@@ -461,6 +465,19 @@ def build_probes(world: World) -> list[Probe]:
         *entity_probes(world),
         *rule_probes(world, rng),
     ]
+
+
+def write_context_probes(
+    output: Path, documents: int = CONTEXT_PROBE_DOCUMENTS, seed: int = CONTEXT_PROBE_SEED
+) -> dict:
+    world = build_world(seed, 2 * documents)
+    probes = context_probes(world, random.Random(seed + 1), documents)
+    output.mkdir(parents=True, exist_ok=True)
+    write_jsonl(output / "probes.jsonl", [asdict(item) for item in probes])
+    kinds: dict[str, int] = {}
+    for item in probes:
+        kinds[item.kind] = kinds.get(item.kind, 0) + 1
+    return {"probes": len(probes), "kinds": kinds, "seed": seed, "documents": documents}
 
 
 def write_jsonl(path: Path, rows: Sequence[dict]) -> None:

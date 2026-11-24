@@ -66,9 +66,9 @@ def classify(case: Probe, text: str) -> str:
     return "fabricated_answer" if fabricates(text, case.prompt) else "no_answer"
 
 
-def generate(engine: InferenceEngine, case: Probe) -> tuple[str, str]:
+def generate(engine: InferenceEngine, prompt: str) -> tuple[str, str]:
     params = SamplingParams(max_new_tokens=MAX_NEW_TOKENS, greedy=True, repetition_penalty=1.0)
-    reply = engine.chat([Message("user", case.prompt)], params)
+    reply = engine.chat([Message("user", prompt)], params)
     return reply.text, reply.finish_reason
 
 
@@ -90,8 +90,12 @@ def mcq_items(cases: list[Probe]) -> list[Item]:
     ]
 
 
+def cluster_of(identifier: str) -> str:
+    return "/".join(identifier.split("/")[1:3])
+
+
 def outcome(case: Probe, value: bool) -> Outcome:
-    return Outcome(case.id, case.id, case.language, int(value))
+    return Outcome(case.id, cluster_of(case.id), case.language, int(value))
 
 
 def add_group_rates(output: SuiteOutput, name: str, outcomes: list[Outcome]) -> None:
@@ -109,7 +113,7 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
     output = SuiteOutput(inputs={path: file_sha256(Path(path))})
     texts: dict[str, tuple[str, str, str]] = {}
     for case in cases:
-        text, finish = generate(engine, case)
+        text, finish = generate(engine, case.prompt)
         texts[case.id] = (text, finish, classify(case, text))
         output.records.append(
             {

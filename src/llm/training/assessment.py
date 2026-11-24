@@ -12,7 +12,7 @@ from llm.core.errors import ConfigError
 from llm.evaluation.campaign_suites import SUITES, Suite
 from llm.evaluation.capacity_metrics import paired_summary
 from llm.evaluation.comparison import load_engine
-from llm.evaluation.gates import GateResult, Measurement, decide, judge_gate
+from llm.evaluation.gates import Gate, GateResult, Measurement, decide, judge_gate
 from llm.evaluation.independence import verify_independence
 from llm.evaluation.outcomes import Outcome, SuiteOutput
 from llm.evaluation.plan import BASELINE, EvaluationPlan
@@ -133,6 +133,39 @@ def paired_measurement(
     return Measurement(mean_candidate, mean_reference, (low, high), int(summary["n"]))
 
 
+def absolute_measurement(
+    candidate: list[Mapping[str, SuiteOutput]], suite: str, metric: str, repetitions: int
+) -> Measurement | None:
+    mean = mean_metric(candidate, suite, metric)
+    if mean is None:
+        return None
+    pairs = [
+        (
+            [Outcome(o.id, o.cluster, o.group, 0).as_choice() for o in run],
+            [o.as_choice() for o in run],
+        )
+        for run_set in candidate
+        for run in flat_runs(run_set[suite], metric)
+    ]
+    if not pairs:
+        return Measurement(mean, 0.0)
+    summary = paired_summary(pairs, method="choice", repetitions=repetitions)
+    low, high = summary["cluster_bootstrap_95"]
+    return Measurement(mean, 0.0, (low, high), int(summary["n"]))
+
+
+def measure_gate(
+    gate: Gate,
+    reference: list[Mapping[str, SuiteOutput]],
+    candidate: list[Mapping[str, SuiteOutput]],
+    suite: str,
+    repetitions: int,
+) -> Measurement | None:
+    if gate.kind in ("min_value", "max_value") and gate.bound == "interval":
+        return absolute_measurement(candidate, suite, gate.metric, repetitions)
+    return paired_measurement(reference, candidate, suite, gate.metric, repetitions)
+
+
 def arm_runs(
     spec: ExperimentSpec,
     arm: str,
@@ -174,7 +207,7 @@ def assess(
         suite = suite_of(baseline, gate.metric)
         candidate = arm_runs(spec, gate.arm, seeds, outputs, baseline)
         reference = arm_runs(spec, gate.against, seeds, outputs, baseline)
-        measurement = paired_measurement(reference, candidate, suite, gate.metric, plan.repetitions)
+        measurement = measure_gate(gate, reference, candidate, suite, plan.repetitions)
         results.append(judge_gate(gate, measurement))
         per_seed[gate.name] = seed_differences(seeds, reference, candidate, suite, gate.metric)
     accepted, reasons = (

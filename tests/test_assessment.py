@@ -253,3 +253,26 @@ def test_cached_results_are_discarded_when_an_evaluation_file_changes(
     questions.write_text("two\n", encoding="utf-8")
     assess(changed, {"chat_natural": suite})
     assert len(calls) == 2 * first
+
+
+def test_absolute_value_gates_use_the_interval_bound_when_requested():
+    measurement = Measurement(0.5, 0.0, (0.25, 0.7), 120)
+    assert judge_gate(gate("min_value", 0.3), measurement).passed
+    assert not judge_gate(gate("min_value", 0.3, bound="interval"), measurement).passed
+    assert judge_gate(gate("max_value", 0.8, bound="interval"), measurement).passed
+    assert not judge_gate(gate("max_value", 0.6, bound="interval"), measurement).passed
+
+
+def test_absolute_measurement_bootstraps_the_candidate_rate_by_cluster():
+    from llm.training.assessment import absolute_measurement
+
+    families = 60
+    outcomes = [Outcome(f"id{i}", f"family{i}", "en", int(i % 5 < 3)) for i in range(families)]
+    output = SuiteOutput()
+    output.add_rate("ctx.rate", [outcomes])
+    measurement = absolute_measurement([{"s": output}], "s", "ctx.rate", 400)
+    assert measurement is not None and measurement.interval is not None
+    low, high = measurement.interval
+    assert measurement.candidate == pytest.approx(0.6)
+    assert low < 0.6 < high and 0.4 < low and high < 0.8
+    assert measurement.n == families
