@@ -6,7 +6,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from llm.core.errors import LLMError
+from llm.core.errors import ConfigError, LLMError
 
 DEFAULT_CONFIG = "configs/debug.yaml"
 
@@ -39,6 +39,25 @@ def _sampling(args: argparse.Namespace):
         stop_sequences=args.stop or [],
         seed=args.seed,
     )
+
+
+def cmd_experiment(args: argparse.Namespace) -> int:
+    from llm.training import campaign
+
+    spec, path = campaign.open_spec(args.spec)
+    if args.action == "plan":
+        print(json.dumps(campaign.build_plan(spec), indent=2))
+    elif args.action == "status":
+        print(json.dumps(campaign.status(spec), indent=2))
+    elif args.action == "run":
+        reason = campaign.run_campaign(spec, path)
+        print(json.dumps({"stopped": reason}))
+        return 0 if reason is None else 3
+    elif args.job is None:
+        raise ConfigError("the job action needs a job name")
+    else:
+        print(json.dumps(campaign.run_job(spec, args.job, args.active_seconds)), flush=True)
+    return 0
 
 
 def cmd_hardware(args: argparse.Namespace) -> int:
@@ -396,6 +415,12 @@ def build_parser() -> argparse.ArgumentParser:
     studio.add_argument("--model-name", default="llm-local")
     studio.add_argument("--dev", action="store_true")
     studio.add_argument("--frontend-port", type=int, default=5173)
+
+    experiment = add("experiment", cmd_experiment)
+    experiment.add_argument("action", choices=("plan", "status", "run", "job"))
+    experiment.add_argument("spec")
+    experiment.add_argument("job", nargs="?")
+    experiment.add_argument("--active-seconds", type=float)
 
     benchmark = add("benchmark", cmd_benchmark)
     add_model_arguments(benchmark)

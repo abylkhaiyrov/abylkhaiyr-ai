@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
-from llm.core.errors import ResourceError
 from llm.data.binary import IGNORE_INDEX
 from llm.data.refusals import (
     ENTITY,
@@ -19,7 +16,7 @@ from llm.data.refusals import (
     refusal_kinds,
     template_of,
 )
-from llm.training.series import run_series
+from llm.training.spec import load_spec
 
 SCRIPTS = Path("scripts")
 
@@ -96,44 +93,11 @@ def test_masking_hides_only_the_refusal_turn_and_keeps_token_ids(tokenizer):
     assert sum(a != IGNORE_INDEX for a in hidden) == len(tokenizer.encode("You are welcome")) + 1
 
 
-def test_series_runs_jobs_in_order_and_stops_at_the_deadline(tmp_path):
-    marker = tmp_path / "done"
-
-    def command(job: str) -> list[str]:
-        return [sys.executable, "-c", f"open(r'{marker}', 'a').write('{job}')"]
-
-    completed = lambda job: marker.exists() and job in marker.read_text()
-    run_series(["a", "b", "c"], time.time() + 60, command, completed)
-    assert marker.read_text() == "abc"
-    other = tmp_path / "late"
-    run_series(
-        ["x"],
-        time.time() - 1,
-        lambda job: [sys.executable, "-c", f"open(r'{other}', 'w')"],
-        lambda job: False,
-    )
-    assert not other.exists()
-
-
-def test_series_rejects_a_job_that_exits_without_finishing(tmp_path):
-    with pytest.raises(ResourceError):
-        run_series(
-            ["a"], time.time() + 60, lambda job: [sys.executable, "-c", "pass"], lambda job: False
-        )
-    with pytest.raises(subprocess.CalledProcessError):
-        run_series(
-            ["a"],
-            time.time() + 60,
-            lambda job: [sys.executable, "-c", "raise SystemExit(3)"],
-            lambda job: False,
-        )
-
-
 def test_stage20_configurations_differ_only_in_the_registered_factors():
-    module = load_script("train_stage20")
-    jobs = {job: module.job_configuration(job).train for job in module.JOBS}
-    assert module.JOBS == ("B-1", "R-1", "A-2", "B-2", "R-2", "A-3", "B-3", "R-3")
-    assert module.checkpoint_dir("A-1") == Path("checkpoints/stage19/L1")
+    spec = load_spec("configs/experiments/stage20.yaml")
+    jobs = {job: spec.job_configuration(job).train for job in spec.job_names()}
+    assert spec.runnable_jobs() == ["B-1", "R-1", "A-2", "B-2", "R-2", "A-3", "B-3", "R-3"]
+    assert spec.checkpoint_dir("A-1") == Path("checkpoints/stage19/L1")
     for job, train in jobs.items():
         arm, seed = job.split("-")
         assert train.seed == int(seed)

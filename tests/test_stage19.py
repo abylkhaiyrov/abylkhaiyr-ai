@@ -22,6 +22,7 @@ from llm.evaluation.diagnostic_controls import (
 from llm.inference.engine import InferenceEngine
 from llm.model.transformer import CausalLM
 from llm.optimization.schedule import learning_rate_at
+from llm.training.spec import load_spec
 
 SCRIPTS = Path("scripts")
 
@@ -91,11 +92,17 @@ def test_controls_are_computed_for_each_item_and_reported(
 
 
 def test_stage19_arms_differ_only_in_registered_optimizer_settings() -> None:
-    module = load_script("train_stage19")
-    reference = module.arm_configuration("L1").train
-    assert module.TARGET == 305
-    for arm, (rate, floor, restore) in module.ARMS.items():
-        train = module.arm_configuration(arm).train
+    spec = load_spec("configs/experiments/stage19.yaml")
+    reference = spec.job_configuration("L1").train
+    registered = {
+        "L1": (5e-5, 1.0, False),
+        "L2": (5e-5, 1.0, True),
+        "L3": (1e-4, 1.0, False),
+        "L4": (2e-4, 0.25, False),
+    }
+    assert spec.target_steps == 305
+    for arm, (rate, floor, restore) in registered.items():
+        train = spec.job_configuration(arm).train
         assert (train.optimizer.learning_rate, train.optimizer.min_lr_ratio) == (rate, floor)
         assert train.restore_optimizer == restore
         assert train.optimizer.warmup_steps == 10
@@ -110,11 +117,11 @@ def test_stage19_arms_differ_only_in_registered_optimizer_settings() -> None:
 
 @pytest.mark.parametrize(("arm", "final"), [("L1", 5e-5), ("L2", 5e-5), ("L3", 1e-4), ("L4", 5e-5)])
 def test_registered_schedules_end_at_the_registered_rate(arm: str, final: float) -> None:
-    module = load_script("train_stage19")
-    optimizer = module.arm_configuration(arm).train.optimizer
+    spec = load_spec("configs/experiments/stage19.yaml")
+    optimizer = spec.job_configuration(arm).train.optimizer
     last = learning_rate_at(
-        module.TARGET,
-        module.TARGET,
+        spec.target_steps,
+        spec.target_steps,
         optimizer.learning_rate,
         optimizer.warmup_steps,
         optimizer.min_lr_ratio,
