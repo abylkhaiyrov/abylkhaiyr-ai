@@ -12,6 +12,7 @@ from llm.evaluation.campaign_suites import SUITES, Suite
 from llm.evaluation.capacity_metrics import paired_summary
 from llm.evaluation.comparison import load_engine
 from llm.evaluation.gates import GateResult, Measurement, decide, judge_gate
+from llm.evaluation.independence import verify_independence
 from llm.evaluation.outcomes import Outcome, SuiteOutput
 from llm.evaluation.plan import BASELINE, EvaluationPlan
 from llm.evaluation.registry import REGISTRY_FILE, record_experiment
@@ -130,6 +131,8 @@ def assess(
     plan = spec.evaluation
     if plan is None:
         raise ConfigError("the experiment declares no evaluation")
+    if plan.independence is not None:
+        verify_independence(plan.independence)
     directory = Path(spec.output_root) / "evaluation"
     done = {job for job in spec.job_names() if is_complete(spec, job)}
     seeds = seeds_ready(spec, done)

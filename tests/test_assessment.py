@@ -173,3 +173,55 @@ def test_unknown_suites_and_unregistered_gate_metrics_are_rejected(
     payload["evaluation"]["gates"] = [gate_payload("g", "B", "A", "min_delta", 0.0)]
     with pytest.raises(ConfigError, match="unregistered suite"):
         assess(type(spec).model_validate(payload), {"perplexity": lambda e, o: SuiteOutput()})
+
+
+def write_questions(path, questions):
+    rows = [{"question": q, "messages": [{"role": "user", "content": q}]} for q in questions]
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
+def test_independence_check_flags_exact_and_near_duplicate_questions(tmp_path):
+    from llm.evaluation.independence import IndependenceCheck, overlaps, verify_independence
+
+    training = tmp_path / "train.jsonl"
+    write_questions(training, ["What is the capital of Germany?", "How tall is the Eiffel Tower?"])
+    evaluation = tmp_path / "eval.jsonl"
+    write_questions(
+        evaluation,
+        [
+            "what is the capital of germany",
+            "How tall is the Eiffel Tower in metres?",
+            "Who painted the ceiling of the Sistine Chapel?",
+        ],
+    )
+    check = IndependenceCheck(evaluation=[str(evaluation)], training=[str(training)])
+    found = overlaps(check)
+    assert [o.exact for o in found] == [True, False, False]
+    assert found[1].fraction > 0.5 and found[2].fraction == 0.0
+    with pytest.raises(ConfigError, match="overlap"):
+        verify_independence(check)
+    write_questions(evaluation, ["Who painted the ceiling of the Sistine Chapel?"])
+    verify_independence(check)
+
+
+def test_assessment_stops_before_scoring_when_evaluation_overlaps_training(
+    tmp_path, tokenizer, model_config, monkeypatch
+):
+    spec = evaluated_spec(
+        tmp_path,
+        tokenizer,
+        model_config,
+        monkeypatch,
+        [gate_payload("g", "B", "A", "min_delta", 0.0)],
+    )
+    questions = tmp_path / "q.jsonl"
+    write_questions(questions, ["What is the capital of Germany?"])
+    payload = spec.model_dump(mode="json")
+    payload["evaluation"]["independence"] = {
+        "evaluation": [str(questions)],
+        "training": [str(questions)],
+    }
+    suite, calls = outputs_by_call([0.5, 0.5, 0.5])
+    with pytest.raises(ConfigError, match="overlap"):
+        assess(type(spec).model_validate(payload), {"chat_natural": suite})
+    assert not calls

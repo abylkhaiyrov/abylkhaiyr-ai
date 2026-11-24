@@ -7,6 +7,7 @@ from pydantic import Field, model_validator
 from llm.core.config import StrictModel
 from llm.evaluation.campaign_suites import SUITES
 from llm.evaluation.gates import Gate
+from llm.evaluation.independence import IndependenceCheck
 
 BASELINE = "baseline"
 REPETITIONS = 10_000
@@ -24,6 +25,7 @@ class EvaluationPlan(StrictModel):
     device: str = "mps"
     tokenizer: str = "data/tokenizer"
     repetitions: int = Field(default=REPETITIONS, ge=100)
+    independence: IndependenceCheck | None = None
 
     @model_validator(mode="after")
     def check_suites(self) -> EvaluationPlan:
