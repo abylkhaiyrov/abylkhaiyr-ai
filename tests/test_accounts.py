@@ -550,16 +550,14 @@ def test_legacy_database_is_migrated_without_losing_data(tmp_path):
     path = tmp_path / "studio" / "studio.db"
     path.parent.mkdir(parents=True)
     connection = sqlite3.connect(path)
-    connection.executescript(
-        """
+    connection.executescript("""
         CREATE TABLE users (id INTEGER PRIMARY KEY, username VARCHAR(128) NOT NULL UNIQUE,
             password_hash VARCHAR(512) NOT NULL, requires_password_change BOOLEAN, created_at DATETIME, updated_at DATETIME);
         CREATE TABLE chats (id VARCHAR(36) PRIMARY KEY, user_id INTEGER, title VARCHAR(256), model_name VARCHAR(256),
             checkpoint VARCHAR(1024), system_prompt TEXT, generation_settings TEXT, created_at DATETIME, updated_at DATETIME);
         INSERT INTO users VALUES (1, 'admin', 'hash', 1, '2026-01-01', '2026-01-01');
         INSERT INTO chats VALUES ('c1', 1, 'history', NULL, NULL, '', '{}', '2026-01-01', '2026-01-01');
-        """
-    )
+        """)
     connection.commit()
     connection.close()
     engine = create_sqlite_engine(path)

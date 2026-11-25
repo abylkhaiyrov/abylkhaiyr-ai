@@ -170,9 +170,9 @@ def test_http_contracts_match_the_committed_samples(project, tmp_path):
         for name in current
         if signature(committed[name]) != signature(current[name])
     }
-    assert drift == {}, (
-        "API shape changed: regenerate with UPDATE_CONTRACTS=1 and verify the frontend guards"
-    )
+    assert (
+        drift == {}
+    ), "API shape changed: regenerate with UPDATE_CONTRACTS=1 and verify the frontend guards"
 
 
 def test_error_contracts(project):

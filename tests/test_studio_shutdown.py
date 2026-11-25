@@ -18,8 +18,7 @@ from llm.api.server import create_app
 from llm.studio.scheduler import GenerationScheduler, GenerationState
 from llm.studio.websocket import Connection, WebSocketManager
 
-SERVER = textwrap.dedent(
-    """
+SERVER = textwrap.dedent("""
     import asyncio
     import signal
     import sys
@@ -57,11 +56,9 @@ SERVER = textwrap.dedent(
         port + 1 if mode == "dev" else None,
     )
     sys.exit(code)
-    """
-)
+    """)
 
-FAKE_VITE = textwrap.dedent(
-    f"""\
+FAKE_VITE = textwrap.dedent(f"""\
     #!{sys.executable}
     import os
     import signal
@@ -76,8 +73,7 @@ FAKE_VITE = textwrap.dedent(
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     while True:
         time.sleep(0.1)
-    """
-)
+    """)
 
 
 def free_port() -> int:
