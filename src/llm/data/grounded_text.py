@@ -363,3 +363,52 @@ FILLERS: dict[str, tuple[str, ...]] = {
 CONSONANTS = "bdgklmnprstvz"
 VOWELS = "aeiou"
 SUFFIXES = ("a", "en", "is", "ar", "on", "ith", "ova")
+HOLDOUT_RELATIONS = ("harbor", "librarian", "opening")
+HOLDOUT_KINDS = {"harbor": PLACE, "librarian": PERSON, "opening": NUMBER}
+HOLDOUT_NOUNS: dict[str, dict[str, str]] = {
+    "en": {"harbor": "harbor", "librarian": "librarian", "opening": "opening year"},
+    "ru": {"harbor": "порт", "librarian": "библиотекарь", "opening": "год открытия"},
+    "kk": {"harbor": "айлақ", "librarian": "кітапханашы", "opening": "ашылған жылы"},
+}
+HOLDOUT_STATEMENTS: dict[str, tuple[str, ...]] = {
+    "en": (
+        "Archive note — {E}; {noun}; {X}.",
+        "Whoever asks about {E} learns that its {noun} is {X}.",
+        "{E} has the {noun} {X}, according to the register.",
+    ),
+    "ru": (
+        "Заметка из архива — {E}; {noun}; {X}.",
+        "Тот, кто спрашивает о {E}, узнаёт: «{noun}» — {X}.",
+        "Согласно реестру, у {E} «{noun}» равно {X}.",
+    ),
+    "kk": (
+        "Мұрағат жазбасы — {E}; {noun}; {X}.",
+        "{E} туралы сұраған адам оның «{noun}» мәнінің {X} екенін біледі.",
+        "Тізілім бойынша {E} үшін «{noun}» — {X}.",
+    ),
+}
+HOLDOUT_QUESTIONS: dict[str, tuple[str, ...]] = {
+    "en": (
+        "Using only the passage, state the {noun} recorded for {E}.",
+        "What does the passage give as the {noun} of {E}?",
+        "Which {noun} is attached to {E} here?",
+    ),
+    "ru": (
+        "Опираясь только на отрывок, назови «{noun}», записанное для {E}.",
+        "Что отрывок указывает как «{noun}» для {E}?",
+        "Какое «{noun}» привязано здесь к {E}?",
+    ),
+    "kk": (
+        "Тек үзіндіге сүйеніп, {E} үшін жазылған «{noun}» мәнін ата.",
+        "Үзінді {E} үшін «{noun}» ретінде нені көрсетеді?",
+        "Мұнда {E} үшін қандай «{noun}» байланған?",
+    ),
+}
+HOLDOUT_REVERSE = {
+    "en": "For which settlement is {X} the recorded {noun}?",
+    "ru": "Для какого поселения {X} записано как «{noun}»?",
+    "kk": "{X} қай қоныстың «{noun}» ретінде жазылған?",
+}
+KINDS.update(HOLDOUT_KINDS)
+for _language in LANGUAGES:
+    NOUNS[_language].update(HOLDOUT_NOUNS[_language])

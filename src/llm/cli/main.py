@@ -90,6 +90,11 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     if args.sft_profile:
         print(json.dumps(profile_sft(Path(args.sft_profile)), indent=2, ensure_ascii=False))
         return 0
+    if args.holdout:
+        from llm.data.holdout import write_holdout
+
+        print(json.dumps(write_holdout(Path(args.holdout)), indent=2, ensure_ascii=False))
+        return 0
     if args.grounded_block:
         from llm.data.grounded import BINDING_TASKS, TASKS
         from llm.data.grounded_blocks import write_reading_block
@@ -541,6 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--grounded")
     diagnostics.add_argument("--hidden")
     diagnostics.add_argument("--exposure")
+    diagnostics.add_argument("--holdout")
     diagnostics.add_argument("--grounded-block")
     diagnostics.add_argument("--missing-share", type=float, default=0.5)
     diagnostics.add_argument("--binding", action="store_true")

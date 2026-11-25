@@ -18,6 +18,9 @@ from llm.data.grounded_text import (
     FILLERS,
     GENERIC_MISSING,
     HELD_OUT_RELATIONS,
+    HOLDOUT_QUESTIONS,
+    HOLDOUT_REVERSE,
+    HOLDOUT_STATEMENTS,
     KINDS,
     LANGUAGES,
     MISSING,
@@ -114,6 +117,7 @@ class Structure:
     held: bool
     layout: str
     joiner: str
+    holdout: bool = False
 
 
 @dataclass(frozen=True)
@@ -133,10 +137,13 @@ class Case:
 
 
 class Namer:
-    def __init__(self, rng: random.Random, split: str) -> None:
+    def __init__(
+        self, rng: random.Random, split: str, exclude: frozenset[str] = frozenset()
+    ) -> None:
         self.rng = rng
         self.split = split
         self.used: set[str] = set()
+        self.exclude = exclude
 
     def draw(self, kind: str) -> str:
         while True:
@@ -145,7 +152,11 @@ class Namer:
             else:
                 parts = self.rng.choices(SYLLABLES[kind], k=NAME_PARTS)
                 candidate = ("".join(parts) + self.rng.choice(SUFFIXES)).capitalize()
-            if candidate not in self.used and split_of_name(candidate) == self.split:
+            if (
+                candidate not in self.used
+                and candidate not in self.exclude
+                and split_of_name(candidate) == self.split
+            ):
                 self.used.add(candidate)
                 return candidate
 
@@ -185,11 +196,18 @@ def fact_unit(
 
 
 class Builder:
-    def __init__(self, language: str, split: str, rng: random.Random) -> None:
+    def __init__(
+        self,
+        language: str,
+        split: str,
+        rng: random.Random,
+        exclude: frozenset[str] = frozenset(),
+    ) -> None:
         self.language = language
         self.split = split
         self.rng = rng
-        self.namer = Namer(rng, split)
+        self.exclude = exclude
+        self.namer = Namer(rng, split, exclude)
 
     def relation_values(self, relation: str, count: int) -> list[str]:
         return [self.namer.value(relation) for _ in range(count)]
@@ -417,11 +435,14 @@ def plans(
     ]
 
 
-def render_unit(unit: Unit, plan: Plan, held: bool) -> str:
+def render_unit(unit: Unit, plan: Plan, held: bool, holdout: bool = False) -> str:
     language = plan.language
     noun = NOUNS[language].get(unit.relation, "")
     if unit.kind == "filler":
         return FILLERS[language][unit.pick]
+    if unit.kind == "fact" and holdout:
+        table = HOLDOUT_STATEMENTS[language]
+        return table[unit.pick % len(table)].format(E=unit.entity, noun=noun, X=unit.value)
     if unit.kind == "fact":
         table = STATEMENTS[language]
         return table[frame_index(len(table), held, unit.pick)].format(
@@ -451,12 +472,16 @@ def render_unit(unit: Unit, plan: Plan, held: bool) -> str:
 
 
 def render_document(plan: Plan, structure: Structure) -> str:
-    return structure.joiner.join(render_unit(unit, plan, structure.held) for unit in plan.units)
+    return structure.joiner.join(
+        render_unit(unit, plan, structure.held, structure.holdout) for unit in plan.units
+    )
 
 
-def render_question(plan: Plan, held: bool) -> str:
+def render_question(plan: Plan, held: bool, holdout: bool = False) -> str:
     language = plan.language
     noun = NOUNS[language].get(plan.relation, "")
+    if plan.question == "reverse" and holdout:
+        return HOLDOUT_REVERSE[language].format(noun=noun, X=plan.value)
     if plan.question == "reverse":
         table = REVERSE_QUESTIONS[language]
         return table[frame_index(len(table), held, plan.question_pick)].format(
@@ -468,13 +493,17 @@ def render_question(plan: Plan, held: bool) -> str:
     if plan.question == "alt":
         first, second = plan.options
         return ALTERNATIVES[language].format(noun=noun, E=plan.entity, A=first, B=second)
+    if holdout:
+        table = HOLDOUT_QUESTIONS[language]
+        return table[plan.question_pick % len(table)].format(E=plan.entity, noun=noun)
     table = QUESTIONS[language]
     return table[frame_index(len(table), held, plan.question_pick)].format(E=plan.entity, noun=noun)
 
 
 def prompt_of(plan: Plan, structure: Structure) -> str:
     return LAYOUTS[structure.layout].format(
-        d=render_document(plan, structure), q=render_question(plan, structure.held)
+        d=render_document(plan, structure),
+        q=render_question(plan, structure.held, structure.holdout),
     )
 
 
