@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -9,32 +10,35 @@ from typing import Any
 from llm.core.checksums import file_sha256
 from llm.core.errors import ConfigError
 from llm.data.binary import read_jsonl
-from llm.data.grounded import INVENTED, REFUSAL, Case
+from llm.data.grounded import INVENTED, REFUSAL, Case, PairCase
 from llm.data.refusals import is_refusal
 from llm.evaluation.outcomes import Outcome, SuiteOutput
 from llm.evaluation.probes import fabricates, generate
 from llm.evaluation.v4_review import accepted
 from llm.inference.engine import InferenceEngine
 
-ANSWERABLE = ("original", "changed", "restructured")
-UNANSWERABLE = ("missing", "distractor")
+ANSWERABLE = ("original", "changed", "restructured", "requestion")
+UNANSWERABLE = ("missing", "distractor", "other_entity", "other_relation")
 RIVAL_TASKS = ("distractor", "relation", "negation", "update", "priority")
 CONTRADICTION_TASKS = ("update", "priority")
 TRAINED = "trained"
+WORDS = re.compile(r"\w+", re.UNICODE)
 Check = Callable[[Case], bool]
 
 
 def load_cases(path: str) -> list[Case]:
-    return [
-        Case(
-            **{
-                **row,
-                "accept": tuple(tuple(group) for group in row["accept"]),
-                "rejected": tuple(row["rejected"]),
-            }
-        )
-        for row in read_jsonl(Path(path))
-    ]
+    cases: list[Case] = []
+    for row in read_jsonl(Path(path)):
+        fields = {
+            **row,
+            "accept": tuple(tuple(group) for group in row["accept"]),
+            "rejected": tuple(row["rejected"]),
+        }
+        if "kinds" in row:
+            cases.append(PairCase(**{**fields, "kinds": tuple(row["kinds"])}))
+        else:
+            cases.append(Case(**fields))
+    return cases
 
 
 def judge(case: Case, text: str) -> str:
@@ -53,6 +57,31 @@ def judge(case: Case, text: str) -> str:
     if copied:
         return "copied_distractor"
     return "fabricated_answer" if fabricates(text, case.prompt) else "no_answer"
+
+
+def tokens_of(text: str) -> set[str]:
+    return {token.casefold() for token in WORDS.findall(text)}
+
+
+def fine_error(case: Case, text: str, finish: str, coarse: str) -> str:
+    if coarse in ("correct", "justified_refusal"):
+        return coarse
+    if finish != "stop":
+        return "incomplete"
+    if coarse == "copied_distractor":
+        folded = text.casefold()
+        kinds = getattr(case, "kinds", ())
+        for index, item in enumerate(case.rejected):
+            if item and item.casefold() in folded and index < len(kinds):
+                return {"entity": "other_entity", "relation": "other_relation"}.get(
+                    kinds[index], "distractor"
+                )
+        return "distractor"
+    if coarse == "unjustified_refusal":
+        return coarse
+    if coarse == "fabricated_answer":
+        return "fabricated"
+    return "echo" if tokens_of(text) <= tokens_of(case.prompt) else "other"
 
 
 def leaked_names(cases: Sequence[Case], training: Sequence[str]) -> set[str]:
@@ -95,9 +124,11 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
         for item in sorted(glob.glob(pattern)):
             output.inputs[item] = file_sha256(Path(item))
     checks: dict[str, str] = {}
+    fine: dict[str, str] = {}
     for case in cases:
         text, finish = generate(engine, case.prompt)
         checks[case.id] = judge(case, text)
+        fine[case.id] = fine_error(case, text, finish, checks[case.id])
         output.records.append(
             {
                 "id": case.id,
@@ -111,13 +142,44 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
                 "answer": text,
                 "finish_reason": finish,
                 "check": checks[case.id],
+                "fine": fine[case.id],
             }
         )
     held = [case for case in cases if case.cell != TRAINED]
     if held:
         add_metrics(output, held, checks)
     add_trained(output, [case for case in cases if case.cell == TRAINED], checks)
-    return output
+    add_errors(output, held, fine)
+    return prefixed(output, options.get("prefix", ""))
+
+
+def prefixed(output: SuiteOutput, prefix: str) -> SuiteOutput:
+    if not prefix:
+        return output
+    return SuiteOutput(
+        {f"{prefix}{name}": value for name, value in output.metrics.items()},
+        {f"{prefix}{name}": runs for name, runs in output.items.items()},
+        output.inputs,
+        output.records,
+    )
+
+
+def add_errors(output: SuiteOutput, cases: list[Case], fine: dict[str, str]) -> None:
+    paired = [case for case in cases if isinstance(case, PairCase)]
+    for variant in sorted({case.variant for case in paired}):
+        scoped = [case for case in paired if case.variant == variant]
+        counts: dict[str, int] = defaultdict(int)
+        for case in scoped:
+            counts[fine[case.id]] += 1
+        for name, count in counts.items():
+            output.metrics[f"ctx.error.{variant}.{name}"] = count / len(scoped)
+    answerable = [case for case in paired if case.variant in ANSWERABLE]
+    if answerable:
+        binding = [
+            outcome(case, fine[case.id] in ("other_entity", "other_relation"))
+            for case in answerable
+        ]
+        add_rate(output, "ctx.binding_error", binding, False)
 
 
 def correct(case: Case, checks: dict[str, str]) -> bool:

@@ -1,0 +1,160 @@
+base_config: configs/tiny_v31_sft_stage11.yaml
+initial_checkpoint: checkpoints/tiny_v31_sft_stage11/step-00000120
+job_template: '{arm}-{seed}'
+tokens_per_step: 16352
+state_file: campaign.json
+train:
+  restore_optimizer: false
+  checkpoint_alias: null
+  protected_steps:
+  - 120
+  keep_checkpoints: 2
+  eval_interval: 40
+  checkpoint_interval: 40
+  eval_batches: 20
+  min_free_disk_gb: 20.0
+optimizer:
+  learning_rate: 0.0001
+  warmup_steps: 12
+  min_lr_ratio: 0.1
+calibration_file: experiments/stage18/profile.json
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+name: context_h4
+seeds:
+- 1
+token_budget: 2616320
+output_root: experiments/context_h4
+checkpoint_root: checkpoints/context_h4
+arms:
+  H4:
+    data_dir: data/grounded/reading_h4
+    mixture: &id001
+      reading_en: 0.15
+      reading_ru: 0.175
+      reading_kk: 0.175
+      chat_en: 0.05814
+      chat_ru: 0.034884
+      chat_kk: 0.005814
+      chat_other: 0.017442
+      skills: 0.116279
+      dialog: 0.040698
+      identity: 0.040698
+      math: 0.046512
+      word_math: 0.05814
+      code: 0.081395
+  R4:
+    data_dir: data/grounded/reading_m25
+    mixture: *id001
+frozen_inputs:
+  initial_weights: checkpoints/tiny_v31_sft_stage11/step-00000120/model.safetensors
+  initial_metadata: checkpoints/tiny_v31_sft_stage11/step-00000120/meta.json
+  tokenizer: data/tokenizer/tokenizer.json
+  registration: docs/context_h4_registration.md
+  grounded_dev: data/grounded/dev.jsonl
+  context_probes_dev: data/diagnostics_dev/probes.jsonl
+  block_b_en: data/grounded/reading_b/sft_groups/train.reading_en.jsonl
+  block_b_ru: data/grounded/reading_b/sft_groups/train.reading_ru.jsonl
+  block_b_kk: data/grounded/reading_b/sft_groups/train.reading_kk.jsonl
+  block_m25_en: data/grounded/reading_m25/sft_groups/train.reading_en.jsonl
+  block_m25_ru: data/grounded/reading_m25/sft_groups/train.reading_ru.jsonl
+  block_m25_kk: data/grounded/reading_m25/sft_groups/train.reading_kk.jsonl
+  block_h4_en: data/grounded/reading_h4/sft_groups/train.reading_en.jsonl
+  block_h4_ru: data/grounded/reading_h4/sft_groups/train.reading_ru.jsonl
+  block_h4_kk: data/grounded/reading_h4/sft_groups/train.reading_kk.jsonl
+  pairs_dev: data/grounded/pairs.jsonl
+  r4_weights: checkpoints/context_ablation_50/R4-1/step-00000160/model.safetensors
+  r4_metadata: checkpoints/context_ablation_50/R4-1/step-00000160/meta.json
+limits:
+  active_seconds: 1500
+  absolute_seconds: 7200
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
+evaluation:
+  baseline: checkpoints/tiny_v31_sft_stage11/step-00000120
+  device: mps
+  tokenizer: data/tokenizer
+  repetitions: 10000
+  cache: experiments/evaluation_cache
+  suites:
+  - name: perplexity
+    options:
+      sets:
+        v2_validation:
+        - data/v2/tokens
+        - validation
+        - 200
+  - name: grounded
+    options:
+      file: data/grounded/dev.jsonl
+      training:
+      - data/grounded/reading_b/sft_groups/train.reading_*.jsonl
+      - data/grounded/reading_m25/sft_groups/train.reading_*.jsonl
+      - data/grounded/reading_h4/sft_groups/train.reading_*.jsonl
+  - name: probes
+    options:
+      file: data/diagnostics_dev/probes.jsonl
+      unigram: data/v4_expanded/tokens/train.bin
+  - name: grounded
+    label: pairs
+    options:
+      file: data/grounded/pairs.jsonl
+      training:
+      - data/grounded/reading_h4/sft_groups/train.reading_*.jsonl
+      - data/grounded/reading_m25/sft_groups/train.reading_*.jsonl
+      - data/grounded/reading_b/sft_groups/train.reading_*.jsonl
+      prefix: pairs.
+  gates:
+  - name: ctx_fact_flat
+    metric: probe.ctx_fact.free.all
+    arm: H4
+    against: baseline
+    kind: min_value
+    value: 0.2
+  - name: ctx_fact_question_first
+    metric: probe.ctx_fact_qfirst.free.all
+    arm: H4
+    against: baseline
+    kind: min_value
+    value: 0.2
+  - name: new_structures_vs_r4
+    metric: ctx.fact_accuracy.cell.structure
+    arm: H4
+    against: R4
+    kind: min_delta
+    value: -0.05
+  - name: intervention_floor
+    metric: ctx.intervention_accuracy
+    arm: H4
+    against: baseline
+    kind: min_value
+    value: 0.15
+  - name: intervention_vs_r4
+    metric: ctx.intervention_accuracy
+    arm: H4
+    against: R4
+    kind: min_delta
+    value: -0.05
+  - name: unjustified_refusal_ceiling
+    metric: ctx.unjustified_refusal
+    arm: H4
+    against: baseline
+    kind: max_value
+    value: 0.35
+  - name: justified_refusal_floor
+    metric: ctx.justified_refusal
+    arm: H4
+    against: baseline
+    kind: min_value
+    value: 0.6
+  - name: english_perplexity_vs_control_a
+    metric: ppl.v2_validation.en
+    arm: H4
+    against: baseline
+    kind: max_value
+    value: 28.0613
+reuse:
+  R4-1: checkpoints/context_ablation_50/R4-1

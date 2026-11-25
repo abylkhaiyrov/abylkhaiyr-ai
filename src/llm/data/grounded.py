@@ -3,42 +3,42 @@ from __future__ import annotations
 import random
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 
 from llm.data.dedup import stable_hash
+from llm.data.grounded_frames import (
+    BANKS,
+    DIVERSE,
+    HOLDOUT,
+    LABELS,
+    LEGACY,
+    PROFILE_FRAMES,
+    PROFILE_ITEMS,
+    TABLE_HEADERS,
+    TRAIN,
+    template_id,
+)
 from llm.data.grounded_text import (
     ALTERNATIVES,
     ANSWERS,
     CAUSE_ANSWERS,
-    CAUSE_QUESTIONS,
     CAUSE_SPLITS,
-    CAUSE_STATEMENTS,
     CAUSES,
     CONSONANTS,
     FILLERS,
     GENERIC_MISSING,
     HELD_OUT_RELATIONS,
-    HOLDOUT_QUESTIONS,
-    HOLDOUT_REVERSE,
-    HOLDOUT_STATEMENTS,
     KINDS,
     LANGUAGES,
     MISSING,
-    NEGATIONS,
     NOUNS,
     NUMBER,
     PERSON,
     PLACE,
-    PRIORITY_STATEMENTS,
-    QUESTIONS,
     REVERSE_ANSWERS,
-    REVERSE_QUESTIONS,
-    SOURCE_CLAIMS,
     SOURCES,
-    STATEMENTS,
     SUFFIXES,
     TRAIN_RELATIONS,
-    UPDATES,
     VOWELS,
 )
 
@@ -57,7 +57,16 @@ TASKS = (
     "priority",
 )
 BINDING_TASKS = (*TASKS, "binding")
-LAYOUTS = {"qfirst": "{q}\n\n{d}", "dfirst": "{d}\n\n{q}", "flat": "{d} {q}"}
+LAYOUTS = {
+    "qfirst": "{q}\n\n{d}",
+    "dfirst": "{d}\n\n{q}",
+    "flat": "{d} {q}",
+    "labeled_dfirst": "{dl}: {d}\n{ql}: {q}",
+    "labeled_qfirst": "{ql}: {q}\n{dl}: {d}",
+}
+DIVERSE_LAYOUTS = ("qfirst", "dfirst", "labeled_dfirst", "labeled_qfirst")
+FORMS = ("sentences", "sentences", "profile", "table")
+SENTENCES = "sentences"
 TRAIN_LAYOUTS = ("qfirst", "dfirst")
 HELD_LAYOUTS = ("flat", "qfirst")
 ANSWER, REFUSAL = "answer", "refusal"
@@ -72,6 +81,8 @@ NAME_PARTS = 3
 YEARS = (1100, 1899)
 FILLER_LIMIT = 2
 TRAINED_PER_LANGUAGE = 30
+PAIR_SEED = 4242
+PAIR_LINKS = 60
 MISSING_SHARE = 0.5
 
 
@@ -118,6 +129,13 @@ class Structure:
     layout: str
     joiner: str
     holdout: bool = False
+    bank: str = LEGACY
+    form: str = SENTENCES
+    question_held: bool = False
+
+    @property
+    def split(self) -> str:
+        return HOLDOUT if self.holdout else "dev" if self.held else TRAIN
 
 
 @dataclass(frozen=True)
@@ -134,6 +152,11 @@ class Case:
     expects: str
     accept: tuple[tuple[str, ...], ...]
     rejected: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PairCase(Case):
+    kinds: tuple[str, ...] = ()
 
 
 class Namer:
@@ -165,11 +188,6 @@ class Namer:
 
     def value(self, relation: str) -> str:
         return self.draw(KINDS[relation])
-
-
-def frame_index(size: int, held: bool, pick: int) -> int:
-    held_count = 2 if size == 6 else 1
-    return size - held_count + pick % held_count if held else pick % (size - held_count)
 
 
 def cause_key(language: str, phrase: str) -> str:
@@ -435,75 +453,133 @@ def plans(
     ]
 
 
-def render_unit(unit: Unit, plan: Plan, held: bool, holdout: bool = False) -> str:
+def pick_text(
+    table: str, structure: Structure, language: str, pick: int, used: set[str] | None
+) -> str:
+    text = BANKS[structure.bank][table][language].pick(structure.split, pick)
+    if used is not None:
+        used.add(template_id(table, language, text))
+    return text
+
+
+def capitalized(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def render_unit(unit: Unit, plan: Plan, structure: Structure, used: set[str] | None = None) -> str:
     language = plan.language
     noun = NOUNS[language].get(unit.relation, "")
     if unit.kind == "filler":
         return FILLERS[language][unit.pick]
-    if unit.kind == "fact" and holdout:
-        table = HOLDOUT_STATEMENTS[language]
-        return table[unit.pick % len(table)].format(E=unit.entity, noun=noun, X=unit.value)
     if unit.kind == "fact":
-        table = STATEMENTS[language]
-        return table[frame_index(len(table), held, unit.pick)].format(
-            E=unit.entity, noun=noun, X=unit.value
-        )
+        text = pick_text("statements", structure, language, unit.pick, used)
+        return text.format(E=unit.entity, noun=noun, X=unit.value)
     if unit.kind == "negation":
-        table = NEGATIONS[language]
-        return table[frame_index(len(table), held, unit.pick)].format(
-            E=unit.entity, noun=noun, X=unit.value, W=unit.other
-        )
+        text = pick_text("negations", structure, language, unit.pick, used)
+        return text.format(E=unit.entity, noun=noun, X=unit.value, W=unit.other)
     if unit.kind == "update":
-        table = UPDATES[language]
-        return table[frame_index(len(table), held, unit.pick)].format(
-            E=unit.entity, noun=noun, X=unit.value
-        )
+        text = pick_text("updates", structure, language, unit.pick, used)
+        return text.format(E=unit.entity, noun=noun, X=unit.value)
     if unit.kind == "cause":
-        table = CAUSE_STATEMENTS[language]
-        return table[frame_index(len(table), held, unit.pick)].format(E=unit.entity, C=unit.value)
+        text = pick_text("cause_statements", structure, language, unit.pick, used)
+        return text.format(E=unit.entity, C=unit.value)
     low_dative, low_nominative, high_dative, high_nominative = SOURCES[language][unit.source]
     if unit.kind == "claim":
         source = high_dative if unit.reliable else low_dative
-        return SOURCE_CLAIMS[language].format(S=source, E=unit.entity, noun=noun, V=unit.value)
-    table = PRIORITY_STATEMENTS[language]
-    return table[frame_index(len(table), held, unit.pick)].format(
-        High=high_nominative, Low=low_nominative
+        nominative = high_nominative if unit.reliable else low_nominative
+        text = pick_text("claims", structure, language, unit.pick, used)
+        return text.format(
+            S=source,
+            Scap=capitalized(source),
+            Snom=nominative,
+            E=unit.entity,
+            noun=noun,
+            V=unit.value,
+        )
+    text = pick_text("priority", structure, language, unit.pick, used)
+    return text.format(High=high_nominative, Low=low_nominative)
+
+
+def fact_runs(units: Sequence[Unit], by_entity: bool) -> list[list[Unit]]:
+    runs: list[list[Unit]] = []
+    current: list[Unit] = []
+    for unit in units:
+        if unit.kind != "fact":
+            runs.extend([current] if current else [])
+            runs.append([unit])
+            current = []
+        elif current and by_entity and current[0].entity != unit.entity:
+            runs.append(current)
+            current = [unit]
+        else:
+            current.append(unit)
+    runs.extend([current] if current else [])
+    return runs
+
+
+def render_profile(run: list[Unit], plan: Plan, used: set[str] | None) -> str:
+    language = plan.language
+    items = "; ".join(
+        PROFILE_ITEMS[language].format(noun=NOUNS[language][unit.relation], X=unit.value)
+        for unit in run
     )
+    frames = PROFILE_FRAMES[language]
+    frame = frames[run[0].pick % len(frames)]
+    if used is not None:
+        used.add(template_id("profile", language, frame))
+    return frame.format(E=run[0].entity, items=items)
 
 
-def render_document(plan: Plan, structure: Structure) -> str:
-    return structure.joiner.join(
-        render_unit(unit, plan, structure.held, structure.holdout) for unit in plan.units
-    )
+def render_table(run: list[Unit], plan: Plan, used: set[str] | None) -> str:
+    language = plan.language
+    if used is not None:
+        used.add(template_id("table", language, TABLE_HEADERS[language]))
+    rows = [f"{unit.entity} | {NOUNS[language][unit.relation]} | {unit.value}" for unit in run]
+    return "\n".join([TABLE_HEADERS[language], *rows])
 
 
-def render_question(plan: Plan, held: bool, holdout: bool = False) -> str:
+def render_document(plan: Plan, structure: Structure, used: set[str] | None = None) -> str:
+    if structure.form == SENTENCES:
+        pieces = [render_unit(unit, plan, structure, used) for unit in plan.units]
+        return structure.joiner.join(pieces)
+    pieces = []
+    for run in fact_runs(plan.units, structure.form == "profile"):
+        if len(run) > 1 and structure.form == "profile":
+            pieces.append(render_profile(run, plan, used))
+        elif len(run) > 1:
+            pieces.append(render_table(run, plan, used))
+        else:
+            pieces.append(render_unit(run[0], plan, structure, used))
+    return structure.joiner.join(pieces)
+
+
+def render_question(plan: Plan, structure: Structure, used: set[str] | None = None) -> str:
+    if structure.question_held:
+        structure = replace(structure, held=True, question_held=False)
     language = plan.language
     noun = NOUNS[language].get(plan.relation, "")
-    if plan.question == "reverse" and holdout:
-        return HOLDOUT_REVERSE[language].format(noun=noun, X=plan.value)
     if plan.question == "reverse":
-        table = REVERSE_QUESTIONS[language]
-        return table[frame_index(len(table), held, plan.question_pick)].format(
-            noun=noun, X=plan.value
-        )
+        text = pick_text("reverse", structure, language, plan.question_pick, used)
+        return text.format(noun=noun, X=plan.value)
     if plan.question == "cause":
-        table = CAUSE_QUESTIONS[language]
-        return table[frame_index(len(table), held, plan.question_pick)].format(E=plan.entity)
+        text = pick_text("cause_questions", structure, language, plan.question_pick, used)
+        return text.format(E=plan.entity)
     if plan.question == "alt":
         first, second = plan.options
         return ALTERNATIVES[language].format(noun=noun, E=plan.entity, A=first, B=second)
-    if holdout:
-        table = HOLDOUT_QUESTIONS[language]
-        return table[plan.question_pick % len(table)].format(E=plan.entity, noun=noun)
-    table = QUESTIONS[language]
-    return table[frame_index(len(table), held, plan.question_pick)].format(E=plan.entity, noun=noun)
+    text = pick_text("questions", structure, language, plan.question_pick, used)
+    return text.format(E=plan.entity, noun=noun)
 
 
-def prompt_of(plan: Plan, structure: Structure) -> str:
+def prompt_of(plan: Plan, structure: Structure, used: set[str] | None = None) -> str:
+    document_label, question_label = LABELS[plan.language]
+    if used is not None:
+        used.update((f"layout/{structure.layout}", f"form/{structure.form}"))
     return LAYOUTS[structure.layout].format(
-        d=render_document(plan, structure),
-        q=render_question(plan, structure.held, structure.holdout),
+        d=render_document(plan, structure, used),
+        q=render_question(plan, structure, used),
+        dl=document_label,
+        ql=question_label,
     )
 
 
@@ -601,7 +677,16 @@ def accept_of(plan: Plan) -> tuple[tuple[str, ...], ...]:
     return () if plan.expects == REFUSAL else ((plan.key,),)
 
 
-def train_structure(rng: random.Random) -> Structure:
+def train_structure(rng: random.Random, mode: str = LEGACY) -> Structure:
+    if mode == DIVERSE:
+        return Structure(
+            False,
+            rng.choice(DIVERSE_LAYOUTS),
+            rng.choice((" ", "\n")),
+            False,
+            DIVERSE,
+            rng.choice(FORMS),
+        )
     return Structure(False, rng.choice(TRAIN_LAYOUTS), rng.choice((" ", "\n")))
 
 
@@ -627,12 +712,13 @@ def training_examples(
     split: str = "train",
     missing_share: float = MISSING_SHARE,
     tasks: Sequence[str] = TASKS,
+    mode: str = LEGACY,
 ) -> list[Example]:
     rng = random.Random(f"{seed}:{language}:{split}:structures")
     ratio = missing_share / (1 - missing_share)
     examples: list[Example] = []
     for index, plan in enumerate(plans(language, split, seed, count, tasks=tasks)):
-        structure = train_structure(rng)
+        structure = train_structure(rng, mode)
         family = f"{split}/{language}/{index}"
         examples.append(Example(plan, structure, family))
         if twin_due(index, ratio):
@@ -649,7 +735,7 @@ def row_of(example: Example, style: int) -> dict:
     plan = example.plan
     options = answer_options(plan)
     category = "grounded_missing" if plan.expects == REFUSAL else f"grounded_{plan.task}"
-    return {
+    row = {
         "source": "synthetic_grounded",
         "group": f"reading_{plan.language}",
         "category": category,
@@ -661,6 +747,20 @@ def row_of(example: Example, style: int) -> dict:
             {"role": "assistant", "content": options[style % len(options)]},
         ],
     }
+    if example.structure.bank == DIVERSE:
+        structure = example.structure
+        row["structure"] = f"{structure.layout}/{structure.form}/{len(structure.joiner)}"
+    return row
+
+
+def inventory(examples: Sequence[Example]) -> tuple[set[str], set[tuple[str, str, str]]]:
+    templates: set[str] = set()
+    structures: set[tuple[str, str, str]] = set()
+    for example in examples:
+        prompt_of(example.plan, example.structure, templates)
+        structure = example.structure
+        structures.add((structure.layout, structure.form, structure.joiner))
+    return templates, structures
 
 
 def eval_links(language: str, split: str, seed: int) -> list[tuple[str, str, Plan, Structure]]:
@@ -749,5 +849,65 @@ def trained_cases(seed: int, per_language: int = TRAINED_PER_LANGUAGE) -> list[C
                     example.structure,
                     "train",
                 )
+            )
+    return cases
+
+
+def rival_kind(plan: Plan, unit: Unit) -> str:
+    if unit.relation == plan.relation and unit.entity != plan.entity:
+        return "entity"
+    if unit.entity == plan.entity and unit.relation != plan.relation:
+        return "relation"
+    return "other"
+
+
+def rivals_only(plan: Plan, kind: str) -> Plan | None:
+    keep = [
+        unit
+        for unit in plan.units
+        if unit.kind == "filler" or (not unit.target and rival_kind(plan, unit) == kind)
+    ]
+    if not any(unit.kind == "fact" for unit in keep):
+        return None
+    facts = [unit for unit in keep if unit.kind == "fact"]
+    return replace(
+        plan, units=tuple(keep), expects=REFUSAL, rejected=tuple(unit.value for unit in facts)
+    )
+
+
+def pair_case(
+    link: str, variant: str, plan: Plan, structure: Structure, reference: Plan
+) -> PairCase:
+    case = case_of(link, "pairs", variant, plan, structure, "pairs")
+    kinds = {
+        unit.value: "stale" if unit.target else rival_kind(reference, unit)
+        for unit in reference.units
+        if unit.kind == "fact"
+    }
+    return PairCase(**asdict(case) | {"kinds": tuple(kinds.get(v, "other") for v in case.rejected)})
+
+
+def pair_cases(seed: int = PAIR_SEED, per_language: int = PAIR_LINKS) -> list[PairCase]:
+    cases: list[PairCase] = []
+    for language in LANGUAGES:
+        rng = random.Random(f"{seed}:{language}:pairs")
+        for number in range(per_language):
+            task = "binding" if number % 3 else "relation"
+            plan = Builder(language, "dev", rng).plan(task, rng.choice(TRAIN_RELATIONS))
+            layout = TRAIN_LAYOUTS[number % 2]
+            structure = Structure(False, layout, rng.choice((" ", "\n")))
+            link = f"{task}/{number}"
+            variants: list[tuple[str, Plan | None, Structure]] = [
+                ("original", plan, structure),
+                ("changed", changed(plan), structure),
+                ("missing", without_target(plan), structure),
+                ("other_entity", rivals_only(plan, "entity"), structure),
+                ("other_relation", rivals_only(plan, "relation"), structure),
+                ("requestion", plan, replace(structure, question_held=True)),
+            ]
+            cases.extend(
+                pair_case(link, name, item, shape, plan)
+                for name, item, shape in variants
+                if item is not None
             )
     return cases

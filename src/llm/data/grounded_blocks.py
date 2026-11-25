@@ -19,6 +19,7 @@ from llm.data.grounded import (
     trained_cases,
     training_examples,
 )
+from llm.data.grounded_frames import LEGACY
 from llm.data.grounded_text import LANGUAGES
 from llm.tokenizer.bpe import BPETokenizer, Message
 
@@ -126,6 +127,7 @@ def write_reading_block(
     seed: int,
     missing_share: float = MISSING_SHARE,
     tasks: Sequence[str] = TASKS,
+    mode: str = LEGACY,
 ) -> dict[str, dict[str, int]]:
     groups = output / "sft_groups"
     groups.mkdir(parents=True, exist_ok=True)
@@ -134,7 +136,7 @@ def write_reading_block(
         group = f"{READING}{language}"
         target = group_target(base / "sft_groups" / f"train.{group}")
         examples = training_examples(
-            language, POOL_SIZE, seed, missing_share=missing_share, tasks=tasks
+            language, POOL_SIZE, seed, missing_share=missing_share, tasks=tasks, mode=mode
         )
         rows = fit_rows(examples, target, tokenizer, seed)
         random.Random(seed).shuffle(rows)
@@ -160,7 +162,7 @@ def write_reading_block(
     return report
 
 
-def write_cases(path: Path, cases: list[Case]) -> list[Case]:
+def write_cases(path: Path, cases: Sequence[Case]) -> Sequence[Case]:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "".join(json.dumps(asdict(case), ensure_ascii=False) + "\n" for case in cases),

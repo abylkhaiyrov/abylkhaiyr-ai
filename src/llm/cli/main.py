@@ -90,6 +90,12 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     if args.sft_profile:
         print(json.dumps(profile_sft(Path(args.sft_profile)), indent=2, ensure_ascii=False))
         return 0
+    if args.pairs:
+        from llm.data.grounded import pair_cases
+        from llm.data.grounded_blocks import write_cases
+
+        print(len(write_cases(Path(args.pairs), pair_cases())))
+        return 0
     if args.holdout:
         from llm.data.holdout import write_holdout
 
@@ -106,6 +112,7 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
             args.seed,
             args.missing_share,
             BINDING_TASKS if args.binding else TASKS,
+            args.diversity,
         )
         print(json.dumps(summary, indent=2))
         return 0
@@ -546,10 +553,12 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--grounded")
     diagnostics.add_argument("--hidden")
     diagnostics.add_argument("--exposure")
+    diagnostics.add_argument("--pairs")
     diagnostics.add_argument("--holdout")
     diagnostics.add_argument("--grounded-block")
     diagnostics.add_argument("--missing-share", type=float, default=0.5)
     diagnostics.add_argument("--binding", action="store_true")
+    diagnostics.add_argument("--diversity", default="legacy", choices=("legacy", "diverse"))
     diagnostics.add_argument("--task-loss")
     diagnostics.add_argument("--rows", nargs="+", default=[])
     diagnostics.add_argument("--job")
