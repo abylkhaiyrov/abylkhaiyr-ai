@@ -9,7 +9,7 @@ from typing import Any
 import torch
 
 from llm.core.checksums import file_sha256
-from llm.data.binary import read_jsonl
+from llm.data.copy_corpus import PRIMARY, load_corpus_cases
 from llm.data.copy_ladder import ANSWER_LABEL, CopyCase, answer_frame
 from llm.evaluation.outcomes import Outcome, SuiteOutput
 from llm.inference.engine import InferenceEngine
@@ -18,7 +18,7 @@ from llm.tokenizer.bpe import Message
 
 MAX_NEW_TOKENS = 24
 STRIP = ' .!,;:"«»\n'
-CHAT, PLAIN = "chat", "plain"
+CHAT, PLAIN, CHAT_SPACE = "chat", "plain", "chat_space"
 
 
 @dataclass(frozen=True)
@@ -39,16 +39,22 @@ class Forced:
     eos_probability: float | None
     id_first: bool
     id_all: bool
+    first_correct: bool
 
 
 def load_cases(path: str) -> list[CopyCase]:
-    return [CopyCase(**{**row, "rivals": tuple(row["rivals"])}) for row in read_jsonl(Path(path))]
+    return load_corpus_cases(path)
 
 
 def probe_of(engine: InferenceEngine, case: CopyCase, form: str, framed: bool = False) -> Probe:
     tokenizer = engine.tokenizer
     frame = answer_frame(case) if framed else ""
     target = f" {case.target}" if frame else case.target
+    if form == CHAT_SPACE:
+        prompt = tokenizer.encode_conversation(
+            [Message("user", case.prompt)], add_generation_prompt=True
+        )
+        return Probe(prompt, tokenizer.encode(f" {case.target}"), case.prompt, eos=True)
     if form == CHAT:
         prompt = tokenizer.encode_conversation(
             [Message("user", case.prompt)], add_generation_prompt=True
@@ -87,6 +93,7 @@ def forced(engine: InferenceEngine, probe: Probe) -> Forced:
         eos_probability=float(torch.tensor(chosen[-1]).exp()) if probe.eos else None,
         id_first=probe.target_ids[0] in prompt_set,
         id_all=set(probe.target_ids) <= prompt_set,
+        first_correct=bool(hits[0]),
     )
 
 
@@ -110,8 +117,24 @@ def judged(case: CopyCase, answer: str) -> dict[str, bool]:
     }
 
 
+def cell_scopes(case: CopyCase) -> list[str]:
+    cell = getattr(case, "cell", "")
+    if not cell:
+        return []
+    base = f"L{case.level}.cell.{cell}"
+    found = [base, f"{base}.{case.category}", f"{base}.{case.language}"]
+    if case.category in PRIMARY:
+        found += [f"{base}.primary", f"{base}.primary.{case.language}"]
+    return found
+
+
 def scopes(case: CopyCase) -> list[str]:
-    return [f"L{case.level}", f"L{case.level}.{case.category}", f"L{case.level}.{case.language}"]
+    return [
+        f"L{case.level}",
+        f"L{case.level}.{case.category}",
+        f"L{case.level}.{case.language}",
+        *cell_scopes(case),
+    ]
 
 
 def add_rates(output: SuiteOutput, name: str, outcomes: dict[str, list[Outcome]]) -> None:
@@ -125,6 +148,69 @@ def add_means(output: SuiteOutput, name: str, values: dict[str, list[float]]) ->
             output.metrics[f"{name}.{scope}"] = statistics.fmean(items)
 
 
+def forced_values(score: Forced) -> dict[str, float]:
+    values = {
+        "tf_first": score.first_probability,
+        "tf_loss_first": score.first_loss,
+        "tf_tok": score.token_accuracy,
+        "tf_first_acc": float(score.first_correct),
+        "id_first": float(score.id_first),
+        "id_all": float(score.id_all),
+    }
+    if score.rest_loss is not None:
+        values["tf_loss_rest"] = score.rest_loss
+    if score.eos_probability is not None:
+        values["tf_eos"] = score.eos_probability
+    return values
+
+
+def framed_values(score: Forced) -> dict[str, float]:
+    values = {
+        "fr_first": score.first_probability,
+        "fr_loss_first": score.first_loss,
+        "fr_tok": score.token_accuracy,
+        "fr_first_acc": float(score.first_correct),
+    }
+    if score.rest_loss is not None:
+        values["fr_loss_rest"] = score.rest_loss
+    return values
+
+
+def measure(
+    engine: InferenceEngine, case: CopyCase, form: str, framed: bool
+) -> tuple[dict[str, bool], dict[str, float], dict[str, Any]]:
+    probe = probe_of(engine, case, form)
+    score = forced(engine, probe)
+    verdict = {"tf_seq": score.exact}
+    record: dict[str, Any] = {"tf_first": round(score.first_probability, 6)}
+    if form != CHAT_SPACE:
+        answer, finish = generate(engine, case, probe, form)
+        verdict |= judged(case, answer)
+        record |= {"answer": answer, "finish_reason": finish}
+    values = forced_values(score)
+    if framed and case.level > 1 and form != CHAT_SPACE:
+        shaped = forced(engine, probe_of(engine, case, form, True))
+        verdict["fr_seq"] = shaped.exact
+        values |= framed_values(shaped)
+    return verdict, values, record
+
+
+def add_consistency(
+    output: SuiteOutput, name: str, cases: list[CopyCase], flags: dict[str, bool]
+) -> None:
+    groups: dict[str, list[CopyCase]] = defaultdict(list)
+    for case in cases:
+        if case.family != case.id and case.level == 2:
+            groups[case.family].append(case)
+    outcomes = [
+        Outcome(family, family, members[0].language, int(all(flags[m.id] for m in members)))
+        for family, members in groups.items()
+        if len(members) == 2
+    ]
+    if outcomes:
+        output.add_rate(f"{name}.consistent.L2", [outcomes])
+
+
 def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
     path = options["file"]
     cases = load_cases(path)
@@ -133,30 +219,10 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
     for form in options.get("formats", [CHAT, PLAIN]):
         rates: dict[str, dict[str, list[Outcome]]] = defaultdict(lambda: defaultdict(list))
         means: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+        contained: dict[str, bool] = {}
         for case in cases:
-            probe = probe_of(engine, case, form)
-            score = forced(engine, probe)
-            answer, finish = generate(engine, case, probe, form)
-            verdict = judged(case, answer) | {"tf_seq": score.exact}
-            values = {
-                "tf_first": score.first_probability,
-                "tf_loss_first": score.first_loss,
-                "tf_tok": score.token_accuracy,
-                "id_first": float(score.id_first),
-                "id_all": float(score.id_all),
-            }
-            if score.rest_loss is not None:
-                values["tf_loss_rest"] = score.rest_loss
-            if score.eos_probability is not None:
-                values["tf_eos"] = score.eos_probability
-            if framed and case.level > 1:
-                shaped = forced(engine, probe_of(engine, case, form, True))
-                verdict["fr_seq"] = shaped.exact
-                values["fr_first"] = shaped.first_probability
-                values["fr_loss_first"] = shaped.first_loss
-                values["fr_tok"] = shaped.token_accuracy
-                if shaped.rest_loss is not None:
-                    values["fr_loss_rest"] = shaped.rest_loss
+            verdict, values, extra = measure(engine, case, form, framed)
+            contained[case.id] = verdict.get("contains", False)
             for scope in scopes(case):
                 for metric, flag in verdict.items():
                     rates[metric][scope].append(
@@ -171,18 +237,19 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
                     "kind": f"L{case.level}",
                     "language": case.language,
                     "category": case.category,
+                    "cell": getattr(case, "cell", ""),
                     "prompt": case.prompt,
                     "target": case.target,
-                    "answer": answer,
-                    "finish_reason": finish,
                     **{key: bool(flag) for key, flag in verdict.items()},
-                    "tf_first": round(score.first_probability, 6),
+                    **extra,
                 }
             )
         for metric, by_scope in rates.items():
             add_rates(output, f"copy.{form}.{metric}", by_scope)
         for metric, averages in means.items():
             add_means(output, f"copy.{form}.{metric}", averages)
+        if form != CHAT_SPACE:
+            add_consistency(output, f"copy.{form}", cases, contained)
     return prefixed(output, str(options.get("prefix", "")))
 
 
