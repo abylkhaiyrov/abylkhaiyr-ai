@@ -90,6 +90,24 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     if args.sft_profile:
         print(json.dumps(profile_sft(Path(args.sft_profile)), indent=2, ensure_ascii=False))
         return 0
+    if args.tokenizer_audit:
+        from llm.data.binary import read_jsonl
+        from llm.data.copy_ladder import copy_cases
+        from llm.data.tokenizer_audit import audit as tokenizer_report
+
+        tokenizer = BPETokenizer.load(args.tokenizer)
+        rows = [row for path in args.rows for row in read_jsonl(Path(path))]
+        report = tokenizer_report(tokenizer, copy_cases(tokenizer), rows)
+        Path(args.tokenizer_audit).write_text(
+            json.dumps(report, indent=1, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        print(json.dumps(report["roundtrip"]))
+        return 0
+    if args.copy_cases:
+        from llm.data.copy_ladder import write_copy_cases
+
+        print(len(write_copy_cases(Path(args.copy_cases), BPETokenizer.load(args.tokenizer))))
+        return 0
     if args.pairs:
         from llm.data.grounded import pair_cases
         from llm.data.grounded_blocks import write_cases
@@ -553,6 +571,8 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--grounded")
     diagnostics.add_argument("--hidden")
     diagnostics.add_argument("--exposure")
+    diagnostics.add_argument("--tokenizer-audit")
+    diagnostics.add_argument("--copy-cases")
     diagnostics.add_argument("--pairs")
     diagnostics.add_argument("--holdout")
     diagnostics.add_argument("--grounded-block")

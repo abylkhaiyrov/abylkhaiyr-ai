@@ -1,0 +1,67 @@
+base_config: configs/tiny_v31_sft_stage11.yaml
+job_template: '{arm}-{seed}'
+tokens_per_step: 16352
+state_file: campaign.json
+train:
+  restore_optimizer: false
+  checkpoint_alias: null
+  protected_steps:
+  - 120
+  keep_checkpoints: 2
+  eval_interval: 40
+  checkpoint_interval: 40
+  eval_batches: 20
+  min_free_disk_gb: 20.0
+optimizer:
+  learning_rate: 0.0001
+  warmup_steps: 12
+  min_lr_ratio: 0.1
+calibration_file: configs/experiments/capacity_calibration.json
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+name: copy_diagnostic
+seeds:
+- 1
+token_budget: 1635200
+stopping:
+  max_steps: 100
+output_root: experiments/copy_diagnostic
+checkpoint_root: checkpoints/copy_diagnostic
+initial_checkpoint: null
+arms:
+  tiny17: {}
+  small17: {}
+  v31: {}
+  r4: {}
+  tiny17sft: {}
+  small17sft: {}
+reuse:
+  tiny17-1: checkpoints/stage17/tiny-seed-1
+  small17-1: checkpoints/stage17/small-seed-1
+  v31-1: checkpoints/tiny_v31_sft_stage11
+  r4-1: checkpoints/context_ablation_50/R4-1
+  tiny17sft-1: checkpoints/capacity_tiny/lr0.001-1
+  small17sft-1: checkpoints/capacity_small/lr0.001-1
+frozen_inputs:
+  registration: docs/token_copy_registration.md
+  tokenizer: data/tokenizer/tokenizer.json
+  copy_cases: data/grounded/copy_ladder.jsonl
+limits:
+  active_seconds: 600
+  absolute_seconds: 14400
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
+evaluation:
+  baseline: checkpoints/stage17/tiny-seed-1/step-00000305
+  device: mps
+  tokenizer: data/tokenizer
+  repetitions: 10000
+  cache: experiments/evaluation_cache
+  suites:
+  - name: copy
+    options:
+      file: data/grounded/copy_ladder.jsonl
+  gates: []
