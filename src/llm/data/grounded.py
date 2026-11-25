@@ -53,6 +53,7 @@ TASKS = (
     "update",
     "priority",
 )
+BINDING_TASKS = (*TASKS, "binding")
 LAYOUTS = {"qfirst": "{q}\n\n{d}", "dfirst": "{d}\n\n{q}", "flat": "{d} {q}"}
 TRAIN_LAYOUTS = ("qfirst", "dfirst")
 HELD_LAYOUTS = ("flat", "qfirst")
@@ -358,6 +359,29 @@ class Builder:
         trust = Unit("trust", "", relation, "", source=source, pick=pick)
         return self.finish("priority", relation, entity, high, (low,), [*claims, trust])
 
+    def binding(self, relation: str) -> Plan:
+        count = self.rng.randint(2, 3)
+        entities = [self.namer.entity() for _ in range(count)]
+        names = {}
+        for index, entity in enumerate(entities):
+            others = [name for name in TRAIN_RELATIONS if name != relation]
+            chosen = self.rng.sample(others, self.rng.randint(1, 2))
+            holds_relation = index < 2 or self.rng.random() < 0.5
+            names[entity] = [relation, *chosen] if holds_relation else chosen
+        units: list[Unit] = []
+        rejected: list[str] = []
+        value = ""
+        for entity, held in names.items():
+            for name in held:
+                item = self.namer.value(name)
+                is_target = entity == entities[0] and name == relation
+                value = item if is_target else value
+                if not is_target and (name == relation or entity == entities[0]):
+                    rejected.append(item)
+                units.append(fact_unit(self.rng, entity, name, item, target=is_target))
+        self.rng.shuffle(units)
+        return self.finish("binding", relation, entities[0], value, rejected, units)
+
     def plan(self, task: str, relation: str, question: str = "ask") -> Plan:
         if task == "extract":
             return self.extract(relation, question)
@@ -371,15 +395,23 @@ class Builder:
             "cause": self.cause,
             "update": self.update,
             "priority": self.priority,
+            "binding": self.binding,
         }
         return simple[task](relation)
 
 
-def plans(language: str, split: str, seed: int, count: int, offset: int = 0) -> list[Plan]:
+def plans(
+    language: str,
+    split: str,
+    seed: int,
+    count: int,
+    offset: int = 0,
+    tasks: Sequence[str] = TASKS,
+) -> list[Plan]:
     rng = random.Random(f"{seed}:{language}:{split}:{offset}")
     return [
         Builder(language, split, rng).plan(
-            TASKS[index % len(TASKS)], TRAIN_RELATIONS[(index // len(TASKS)) % len(TRAIN_RELATIONS)]
+            tasks[index % len(tasks)], TRAIN_RELATIONS[(index // len(tasks)) % len(TRAIN_RELATIONS)]
         )
         for index in range(count)
     ]
@@ -565,11 +597,12 @@ def training_examples(
     seed: int,
     split: str = "train",
     missing_share: float = MISSING_SHARE,
+    tasks: Sequence[str] = TASKS,
 ) -> list[Example]:
     rng = random.Random(f"{seed}:{language}:{split}:structures")
     ratio = missing_share / (1 - missing_share)
     examples: list[Example] = []
-    for index, plan in enumerate(plans(language, split, seed, count)):
+    for index, plan in enumerate(plans(language, split, seed, count, tasks=tasks)):
         structure = train_structure(rng)
         family = f"{split}/{language}/{index}"
         examples.append(Example(plan, structure, family))

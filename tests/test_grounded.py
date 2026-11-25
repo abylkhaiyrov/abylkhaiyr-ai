@@ -292,3 +292,29 @@ def test_noun_tables_cover_every_relation_in_every_language() -> None:
 
     rng = random.Random(0)
     assert train_structure(rng).layout in ("qfirst", "dfirst")
+
+
+def test_binding_documents_mix_entities_and_relations_with_rivals_on_both_axes() -> None:
+    from llm.data.grounded import BINDING_TASKS, TASKS
+
+    assert "binding" not in TASKS and BINDING_TASKS[-1] == "binding"
+    found = [
+        plan
+        for language in LANGUAGES
+        for plan in plans(language, "train", 1, 90, tasks=BINDING_TASKS)
+        if plan.task == "binding"
+    ]
+    assert len(found) >= 30
+    for plan in found:
+        facts = [unit for unit in plan.units if unit.kind == "fact"]
+        entities = {unit.entity for unit in facts}
+        assert len(entities) >= 2 and sum(unit.target for unit in facts) == 1
+        same_relation = [u for u in facts if u.relation == plan.relation and not u.target]
+        same_entity = [u for u in facts if u.entity == plan.entity and not u.target]
+        assert same_relation and same_entity
+        assert {u.value for u in same_relation + same_entity} <= set(plan.rejected)
+        absent = without_target(plan)
+        assert not any(
+            u.entity == plan.entity and u.relation == plan.relation for u in absent.units
+        )
+        assert changed(plan).key != plan.key

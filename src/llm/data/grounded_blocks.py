@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import numpy as np
 from llm.data.binary import IGNORE_INDEX, tokenize_sft_split, with_extension
 from llm.data.grounded import (
     MISSING_SHARE,
+    TASKS,
     Case,
     Example,
     eval_cases,
@@ -123,6 +125,7 @@ def write_reading_block(
     tokenizer: BPETokenizer,
     seed: int,
     missing_share: float = MISSING_SHARE,
+    tasks: Sequence[str] = TASKS,
 ) -> dict[str, dict[str, int]]:
     groups = output / "sft_groups"
     groups.mkdir(parents=True, exist_ok=True)
@@ -130,7 +133,9 @@ def write_reading_block(
     for language in LANGUAGES:
         group = f"{READING}{language}"
         target = group_target(base / "sft_groups" / f"train.{group}")
-        examples = training_examples(language, POOL_SIZE, seed, missing_share=missing_share)
+        examples = training_examples(
+            language, POOL_SIZE, seed, missing_share=missing_share, tasks=tasks
+        )
         rows = fit_rows(examples, target, tokenizer, seed)
         random.Random(seed).shuffle(rows)
         write_rows(groups, "train", group, rows, tokenizer)
