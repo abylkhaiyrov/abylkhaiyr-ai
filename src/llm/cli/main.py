@@ -157,6 +157,16 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
         dump(report, Path(args.exposure_output))
         print(json.dumps(report["summary"], indent=2))
         return 0
+    if args.role_loss:
+        from llm.evaluation.comparison import load_engine
+        from llm.training.loss_roles import role_losses
+
+        engine = load_engine(args.role_loss, args.tokenizer, args.device)
+        report = role_losses(
+            engine, [Path(item) for item in args.rows], args.seed, args.missing_share, args.limit
+        )
+        print(json.dumps(report, indent=2))
+        return 0
     if args.task_loss:
         from llm.evaluation.comparison import load_engine
         from llm.training.exposure_audit import task_losses
@@ -588,6 +598,7 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--binding", action="store_true")
     diagnostics.add_argument("--diversity", default="legacy", choices=("legacy", "diverse"))
     diagnostics.add_argument("--task-loss")
+    diagnostics.add_argument("--role-loss")
     diagnostics.add_argument("--rows", nargs="+", default=[])
     diagnostics.add_argument("--job")
     diagnostics.add_argument("--exposure-output", default="exposure.json")
