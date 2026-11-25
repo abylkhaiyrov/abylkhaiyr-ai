@@ -1,0 +1,83 @@
+base_config: configs/tiny_v31_sft_stage11.yaml
+initial_checkpoint: checkpoints/tiny_v31_sft_stage11/step-00000120
+job_template: '{arm}-{seed}'
+tokens_per_step: 16352
+state_file: campaign.json
+train:
+  restore_optimizer: false
+  checkpoint_alias: null
+  protected_steps:
+  - 120
+  keep_checkpoints: 2
+  eval_interval: 40
+  checkpoint_interval: 40
+  eval_batches: 20
+  min_free_disk_gb: 20.0
+optimizer:
+  learning_rate: 0.0001
+  warmup_steps: 12
+  min_lr_ratio: 0.1
+calibration_file: experiments/stage18/profile.json
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+name: context_ablation_20
+seeds:
+- 1
+token_budget: 1962240
+output_root: experiments/context_ablation_20
+checkpoint_root: checkpoints/context_ablation_20
+arms:
+  R1:
+    data_dir: data/grounded/reading_b
+  R3:
+    data_dir: data/grounded/reading_m25
+  A:
+    data_dir: data/v3_1
+reuse:
+  R1-1: checkpoints/grounded_reading/B-1
+  A-1: checkpoints/grounded_reading/A-1
+frozen_inputs:
+  initial_weights: checkpoints/tiny_v31_sft_stage11/step-00000120/model.safetensors
+  initial_metadata: checkpoints/tiny_v31_sft_stage11/step-00000120/meta.json
+  tokenizer: data/tokenizer/tokenizer.json
+  registration: docs/context_ablation_registration.md
+  grounded_dev: data/grounded/dev.jsonl
+  context_probes_dev: data/diagnostics_dev/probes.jsonl
+  block_b_en: data/grounded/reading_b/sft_groups/train.reading_en.jsonl
+  block_b_ru: data/grounded/reading_b/sft_groups/train.reading_ru.jsonl
+  block_b_kk: data/grounded/reading_b/sft_groups/train.reading_kk.jsonl
+  block_m25_en: data/grounded/reading_m25/sft_groups/train.reading_en.jsonl
+  block_m25_ru: data/grounded/reading_m25/sft_groups/train.reading_ru.jsonl
+  block_m25_kk: data/grounded/reading_m25/sft_groups/train.reading_kk.jsonl
+limits:
+  active_seconds: 1500
+  absolute_seconds: 7200
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
+evaluation:
+  baseline: checkpoints/tiny_v31_sft_stage11/step-00000120
+  device: mps
+  tokenizer: data/tokenizer
+  repetitions: 10000
+  cache: experiments/evaluation_cache
+  suites:
+  - name: perplexity
+    options:
+      sets:
+        v2_validation:
+        - data/v2/tokens
+        - validation
+        - 200
+  - name: grounded
+    options:
+      file: data/grounded/dev.jsonl
+      training:
+      - data/grounded/reading_b/sft_groups/train.reading_*.jsonl
+      - data/grounded/reading_m25/sft_groups/train.reading_*.jsonl
+  - name: probes
+    options:
+      file: data/diagnostics_dev/probes.jsonl
+      unigram: data/v4_expanded/tokens/train.bin

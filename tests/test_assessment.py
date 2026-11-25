@@ -276,3 +276,22 @@ def test_absolute_measurement_bootstraps_the_candidate_rate_by_cluster():
     assert measurement.candidate == pytest.approx(0.6)
     assert low < 0.6 < high and 0.4 < low and high < 0.8
     assert measurement.n == families
+
+
+def test_shared_cache_reuses_identical_evaluations_across_experiments(
+    tmp_path, tokenizer, model_config, monkeypatch
+):
+    from llm.training.assessment import evaluate_checkpoint
+
+    spec = evaluated_spec(tmp_path, tokenizer, model_config, monkeypatch, [])
+    plan = spec.evaluation.model_copy(update={"cache": str(tmp_path / "shared")})
+    checkpoint = str(tmp_path / "ckpt" / "A-1")
+    suite, calls = outputs_by_call([0.5] * 6)
+    first = evaluate_checkpoint("x", checkpoint, plan, tmp_path / "one", {"chat_natural": suite})
+    second = evaluate_checkpoint("x", checkpoint, plan, tmp_path / "two", {"chat_natural": suite})
+    assert len(calls) == 1
+    assert second["chat_natural"].metrics == first["chat_natural"].metrics
+    assert (tmp_path / "two" / "x.chat_natural.json").is_file()
+    monkeypatch.setattr("llm.training.assessment.METHODOLOGY", "next")
+    evaluate_checkpoint("x", checkpoint, plan, tmp_path / "three", {"chat_natural": suite})
+    assert len(calls) == 2

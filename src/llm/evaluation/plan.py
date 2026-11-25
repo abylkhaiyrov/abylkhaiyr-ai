@@ -31,6 +31,7 @@ class EvaluationPlan(StrictModel):
     tokenizer: str = "data/tokenizer"
     repetitions: int = Field(default=REPETITIONS, ge=100)
     independence: IndependenceCheck | None = None
+    cache: str | None = None
 
     @model_validator(mode="after")
     def check_suites(self) -> EvaluationPlan:

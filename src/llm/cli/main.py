@@ -90,6 +90,42 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     if args.sft_profile:
         print(json.dumps(profile_sft(Path(args.sft_profile)), indent=2, ensure_ascii=False))
         return 0
+    if args.grounded_block:
+        from llm.data.grounded_blocks import write_reading_block
+
+        summary = write_reading_block(
+            Path(args.grounded_block),
+            Path(args.base),
+            BPETokenizer.load(args.tokenizer),
+            args.seed,
+            args.missing_share,
+        )
+        print(json.dumps(summary, indent=2))
+        return 0
+    if args.exposure:
+        from llm.training.exposure_audit import attach_metrics, audit, dump, reading_catalogs
+        from llm.training.spec import load_spec
+
+        config = load_spec(args.exposure).job_configuration(args.job)
+        report = audit(
+            config,
+            BPETokenizer.load(args.tokenizer),
+            reading_catalogs(Path(config.train.data_dir), args.seed),
+        )
+        metrics = Path(config.train.output_dir) / "metrics.jsonl"
+        if metrics.is_file():
+            attach_metrics(report, metrics)
+        dump(report, Path(args.exposure_output))
+        print(json.dumps(report["summary"], indent=2))
+        return 0
+    if args.task_loss:
+        from llm.evaluation.comparison import load_engine
+        from llm.training.exposure_audit import task_losses
+
+        engine = load_engine(args.task_loss, args.tokenizer, args.device)
+        paths = [Path(item) for item in args.rows]
+        print(json.dumps(task_losses(engine, paths, args.limit), indent=2))
+        return 0
     if args.hidden:
         from llm.evaluation.comparison import load_engine
         from llm.evaluation.grounded import load_cases
@@ -101,7 +137,10 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
     if args.context_probes:
         from llm.data.probes import write_context_probes
 
-        print(json.dumps(write_context_probes(Path(args.context_probes)), indent=2))
+        summary = write_context_probes(
+            Path(args.context_probes), args.probe_documents, args.probe_seed
+        )
+        print(json.dumps(summary, indent=2))
         return 0
     if args.grounded:
         from llm.data.grounded_blocks import write_grounded
@@ -499,10 +538,19 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--sft-profile")
     diagnostics.add_argument("--grounded")
     diagnostics.add_argument("--hidden")
+    diagnostics.add_argument("--exposure")
+    diagnostics.add_argument("--grounded-block")
+    diagnostics.add_argument("--missing-share", type=float, default=0.5)
+    diagnostics.add_argument("--task-loss")
+    diagnostics.add_argument("--rows", nargs="+", default=[])
+    diagnostics.add_argument("--job")
+    diagnostics.add_argument("--exposure-output", default="exposure.json")
     diagnostics.add_argument("--cases", default="data/grounded/dev.jsonl")
     diagnostics.add_argument("--limit", type=int, default=60)
     diagnostics.add_argument("--device", default="cpu")
     diagnostics.add_argument("--context-probes")
+    diagnostics.add_argument("--probe-documents", type=int, default=40)
+    diagnostics.add_argument("--probe-seed", type=int, default=3141)
     diagnostics.add_argument("--base", default="data/v3_1")
     diagnostics.add_argument("--seed", type=int, default=1)
 

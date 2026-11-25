@@ -68,6 +68,7 @@ NAME_PARTS = 3
 YEARS = (1100, 1899)
 FILLER_LIMIT = 2
 TRAINED_PER_LANGUAGE = 30
+MISSING_SHARE = 0.5
 
 
 def split_of_name(name: str) -> str:
@@ -551,17 +552,34 @@ def held_structure(rng: random.Random) -> Structure:
 class Example:
     plan: Plan
     structure: Structure
+    family: str = ""
 
 
-def training_examples(language: str, count: int, seed: int, split: str = "train") -> list[Example]:
+def twin_due(index: int, ratio: float) -> bool:
+    return int((index + 1) * ratio) > int(index * ratio)
+
+
+def training_examples(
+    language: str,
+    count: int,
+    seed: int,
+    split: str = "train",
+    missing_share: float = MISSING_SHARE,
+) -> list[Example]:
     rng = random.Random(f"{seed}:{language}:{split}:structures")
+    ratio = missing_share / (1 - missing_share)
     examples: list[Example] = []
-    for index, plan in enumerate(plans(language, split, seed, (count + 1) // 2)):
+    for index, plan in enumerate(plans(language, split, seed, count)):
         structure = train_structure(rng)
-        partner = without_target(plan) if index % 2 == 0 else distracted(plan)
-        if plan.task == "cause" and index % 2:
-            partner = without_target(plan)
-        examples.extend([Example(plan, structure), Example(partner, structure)])
+        family = f"{split}/{language}/{index}"
+        examples.append(Example(plan, structure, family))
+        if twin_due(index, ratio):
+            partner = without_target(plan) if index % 2 == 0 else distracted(plan)
+            if plan.task == "cause" and index % 2:
+                partner = without_target(plan)
+            examples.append(Example(partner, structure, family))
+        if len(examples) >= count:
+            break
     return examples[:count]
 
 
@@ -575,6 +593,7 @@ def row_of(example: Example, style: int) -> dict:
         "category": category,
         "language": plan.language,
         "task": plan.task,
+        "family": example.family,
         "messages": [
             {"role": "user", "content": prompt_of(plan, example.structure)},
             {"role": "assistant", "content": options[style % len(options)]},

@@ -21,6 +21,8 @@ from llm.training.checkpoint import CheckpointManager
 from llm.training.progress import is_complete
 from llm.training.spec import ExperimentSpec, spec_digest
 
+METHODOLOGY = "2"
+
 
 def digest(payload: object) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -39,6 +41,33 @@ def option_files(value: object) -> dict[str, str]:
         for item in value:
             found.update(option_files(item))
     return found
+
+
+def shared_key(stamp: str, plan: EvaluationPlan) -> str:
+    tokenizer = Path(plan.tokenizer) / "tokenizer.json"
+    return digest(
+        {
+            "stamp": stamp,
+            "tokenizer": file_sha256(tokenizer) if tokenizer.is_file() else "",
+            "device": plan.device,
+            "methodology": METHODOLOGY,
+        }
+    )
+
+
+def load_saved(path: Path, stamp: str) -> SuiteOutput | None:
+    if not path.exists():
+        return None
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    return SuiteOutput.from_json(saved["output"]) if saved["stamp"] == stamp else None
+
+
+def write_saved(path: Path, stamp: str, checkpoint: str, output: SuiteOutput) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"stamp": stamp, "checkpoint": checkpoint, "output": output.to_json()}) + "\n",
+        encoding="utf-8",
+    )
 
 
 def fingerprint(checkpoint: str) -> str:
@@ -67,19 +96,20 @@ def evaluate_checkpoint(
             }
         )
         path = directory / f"{label}.{suite.key}.json"
-        if path.exists():
-            saved = json.loads(path.read_text(encoding="utf-8"))
-            if saved["stamp"] == stamp:
-                results[suite.key] = SuiteOutput.from_json(saved["output"])
-                continue
+        shared = (
+            Path(plan.cache) / f"{shared_key(stamp, plan)}.json" if plan.cache is not None else None
+        )
+        reused = load_saved(path, stamp) or (load_saved(shared, stamp) if shared else None)
+        if reused is not None:
+            results[suite.key] = reused
+            write_saved(path, stamp, checkpoint, reused)
+            continue
         if engine is None:
             engine = load_engine(checkpoint, plan.tokenizer, plan.device)
         output = suites[suite.name](engine, suite.options)
-        path.write_text(
-            json.dumps({"stamp": stamp, "checkpoint": checkpoint, "output": output.to_json()})
-            + "\n",
-            encoding="utf-8",
-        )
+        write_saved(path, stamp, checkpoint, output)
+        if shared is not None:
+            write_saved(shared, stamp, checkpoint, output)
         results[suite.key] = output
     return results
 

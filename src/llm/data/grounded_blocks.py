@@ -9,6 +9,7 @@ import numpy as np
 
 from llm.data.binary import IGNORE_INDEX, tokenize_sft_split, with_extension
 from llm.data.grounded import (
+    MISSING_SHARE,
     Case,
     Example,
     eval_cases,
@@ -117,7 +118,11 @@ def write_rows(
 
 
 def write_reading_block(
-    output: Path, base: Path, tokenizer: BPETokenizer, seed: int
+    output: Path,
+    base: Path,
+    tokenizer: BPETokenizer,
+    seed: int,
+    missing_share: float = MISSING_SHARE,
 ) -> dict[str, dict[str, int]]:
     groups = output / "sft_groups"
     groups.mkdir(parents=True, exist_ok=True)
@@ -125,7 +130,7 @@ def write_reading_block(
     for language in LANGUAGES:
         group = f"{READING}{language}"
         target = group_target(base / "sft_groups" / f"train.{group}")
-        examples = training_examples(language, POOL_SIZE, seed)
+        examples = training_examples(language, POOL_SIZE, seed, missing_share=missing_share)
         rows = fit_rows(examples, target, tokenizer, seed)
         random.Random(seed).shuffle(rows)
         write_rows(groups, "train", group, rows, tokenizer)
