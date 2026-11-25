@@ -41,8 +41,8 @@ def _sampling(args: argparse.Namespace):
     )
 
 
-def evaluate_and_print(campaign, spec) -> int:
-    report = campaign.evaluate_campaign(spec)
+def evaluate_and_print(campaign, spec, until: int | None = None) -> int:
+    report = campaign.evaluate_campaign(spec, until)
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 4 if report["accepted"] is False else 0
 
@@ -56,19 +56,22 @@ def cmd_experiment(args: argparse.Namespace) -> int:
     elif args.action == "status":
         print(json.dumps(campaign.status(spec), indent=2))
     elif args.action == "run":
-        reason = campaign.run_campaign(spec, path)
+        reason = campaign.run_campaign(spec, path, args.until)
         print(json.dumps({"stopped": reason}))
         if reason is not None:
             return 3
-        return evaluate_and_print(campaign, spec) if spec.evaluation else 0
+        return evaluate_and_print(campaign, spec, args.until) if spec.evaluation else 0
     elif args.action == "baseline":
         print(json.dumps(campaign.evaluate_baseline(spec), indent=2, ensure_ascii=False))
     elif args.action == "evaluate":
-        return evaluate_and_print(campaign, spec)
+        return evaluate_and_print(campaign, spec, args.until)
     elif args.job is None:
         raise ConfigError("the job action needs a job name")
     else:
-        print(json.dumps(campaign.run_job(spec, args.job, args.active_seconds)), flush=True)
+        print(
+            json.dumps(campaign.run_job(spec, args.job, args.active_seconds, args.until)),
+            flush=True,
+        )
     return 0
 
 
@@ -571,6 +574,7 @@ def build_parser() -> argparse.ArgumentParser:
     experiment.add_argument("spec")
     experiment.add_argument("job", nargs="?")
     experiment.add_argument("--active-seconds", type=float)
+    experiment.add_argument("--until", type=int)
 
     kernels = add("kernels", cmd_kernels)
     kernels.add_argument("--device", default="auto")

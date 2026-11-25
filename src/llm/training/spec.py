@@ -33,6 +33,15 @@ class ArmSpec(StrictModel):
 class StoppingCriteria(StrictModel):
     max_steps: int | None = Field(default=None, gt=0)
     require_complete_seeds: bool = True
+    stages: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_stages(self) -> StoppingCriteria:
+        if self.stages != sorted(set(self.stages)) or any(step <= 0 for step in self.stages):
+            raise ValueError("stages must be positive and strictly increasing")
+        if self.stages and self.max_steps is not None and self.stages[-1] > self.max_steps:
+            raise ValueError("stages must not exceed max_steps")
+        return self
 
 
 class ExperimentSpec(StrictModel):
@@ -89,6 +98,17 @@ class ExperimentSpec(StrictModel):
     def target_steps(self) -> int:
         derived = math.ceil(self.token_budget / self.tokens_per_step)
         return self.stopping.max_steps or derived
+
+    def goal(self, until: int | None = None) -> int:
+        if until is None:
+            return self.target_steps
+        if until not in {*self.stopping.stages, self.target_steps}:
+            raise ConfigError(f"step {until} is not a registered stage")
+        return until
+
+    def stage_checkpoint(self, job: str, until: int | None) -> Path:
+        base = self.checkpoint_dir(job)
+        return base if until is None else base / f"step-{until:08d}"
 
     def checkpoint_dir(self, job: str) -> Path:
         return Path(self.reuse[job]) if job in self.reuse else Path(self.checkpoint_root) / job

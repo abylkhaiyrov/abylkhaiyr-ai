@@ -70,10 +70,11 @@ def healthy(spec: ExperimentSpec, peak: float, job: str) -> bool:
     return resources_available(peak, spec.resources, spec.checkpoint_dir(job).parent)
 
 
-def run_campaign(spec: ExperimentSpec, spec_path: Path) -> str | None:
+def run_campaign(spec: ExperimentSpec, spec_path: Path, until: int | None = None) -> str | None:
+    spec.goal(until)
     plan = build_plan(spec)
     jobs = spec.runnable_jobs()
-    if all(is_complete(spec, job) for job in jobs):
+    if all(is_complete(spec, job, until) for job in jobs):
         return None
     spec.state_path.parent.mkdir(parents=True, exist_ok=True)
     peak = calibrated_peak(spec)
@@ -100,8 +101,9 @@ def run_campaign(spec: ExperimentSpec, spec_path: Path) -> str | None:
                 job,
                 "--active-seconds",
                 str(remaining),
+                *(["--until", str(until)] if until is not None else []),
             ],
-            lambda job: is_complete(spec, job),
+            lambda job: is_complete(spec, job, until),
             lambda job: healthy(spec, peak, job),
             spec.ledger_path,
         )
@@ -109,21 +111,22 @@ def run_campaign(spec: ExperimentSpec, spec_path: Path) -> str | None:
     return reason
 
 
-def evaluate_campaign(spec: ExperimentSpec) -> dict[str, Any]:
-    return assess(spec)
+def evaluate_campaign(spec: ExperimentSpec, until: int | None = None) -> dict[str, Any]:
+    return assess(spec, until=until)
 
 
-def run_job(spec: ExperimentSpec, job: str, active_seconds: float | None) -> dict[str, Any]:
+def run_job(
+    spec: ExperimentSpec, job: str, active_seconds: float | None, until: int | None = None
+) -> dict[str, Any]:
     plan = build_plan(spec)
     if load_state(spec, plan) is None:
         raise ConfigError("start through the series runner to verify the entire series")
+    goal = spec.goal(until)
     step = completed_step(spec, job)
-    if step >= spec.target_steps:
+    if step >= goal:
         return {"job": job, "final_step": step}
     deadline = None if active_seconds is None else time.monotonic() + active_seconds
-    result = run_training(
-        spec.job_configuration(job), step > 0, spec.target_steps, deadline=deadline
-    )
+    result = run_training(spec.job_configuration(job), step > 0, goal, deadline=deadline)
     return {"job": job, **asdict(result)}
 
 

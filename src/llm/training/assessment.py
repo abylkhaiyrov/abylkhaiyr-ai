@@ -212,6 +212,7 @@ def arm_runs(
 def assess(
     spec: ExperimentSpec,
     suites: Mapping[str, Suite] = SUITES,
+    until: int | None = None,
 ) -> dict[str, Any]:
     plan = spec.evaluation
     if plan is None:
@@ -219,7 +220,9 @@ def assess(
     if plan.independence is not None:
         verify_independence(plan.independence)
     directory = Path(spec.output_root) / "evaluation"
-    done = {job for job in spec.job_names() if is_complete(spec, job)}
+    if until is not None:
+        directory = directory / f"step-{spec.goal(until)}"
+    done = {job for job in spec.job_names() if is_complete(spec, job, until)}
     seeds = seeds_ready(spec, done)
     if not seeds:
         raise ConfigError("no seed has every arm complete")
@@ -228,7 +231,7 @@ def assess(
     for job in spec.job_names():
         if job in done and spec.job_pairs()[job][1] in seeds:
             outputs[job] = evaluate_checkpoint(
-                job, str(spec.checkpoint_dir(job)), plan, directory, suites
+                job, str(spec.stage_checkpoint(job, until)), plan, directory, suites
             )
             check_inputs(baseline, outputs[job])
     results: list[GateResult] = []

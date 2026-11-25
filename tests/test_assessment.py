@@ -295,3 +295,28 @@ def test_shared_cache_reuses_identical_evaluations_across_experiments(
     monkeypatch.setattr("llm.training.assessment.METHODOLOGY", "next")
     evaluate_checkpoint("x", checkpoint, plan, tmp_path / "three", {"chat_natural": suite})
     assert len(calls) == 2
+
+
+def test_stage_evaluation_reads_the_registered_step_and_keeps_stages_apart(
+    tmp_path, tokenizer, model_config, monkeypatch
+):
+    spec = evaluated_spec(tmp_path, tokenizer, model_config, monkeypatch, [])
+    payload = spec.model_dump(mode="json")
+    payload["stopping"] = {"max_steps": 4, "stages": [2, 4]}
+    staged = type(spec).model_validate(payload)
+    suite, _calls = outputs_by_call([0.5] * 8)
+    first = assess(staged, {"chat_natural": suite}, until=2)
+    assert first["accepted"] is None
+    assert (tmp_path / "out" / "evaluation" / "step-2").is_dir()
+    second = assess(staged, {"chat_natural": suite}, until=4)
+    assert second["accepted"] is None
+    assert (tmp_path / "out" / "evaluation" / "step-4").is_dir()
+    stamps = {
+        step: json.loads(
+            (tmp_path / "out" / "evaluation" / f"step-{step}" / "A-1.chat_natural.json").read_text(
+                encoding="utf-8"
+            )
+        )["checkpoint"]
+        for step in (2, 4)
+    }
+    assert stamps[2].endswith("step-00000002") and stamps[4].endswith("step-00000004")

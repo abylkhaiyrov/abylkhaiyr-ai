@@ -109,3 +109,48 @@ def test_runner_rejects_a_changed_plan_instead_of_extending_the_budget(
     payload["token_budget"] = 320
     path.write_text(yaml.safe_dump(payload), encoding="utf-8")
     assert main(["experiment", "run", str(path)]) != 0
+
+
+def staged_spec(path: Path, stages: list[int], horizon: int) -> None:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    payload["stopping"] = {"max_steps": horizon, "stages": stages}
+    payload["train"] = {"protected_steps": stages}
+    path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+
+
+def test_registered_stages_continue_one_trajectory_with_a_fixed_horizon(
+    tmp_path, tokenizer, model_config, monkeypatch
+):
+    import pytest
+
+    from llm.core.errors import ConfigError
+    from llm.training import campaign
+
+    monkeypatch.chdir(tmp_path)
+    path = write_project(tmp_path, tokenizer, model_config)
+    staged_spec(path, [2, 4], 6)
+    spec = load_spec(path)
+    assert spec.target_steps == 6 and spec.goal(4) == 4 and spec.goal() == 6
+    assert all(spec.job_configuration(job).train.max_steps == 6 for job in spec.job_names())
+    with pytest.raises(ConfigError, match="registered stage"):
+        campaign.run_campaign(spec, path, 3)
+    assert main(["experiment", "run", str(path), "--until", "2"]) == 0
+    assert {campaign.completed_step(spec, job) for job in spec.job_names()} == {2}
+    assert main(["experiment", "run", str(path), "--until", "4"]) == 0
+    assert {campaign.completed_step(spec, job) for job in spec.job_names()} == {4}
+    for job in spec.job_names():
+        assert (spec.stage_checkpoint(job, 2) / "meta.json").is_file()
+        assert (spec.stage_checkpoint(job, 4) / "meta.json").is_file()
+    assert spec.stage_checkpoint("A-1", None) == spec.checkpoint_dir("A-1")
+    assert main(["experiment", "run", str(path), "--until", "4"]) == 0
+    assert {campaign.completed_step(spec, job) for job in spec.job_names()} == {4}
+
+
+def test_stage_validation_rejects_unsorted_or_oversized_stages(tmp_path, tokenizer, model_config):
+    import pytest
+
+    path = write_project(tmp_path, tokenizer, model_config)
+    for stages, horizon in (([4, 2], 6), ([2, 9], 6), ([0, 2], 6)):
+        staged_spec(path, stages, horizon)
+        with pytest.raises(Exception, match="stages"):
+            load_spec(path)

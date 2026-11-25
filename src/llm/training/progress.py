@@ -15,5 +15,5 @@ def completed_step(spec: ExperimentSpec, job: str) -> int:
     return int(CheckpointManager.verify(state)["step"])
 
 
-def is_complete(spec: ExperimentSpec, job: str) -> bool:
-    return completed_step(spec, job) >= spec.target_steps
+def is_complete(spec: ExperimentSpec, job: str, until: int | None = None) -> bool:
+    return completed_step(spec, job) >= spec.goal(until)
