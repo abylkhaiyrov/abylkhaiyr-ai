@@ -10,7 +10,7 @@ import torch
 
 from llm.core.checksums import file_sha256
 from llm.data.binary import read_jsonl
-from llm.data.copy_ladder import ANSWER_LABEL, CopyCase
+from llm.data.copy_ladder import ANSWER_LABEL, CopyCase, answer_frame
 from llm.evaluation.outcomes import Outcome, SuiteOutput
 from llm.inference.engine import InferenceEngine
 from llm.inference.sampling import SamplingParams
@@ -26,6 +26,7 @@ class Probe:
     prompt_ids: list[int]
     target_ids: list[int]
     text: str
+    eos: bool = False
 
 
 @dataclass(frozen=True)
@@ -44,19 +45,30 @@ def load_cases(path: str) -> list[CopyCase]:
     return [CopyCase(**{**row, "rivals": tuple(row["rivals"])}) for row in read_jsonl(Path(path))]
 
 
-def probe_of(engine: InferenceEngine, case: CopyCase, form: str) -> Probe:
+def probe_of(engine: InferenceEngine, case: CopyCase, form: str, framed: bool = False) -> Probe:
     tokenizer = engine.tokenizer
+    frame = answer_frame(case) if framed else ""
+    target = f" {case.target}" if frame else case.target
     if form == CHAT:
         prompt = tokenizer.encode_conversation(
             [Message("user", case.prompt)], add_generation_prompt=True
         )
-        return Probe(prompt, tokenizer.encode(case.target), case.prompt)
+        framed_ids = tokenizer.encode(frame) if frame else []
+        return Probe(
+            prompt + framed_ids,
+            tokenizer.encode(target),
+            case.prompt,
+            eos=not framed,
+        )
     text = f"{case.prompt}\n{ANSWER_LABEL[case.language]}"
+    if frame:
+        text = f"{text} {frame}"
+        return Probe(tokenizer.encode(text, add_bos=True), tokenizer.encode(target), text)
     return Probe(tokenizer.encode(text, add_bos=True), tokenizer.encode(f" {case.target}"), text)
 
 
-def forced(engine: InferenceEngine, probe: Probe, form: str) -> Forced:
-    target = probe.target_ids + ([engine.tokenizer.eos_id] if form == CHAT else [])
+def forced(engine: InferenceEngine, probe: Probe) -> Forced:
+    target = probe.target_ids + ([engine.tokenizer.eos_id] if probe.eos else [])
     sequence = [*probe.prompt_ids, *target]
     with torch.no_grad():
         logits = engine.model(torch.tensor([sequence[:-1]], device=engine.device)).float()
@@ -72,7 +84,7 @@ def forced(engine: InferenceEngine, probe: Probe, form: str) -> Forced:
         rest_loss=-statistics.fmean(chosen[1:count]) if count > 1 else None,
         token_accuracy=statistics.fmean(hits[:count]),
         exact=all(hits[:count]),
-        eos_probability=float(torch.tensor(chosen[-1]).exp()) if form == CHAT else None,
+        eos_probability=float(torch.tensor(chosen[-1]).exp()) if probe.eos else None,
         id_first=probe.target_ids[0] in prompt_set,
         id_all=set(probe.target_ids) <= prompt_set,
     )
@@ -117,12 +129,13 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
     path = options["file"]
     cases = load_cases(path)
     output = SuiteOutput(inputs={path: file_sha256(Path(path))})
+    framed = bool(options.get("framed", False))
     for form in options.get("formats", [CHAT, PLAIN]):
         rates: dict[str, dict[str, list[Outcome]]] = defaultdict(lambda: defaultdict(list))
         means: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
         for case in cases:
             probe = probe_of(engine, case, form)
-            score = forced(engine, probe, form)
+            score = forced(engine, probe)
             answer, finish = generate(engine, case, probe, form)
             verdict = judged(case, answer) | {"tf_seq": score.exact}
             values = {
@@ -136,6 +149,14 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
                 values["tf_loss_rest"] = score.rest_loss
             if score.eos_probability is not None:
                 values["tf_eos"] = score.eos_probability
+            if framed and case.level > 1:
+                shaped = forced(engine, probe_of(engine, case, form, True))
+                verdict["fr_seq"] = shaped.exact
+                values["fr_first"] = shaped.first_probability
+                values["fr_loss_first"] = shaped.first_loss
+                values["fr_tok"] = shaped.token_accuracy
+                if shaped.rest_loss is not None:
+                    values["fr_loss_rest"] = shaped.rest_loss
             for scope in scopes(case):
                 for metric, flag in verdict.items():
                     rates[metric][scope].append(

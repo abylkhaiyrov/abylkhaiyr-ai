@@ -87,7 +87,7 @@ def test_teacher_forcing_matches_the_model_distribution(real, real_config) -> No
     engine.model.eval()
     case = copy_cases(real, per_cell=2)[0]
     probe = probe_of(engine, case, "plain")
-    score = forced(engine, probe, "plain")
+    score = forced(engine, probe)
     sequence = torch.tensor([[*probe.prompt_ids, *probe.target_ids][:-1]])
     with torch.no_grad():
         logits = engine.model(sequence).float()[0, len(probe.prompt_ids) - 1]
@@ -177,3 +177,41 @@ def test_tokenizer_audit_reports_value_statistics_roundtrip_and_identifier_match
     assert stats["multi_token_share"] == 1.0 and stats["single_token_share"] == 0.0
     report = audit(real, cases, rows)
     assert report["roundtrip"]["mismatches"] == 0 and report["vocabulary"] == real.vocab_size
+
+
+def test_framed_probe_keeps_leading_space_and_matches_document_identifiers(
+    real, real_config
+) -> None:
+    from llm.data.copy_ladder import answer_frame
+
+    engine = InferenceEngine(CausalLM(real_config), real, device=torch.device("cpu"))
+    case = next(
+        c
+        for c in copy_cases(real, per_cell=3)
+        if c.level == 3 and c.language == "ru" and c.category == "invented"
+    )
+    assert answer_frame(case).startswith("Река города") and case.entity in answer_frame(case)
+    chat = probe_of(engine, case, "chat", framed=True)
+    plain = probe_of(engine, case, "plain", framed=True)
+    assert chat.target_ids == plain.target_ids == real.encode(f" {case.target}")
+    assert not chat.eos and not plain.eos
+    assert forced(engine, chat).id_first and forced(engine, plain).id_first
+    assert answer_frame(next(c for c in copy_cases(real, per_cell=3) if c.level == 1)) == ""
+
+
+def test_suite_adds_framed_metrics_only_when_requested(tmp_path, real, real_config) -> None:
+    cases = write_copy_cases(tmp_path / "cases.jsonl", real)
+    scoped = [c for c in cases if c.language == "ru" and c.category == "invented"]
+    subset = [c for level in (1, 2, 4) for c in scoped if c.level == level][::3]
+    path = tmp_path / "subset.jsonl"
+    path.write_text(
+        "".join(json.dumps(asdict(c), ensure_ascii=False) + "\n" for c in subset), encoding="utf-8"
+    )
+    engine = InferenceEngine(CausalLM(real_config), real, device=torch.device("cpu"))
+    plain = evaluate(engine, {"file": str(path), "formats": ["plain"]})
+    framed = evaluate(engine, {"file": str(path), "formats": ["plain"], "framed": True})
+    assert not any(".fr_" in name for name in plain.metrics)
+    assert (
+        "copy.plain.fr_seq.L2" in framed.metrics and "copy.plain.fr_loss_first.L4" in framed.metrics
+    )
+    assert not any(name.endswith(".L1") and ".fr_" in name for name in framed.metrics)

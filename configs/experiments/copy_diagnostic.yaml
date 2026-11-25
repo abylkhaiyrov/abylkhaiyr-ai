@@ -64,4 +64,5 @@ evaluation:
   - name: copy
     options:
       file: data/grounded/copy_ladder.jsonl
+      framed: true
   gates: []

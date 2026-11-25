@@ -124,6 +124,30 @@ ASKED = {
 }
 
 
+FRAMES = {
+    2: {
+        "en": "The river is called",
+        "ru": "Река называется",
+        "kk": "Өзеннің аты",
+    },
+    3: {
+        "en": "The river of city {E} is",
+        "ru": "Река города {E} —",
+        "kk": "{E} қаласының өзені —",
+    },
+    4: {
+        "en": "The {rel} of city {E} is",
+        "ru": "{rel} города {E} —",
+        "kk": "{E} қаласының {rel} —",
+    },
+}
+FRAME_RELATIONS = {
+    "en": {"river": "river", "mountain": "mountain"},
+    "ru": {"river": "Река", "mountain": "Гора"},
+    "kk": {"river": "өзені", "mountain": "тауы"},
+}
+
+
 @dataclass(frozen=True)
 class CopyCase:
     id: str
@@ -288,3 +312,10 @@ def write_copy_cases(path: Path, tokenizer: BPETokenizer, seed: int = 11) -> lis
         encoding="utf-8",
     )
     return cases
+
+
+def answer_frame(case: CopyCase) -> str:
+    if case.level == 1:
+        return ""
+    relation = FRAME_RELATIONS[case.language].get(case.relation, "")
+    return FRAMES[case.level][case.language].format(E=case.entity, rel=relation)
