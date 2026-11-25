@@ -1,0 +1,84 @@
+name: copy_overfit
+base_config: configs/capacity_tiny_sft.yaml
+initial_checkpoint: checkpoints/stage17/tiny-seed-1/step-00000305
+job_template: '{arm}-{seed}'
+seeds:
+- 1
+token_budget: 916800
+tokens_per_step: 3056
+output_root: experiments/copy_overfit
+checkpoint_root: checkpoints/copy_overfit
+state_file: campaign.json
+train:
+  restore_optimizer: false
+  mixture: {}
+  sft_replay_dir: null
+  sft_replay_fraction: 0.0
+  pack_sequences: false
+  checkpoint_alias: null
+  micro_batch_size: 16
+  gradient_accumulation_steps: 1
+  sequence_length: 191
+  eval_interval: 50
+  checkpoint_interval: 100
+  eval_batches: 9
+  log_interval: 50
+  protected_steps:
+  - 300
+  keep_checkpoints: 2
+  dataset_version: copy
+  min_free_disk_gb: 20.0
+optimizer:
+  learning_rate: 0.001
+  warmup_steps: 12
+  min_lr_ratio: 0.1
+arms:
+  copy36:
+    data_dir: data/copy/copy36
+  copy648:
+    data_dir: data/copy/copy648
+frozen_inputs:
+  initial_weights: checkpoints/stage17/tiny-seed-1/step-00000305/model.safetensors
+  initial_metadata: checkpoints/stage17/tiny-seed-1/step-00000305/meta.json
+  tokenizer: data/tokenizer/tokenizer.json
+  registration: docs/token_copy_training_registration.md
+  ladder: data/grounded/copy_ladder.jsonl
+  trained: data/copy/trained.jsonl
+  permuted: data/copy/permuted.jsonl
+  train_copy36: data/copy/copy36/sft/train.jsonl
+  train_copy648: data/copy/copy648/sft/train.jsonl
+calibration_file: configs/experiments/capacity_calibration.json
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+limits:
+  active_seconds: 900
+  absolute_seconds: 7200
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
+evaluation:
+  baseline: checkpoints/stage17/tiny-seed-1/step-00000305
+  device: mps
+  tokenizer: data/tokenizer
+  repetitions: 10000
+  cache: experiments/evaluation_cache
+  gates: []
+  suites:
+  - name: copy
+    label: ladder
+    options:
+      file: data/grounded/copy_ladder.jsonl
+      framed: true
+      prefix: ladder.
+  - name: copy
+    label: trained
+    options:
+      file: data/copy/trained.jsonl
+      prefix: trained.
+  - name: copy
+    label: permuted
+    options:
+      file: data/copy/permuted.jsonl
+      prefix: permuted.

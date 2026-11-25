@@ -215,3 +215,36 @@ def test_suite_adds_framed_metrics_only_when_requested(tmp_path, real, real_conf
         "copy.plain.fr_seq.L2" in framed.metrics and "copy.plain.fr_loss_first.L4" in framed.metrics
     )
     assert not any(name.endswith(".L1") and ".fr_" in name for name in framed.metrics)
+
+
+def test_training_sets_are_nested_disjoint_from_evaluation_and_permute_trained_values(real) -> None:
+    from llm.data.copy_ladder import TRAIN_CATEGORIES, training_rows, training_sets
+
+    evaluation = copy_cases(real)
+    sets = training_sets(real, evaluation)
+    small = {c.target for c in sets["copy36"]}
+    full = {c.target for c in sets["copy648"]}
+    held = {c.target for c in evaluation} | {c.target for c in sets["validation"]}
+    assert len(sets["copy36"]) == 36 and len(sets["copy648"]) == 648
+    assert small <= full and not (full & {c.target for c in evaluation})
+    assert not {c.target for c in sets["validation"]} & full
+    assert held and {c.category for c in sets["copy648"]} == set(TRAIN_CATEGORIES)
+    assert {c.level for c in sets["copy648"]} == {1, 2}
+    assert {c.target for c in sets["permuted"]} <= small
+    for source in sets["permuted"]:
+        assert source.target in source.prompt and source.id.startswith("permuted/")
+    rows = training_rows(sets["copy36"])
+    assert all(r["messages"][0]["role"] == "user" and r["messages"][1]["content"] for r in rows)
+    assert {r["category"] for r in rows} == {"copy_l1", "copy_l2"}
+
+
+def test_written_training_sets_are_tokenized_and_consistent(tmp_path, real) -> None:
+    from llm.data.copy_ladder import write_training_sets
+
+    summary = write_training_sets(tmp_path, real, copy_cases(real))
+    assert summary == {"copy36": 36, "copy648": 648, "validation": 18, "permuted": 36}
+    for name, count in (("copy36", 36), ("copy648", 648)):
+        directory = tmp_path / name / "sft"
+        assert len((directory / "train.jsonl").read_text(encoding="utf-8").splitlines()) == count
+        assert (directory / "train.ids.bin").stat().st_size > 0
+    assert len((tmp_path / "trained.jsonl").read_text(encoding="utf-8").splitlines()) == 36

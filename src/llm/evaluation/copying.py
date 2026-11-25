@@ -183,4 +183,15 @@ def evaluate(engine: InferenceEngine, options: dict[str, Any]) -> SuiteOutput:
             add_rates(output, f"copy.{form}.{metric}", by_scope)
         for metric, averages in means.items():
             add_means(output, f"copy.{form}.{metric}", averages)
-    return output
+    return prefixed(output, str(options.get("prefix", "")))
+
+
+def prefixed(output: SuiteOutput, prefix: str) -> SuiteOutput:
+    if not prefix:
+        return output
+    return SuiteOutput(
+        {f"{prefix}{name}": value for name, value in output.metrics.items()},
+        {f"{prefix}{name}": runs for name, runs in output.items.items()},
+        output.inputs,
+        output.records,
+    )

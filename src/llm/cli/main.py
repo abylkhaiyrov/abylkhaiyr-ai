@@ -103,6 +103,13 @@ def cmd_diagnostics(args: argparse.Namespace) -> int:
         )
         print(json.dumps(report["roundtrip"]))
         return 0
+    if args.copy_training:
+        from llm.data.copy_ladder import copy_cases, write_training_sets
+
+        tokenizer = BPETokenizer.load(args.tokenizer)
+        summary = write_training_sets(Path(args.copy_training), tokenizer, copy_cases(tokenizer))
+        print(json.dumps(summary))
+        return 0
     if args.copy_cases:
         from llm.data.copy_ladder import write_copy_cases
 
@@ -573,6 +580,7 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics.add_argument("--exposure")
     diagnostics.add_argument("--tokenizer-audit")
     diagnostics.add_argument("--copy-cases")
+    diagnostics.add_argument("--copy-training")
     diagnostics.add_argument("--pairs")
     diagnostics.add_argument("--holdout")
     diagnostics.add_argument("--grounded-block")

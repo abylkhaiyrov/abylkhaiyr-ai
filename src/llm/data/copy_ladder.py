@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import random
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from llm.data.binary import tokenize_sft_split
 from llm.tokenizer.bpe import BPETokenizer
 
 LANGUAGES = ("en", "ru", "kk")
@@ -14,7 +15,7 @@ LEVELS = (1, 2, 3, 4)
 CATEGORIES = ("familiar", "single", "double", "long", "number", "invented")
 ITEMS_PER_CELL = 8
 LONG_TOKENS = 4
-MAX_ATTEMPTS = 200_000
+MAX_ATTEMPTS = 500_000
 SYLLABLE_RANGE = {"double": (1, 2), "long": (3, 6)}
 WIDTH = {1: 1, 2: 1, 3: 2, 4: 4}
 ENTITIES = ("A", "B")
@@ -190,7 +191,13 @@ def latin_name(rng: random.Random) -> str:
 
 
 def draw_pool(
-    tokenizer: BPETokenizer, language: str, category: str, count: int, seed: int
+    tokenizer: BPETokenizer,
+    language: str,
+    category: str,
+    count: int,
+    seed: int,
+    exclude: frozenset[str] = frozenset(),
+    ranges: Mapping[str, tuple[int, int]] = SYLLABLE_RANGE,
 ) -> list[str]:
     rng = random.Random(f"{seed}:{language}:{category}")
     if category in ("familiar", "single"):
@@ -201,35 +208,42 @@ def draw_pool(
         )
         rng.shuffle(source)
         return [source[index % len(source)] for index in range(count)]
-    if category == "number":
-        return [str(rng.randint(100, 999_999)) for _ in range(count)]
     found: list[str] = []
     attempts = 0
     while len(found) < count:
         attempts += 1
         if attempts > MAX_ATTEMPTS:
             raise ValueError(f"cannot draw {count} {category} values for {language}")
-        if category == "invented":
+        if category == "number":
+            candidate = str(rng.randint(100, 999_999))
+        elif category == "invented":
             candidate = latin_name(rng)
         else:
-            candidate = invented(rng, language, rng.randint(*SYLLABLE_RANGE[category]))
+            candidate = invented(rng, language, rng.randint(*ranges[category]))
             size = doc_tokens(tokenizer, candidate)
             if (category == "double" and size != 2) or (category == "long" and size < LONG_TOKENS):
                 continue
-        if candidate not in found:
+        if candidate not in found and candidate not in exclude:
             found.append(candidate)
     return found
 
 
 def pools(
-    tokenizer: BPETokenizer, per_cell: int = ITEMS_PER_CELL, seed: int = 11
+    tokenizer: BPETokenizer,
+    per_cell: int = ITEMS_PER_CELL,
+    seed: int = 11,
+    categories: Sequence[str] = CATEGORIES,
+    exclude: frozenset[str] = frozenset(),
+    levels: Sequence[int] = LEVELS,
+    ranges: Mapping[str, tuple[int, int]] = SYLLABLE_RANGE,
 ) -> dict[tuple[str, str], list[str]]:
     result = {}
     for language in LANGUAGES:
-        for category in CATEGORIES:
-            want = per_cell * sum(WIDTH.values())
-            drawn = draw_pool(tokenizer, language, category, want, seed)
-            result[(language, category)] = drawn
+        for category in categories:
+            want = per_cell * sum(WIDTH[level] for level in levels)
+            result[(language, category)] = draw_pool(
+                tokenizer, language, category, want, seed, exclude, ranges
+            )
     return result
 
 
@@ -267,16 +281,22 @@ def level_prompt(
 
 
 def copy_cases(
-    tokenizer: BPETokenizer, per_cell: int = ITEMS_PER_CELL, seed: int = 11
+    tokenizer: BPETokenizer,
+    per_cell: int = ITEMS_PER_CELL,
+    seed: int = 11,
+    categories: Sequence[str] = CATEGORIES,
+    levels: Sequence[int] = LEVELS,
+    exclude: frozenset[str] = frozenset(),
+    ranges: Mapping[str, tuple[int, int]] = SYLLABLE_RANGE,
 ) -> list[CopyCase]:
-    drawn = pools(tokenizer, per_cell, seed)
+    drawn = pools(tokenizer, per_cell, seed, categories, exclude, levels, ranges)
     cases: list[CopyCase] = []
     for language in LANGUAGES:
         rng = random.Random(f"{seed}:{language}:cases")
-        for category in CATEGORIES:
+        for category in categories:
             pool = drawn[(language, category)]
             cursor = 0
-            for level in LEVELS:
+            for level in levels:
                 width = WIDTH[level]
                 for number in range(per_cell):
                     if cursor + width > len(pool):
@@ -319,3 +339,119 @@ def answer_frame(case: CopyCase) -> str:
         return ""
     relation = FRAME_RELATIONS[case.language].get(case.relation, "")
     return FRAMES[case.level][case.language].format(E=case.entity, rel=relation)
+
+
+TRAIN_SEED = 23
+TRAIN_CATEGORIES = ("long", "number", "invented")
+TRAIN_RANGES = SYLLABLE_RANGE
+
+
+def training_cases(
+    tokenizer: BPETokenizer,
+    per_cell: int,
+    evaluation: Sequence[CopyCase],
+    seed: int = TRAIN_SEED,
+) -> list[CopyCase]:
+    taken = frozenset(case.target for case in evaluation)
+    return copy_cases(
+        tokenizer,
+        per_cell,
+        seed,
+        categories=TRAIN_CATEGORIES,
+        levels=(1, 2),
+        exclude=taken,
+        ranges=TRAIN_RANGES,
+    )
+
+
+def training_rows(cases: Sequence[CopyCase]) -> list[dict]:
+    rows = []
+    for case in cases:
+        answer = case.target if case.level == 1 else f"{answer_frame(case)} {case.target}."
+        rows.append(
+            {
+                "category": f"copy_l{case.level}",
+                "language": case.language,
+                "messages": [
+                    {"role": "user", "content": case.prompt},
+                    {"role": "assistant", "content": answer},
+                ],
+            }
+        )
+    return rows
+
+
+def permuted_cases(cases: Sequence[CopyCase]) -> list[CopyCase]:
+    by_cell: dict[tuple[str, str], list[CopyCase]] = {}
+    for case in cases:
+        by_cell.setdefault((case.language, case.category), []).append(case)
+    result = []
+    for (language, category), group in sorted(by_cell.items()):
+        ones = [c for c in group if c.level == 1]
+        twos = [c for c in group if c.level == 2]
+        for source, host in list(zip(ones, twos, strict=False)) + list(
+            zip(twos, ones, strict=False)
+        ):
+            level = host.level
+            prompt = (LEVEL_ONE if level == 1 else LEVEL_TWO)[language].format(X=source.target)
+            name = f"permuted/{language}/{category}/L{level}/{source.id}"
+            result.append(
+                CopyCase(
+                    name,
+                    name,
+                    language,
+                    level,
+                    category,
+                    prompt,
+                    source.target,
+                    (),
+                    "",
+                    host.relation,
+                )
+            )
+    return result
+
+
+SMALL_PER_CELL = 2
+EXTRA_PER_CELL = 34
+VALIDATION_PER_CELL = 1
+
+
+def training_sets(
+    tokenizer: BPETokenizer, evaluation: Sequence[CopyCase]
+) -> dict[str, list[CopyCase]]:
+    small = training_cases(tokenizer, SMALL_PER_CELL, evaluation)
+    taken = [*evaluation, *small]
+    extra = training_cases(tokenizer, EXTRA_PER_CELL, taken, TRAIN_SEED + 1)
+    held = training_cases(tokenizer, VALIDATION_PER_CELL, [*taken, *extra], TRAIN_SEED + 2)
+    return {
+        "copy36": small,
+        "copy648": [*small, *extra],
+        "validation": held,
+        "permuted": permuted_cases(small),
+    }
+
+
+def write_training_sets(
+    output: Path, tokenizer: BPETokenizer, evaluation: Sequence[CopyCase]
+) -> dict:
+    sets = training_sets(tokenizer, evaluation)
+    output.mkdir(parents=True, exist_ok=True)
+
+    def dump(path: Path, items: Sequence[dict]) -> None:
+        path.write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in items), encoding="utf-8"
+        )
+
+    for name in ("copy36", "copy648"):
+        rows = training_rows(sets[name])
+        random.Random(TRAIN_SEED).shuffle(rows)
+        directory = output / name / "sft"
+        directory.mkdir(parents=True, exist_ok=True)
+        dump(directory / "train.jsonl", rows)
+        dump(directory / "validation.jsonl", training_rows(sets["validation"]))
+        tokenize_sft_split(directory / "train.jsonl", directory / "train", tokenizer)
+        tokenize_sft_split(directory / "validation.jsonl", directory / "validation", tokenizer)
+    dump(output / "trained.jsonl", [asdict(case) for case in sets["copy36"]])
+    dump(output / "permuted.jsonl", [asdict(case) for case in sets["permuted"]])
+    return {name: len(items) for name, items in sets.items()}
