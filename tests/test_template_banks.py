@@ -268,4 +268,5 @@ def test_suite_prefix_renames_metrics_and_items(tmp_path, tokenizer, model_confi
     assert output.metrics and all(name.startswith("pairs.") for name in output.metrics)
     assert all(name.startswith("pairs.") for name in output.items)
     assert any(name.startswith("pairs.ctx.error.") for name in output.metrics)
+    assert "pairs.ctx.binding_accuracy" in output.metrics
     assert all("fine" in record for record in output.records)

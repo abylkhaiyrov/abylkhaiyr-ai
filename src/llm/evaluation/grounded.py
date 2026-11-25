@@ -180,6 +180,13 @@ def add_errors(output: SuiteOutput, cases: list[Case], fine: dict[str, str]) -> 
             for case in answerable
         ]
         add_rate(output, "ctx.binding_error", binding, False)
+        joint = [case for case in answerable if case.task == "binding"]
+        add_rate(
+            output,
+            "ctx.binding_accuracy",
+            [outcome(case, fine[case.id] == "correct") for case in joint],
+            True,
+        )
 
 
 def correct(case: Case, checks: dict[str, str]) -> bool:
