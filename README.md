@@ -176,7 +176,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Пилот контроля экспозиции отказов v31: регистрация](docs/sft_sampling_preregistration.md), [результат](docs/sft_sampling_results.md),
 [Фундаментальная диагностика обучения Tiny](docs/fundamental_learning_diagnostics.md),
 [Grounded Context: регистрация](docs/grounded_context_preregistration.md), [результат (отрицательный)](docs/grounded_context_results.md),
-[Абляция доли и состава контекстного блока: регистрация](docs/context_ablation_registration.md), [привязка (H3)](docs/context_binding_registration.md), [результат](docs/context_ablation_results.md).
+[Абляция доли и состава контекстного блока: регистрация](docs/context_ablation_registration.md), [привязка (H3)](docs/context_binding_registration.md), [результат](docs/context_ablation_results.md),
+[H4: регистрация](docs/context_h4_registration.md), [результат (отрицательный)](docs/context_h4_results.md).
 
 ## Проверка качества кода
 
