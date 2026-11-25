@@ -177,7 +177,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Фундаментальная диагностика обучения Tiny](docs/fundamental_learning_diagnostics.md),
 [Grounded Context: регистрация](docs/grounded_context_preregistration.md), [результат (отрицательный)](docs/grounded_context_results.md),
 [Абляция доли и состава контекстного блока: регистрация](docs/context_ablation_registration.md), [привязка (H3)](docs/context_binding_registration.md), [результат](docs/context_ablation_results.md),
-[H4: регистрация](docs/context_h4_registration.md), [результат (отрицательный)](docs/context_h4_results.md).
+[H4: регистрация](docs/context_h4_registration.md), [результат (отрицательный)](docs/context_h4_results.md),
+[Ёмкость Tiny и Small: регистрация](docs/capacity_preregistration.md), [результат (pilot неинтерпретируем)](docs/capacity_results.md).
 
 ## Проверка качества кода
 

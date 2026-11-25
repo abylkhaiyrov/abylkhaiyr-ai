@@ -1,0 +1,71 @@
+base_config: configs/capacity_small_sft.yaml
+initial_checkpoint: checkpoints/stage17/small-seed-1/step-00000305
+job_template: '{arm}-{seed}'
+tokens_per_step: 16352
+state_file: campaign_finish.json
+train:
+  restore_optimizer: false
+  checkpoint_alias: null
+  protected_steps:
+  - 120
+  keep_checkpoints: 2
+  eval_interval: 40
+  checkpoint_interval: 40
+  eval_batches: 20
+  min_free_disk_gb: 20.0
+  micro_batch_size: 4
+  gradient_accumulation_steps: 8
+optimizer:
+  learning_rate: 0.0001
+  warmup_steps: 12
+  min_lr_ratio: 0.1
+calibration_file: configs/experiments/capacity_calibration.json
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+name: capacity_small
+seeds:
+- 1
+token_budget: 2616320
+output_root: experiments/capacity_small
+checkpoint_root: checkpoints/capacity_small
+arms:
+  lr0.001:
+    data_dir: data/grounded/reading_m25
+    mixture:
+      reading_en: 0.15
+      reading_ru: 0.175
+      reading_kk: 0.175
+      chat_en: 0.05814
+      chat_ru: 0.034884
+      chat_kk: 0.005814
+      chat_other: 0.017442
+      skills: 0.116279
+      dialog: 0.040698
+      identity: 0.040698
+      math: 0.046512
+      word_math: 0.05814
+      code: 0.081395
+    optimizer:
+      learning_rate: 0.001
+frozen_inputs:
+  initial_weights: checkpoints/stage17/small-seed-1/step-00000305/model.safetensors
+  initial_metadata: checkpoints/stage17/small-seed-1/step-00000305/meta.json
+  tokenizer: data/tokenizer/tokenizer.json
+  registration: docs/capacity_preregistration.md
+  grounded_dev: data/grounded/dev.jsonl
+  context_probes_dev: data/diagnostics_dev/probes.jsonl
+  block_b_en: data/grounded/reading_b/sft_groups/train.reading_en.jsonl
+  block_b_ru: data/grounded/reading_b/sft_groups/train.reading_ru.jsonl
+  block_b_kk: data/grounded/reading_b/sft_groups/train.reading_kk.jsonl
+  block_m25_en: data/grounded/reading_m25/sft_groups/train.reading_en.jsonl
+  block_m25_ru: data/grounded/reading_m25/sft_groups/train.reading_ru.jsonl
+  block_m25_kk: data/grounded/reading_m25/sft_groups/train.reading_kk.jsonl
+  trained_cases: data/grounded/trained.jsonl
+limits:
+  active_seconds: 600
+  absolute_seconds: 14400
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
