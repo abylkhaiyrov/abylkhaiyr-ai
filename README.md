@@ -179,7 +179,8 @@ Studio при запуске предпочитает диалоговые ве�
 [Абляция доли и состава контекстного блока: регистрация](docs/context_ablation_registration.md), [привязка (H3)](docs/context_binding_registration.md), [результат](docs/context_ablation_results.md),
 [H4: регистрация](docs/context_h4_registration.md), [результат (отрицательный)](docs/context_h4_results.md),
 [Ёмкость Tiny и Small: регистрация](docs/capacity_preregistration.md), [результат (pilot неинтерпретируем)](docs/capacity_results.md),
-[Копирование токенов: регистрация](docs/token_copy_registration.md), [обучаемость](docs/token_copy_training_registration.md), [диагностика](docs/token_copy_learning_diagnostics.md).
+[Копирование токенов: регистрация](docs/token_copy_registration.md), [обучаемость](docs/token_copy_training_registration.md), [диагностика](docs/token_copy_learning_diagnostics.md),
+[Масштаб копирования: регистрация](docs/copy_scale_registration.md), [результат](docs/copy_scale_results.md).
 
 ## Проверка качества кода
 
