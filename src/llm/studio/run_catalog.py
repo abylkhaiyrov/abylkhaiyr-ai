@@ -61,9 +61,9 @@ def pipeline_entry(pipeline: dict[str, Any]) -> dict[str, Any]:
         "updated_at": pipeline["updated_at"],
         "step": None,
         "max_steps": None,
-        "percent": pipeline["overall"].get("percent")
-        if isinstance(pipeline["overall"], dict)
-        else None,
+        "percent": (
+            pipeline["overall"].get("percent") if isinstance(pipeline["overall"], dict) else None
+        ),
         "current_stage": pipeline["current_stage"] if status == ACTIVE else None,
         "output_dir": None if stage is None else stage["output_dir"],
         "state_dir": pipeline["state_dir"],

@@ -29,31 +29,31 @@ def quality_gates(stage: str | None, results: dict[str, float]) -> list[dict[str
     return [
         {
             "id": "instruction_stage",
-            "status": "not_verified"
-            if stage is None
-            else "passed"
-            if stage in INSTRUCTION_STAGES
-            else "failed",
+            "status": (
+                "not_verified"
+                if stage is None
+                else "passed" if stage in INSTRUCTION_STAGES else "failed"
+            ),
             "value": stage,
             "threshold": "/".join(INSTRUCTION_STAGES),
         },
         {
             "id": "conversational_pass_rate",
-            "status": "not_verified"
-            if pass_rate is None
-            else "passed"
-            if pass_rate >= READY_PASS_RATE
-            else "failed",
+            "status": (
+                "not_verified"
+                if pass_rate is None
+                else "passed" if pass_rate >= READY_PASS_RATE else "failed"
+            ),
             "value": pass_rate,
             "threshold": READY_PASS_RATE,
         },
         {
             "id": "repetition",
-            "status": "not_verified"
-            if repetition is None
-            else "passed"
-            if repetition <= MAX_REPETITION
-            else "failed",
+            "status": (
+                "not_verified"
+                if repetition is None
+                else "passed" if repetition <= MAX_REPETITION else "failed"
+            ),
             "value": repetition,
             "threshold": MAX_REPETITION,
         },

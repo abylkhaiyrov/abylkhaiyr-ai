@@ -105,9 +105,7 @@ def _run_container(
         status: Literal["passed", "failed", "unavailable"] = (
             "passed"
             if process.returncode == 0
-            else "unavailable"
-            if process.returncode == 125 or daemon_down
-            else "failed"
+            else "unavailable" if process.returncode == 125 or daemon_down else "failed"
         )
         return ToolResult(
             status=status,
