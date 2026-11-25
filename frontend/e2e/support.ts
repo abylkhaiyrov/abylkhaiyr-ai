@@ -56,7 +56,7 @@ export async function signIn(page: Page, identifier = "admin", password = ADMIN_
     }
   }
   await page.goto("/login");
-  await page.getByLabel(/username or email|имя пользователя/i).fill(identifier);
+  await page.getByLabel(/username or email|логин или email|имя пользователя/i).fill(identifier);
   await page.getByLabel(/^(password|пароль)$/i).fill(password);
   await page.getByRole("button", { name: /sign in|войти/i }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/login"));

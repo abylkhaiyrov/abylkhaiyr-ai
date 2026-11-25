@@ -19,6 +19,7 @@ CONFIGS: dict[str, dict[str, Any]] = {
     "default": {"profile": "medium"},
     "high": {"profile": "high", "temperature": 0.0, "repetition_penalty": 1.1},
 }
+MIN_SEND_INTERVAL = 0.5
 TERMINAL = {"generation.completed", "generation.failed", "generation.cancelled"}
 
 
@@ -47,10 +48,17 @@ def login(client: httpx.Client, base: str, password: str) -> dict[str, str]:
     return {**headers, "X-CSRF-Token": csrf}
 
 
+async def keep_alive(socket: Any) -> None:
+    while True:
+        await asyncio.sleep(10)
+        await socket.send(json.dumps({"type": "ping"}))
+
+
 async def generate(
     socket: Any, chat_id: str, content: str, settings: dict[str, Any]
 ) -> dict[str, Any]:
     request_id = secrets.token_hex(8)
+    await asyncio.sleep(MIN_SEND_INTERVAL)
     await socket.send(
         json.dumps(
             {
@@ -177,13 +185,19 @@ async def main_async(args: argparse.Namespace) -> None:
             max_size=None,
         ) as socket:
             await socket.send(json.dumps({"type": "subscribe", "channels": ["chat"]}))
+            pinger = asyncio.create_task(keep_alive(socket))
             rows = []
-            for index, item in enumerate(items, 1):
-                row = await run_item(
-                    item, base, http, headers, socket, settings, tokenizer, args.system_prompt
-                )
-                rows.append(row)
-                print(f"{index}/{len(items)} {item.item_id}: {row['answer'][:70]!r}", flush=True)
+            try:
+                for index, item in enumerate(items, 1):
+                    row = await run_item(
+                        item, base, http, headers, socket, settings, tokenizer, args.system_prompt
+                    )
+                    rows.append(row)
+                    print(
+                        f"{index}/{len(items)} {item.item_id}: {row['answer'][:70]!r}", flush=True
+                    )
+            finally:
+                pinger.cancel()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     report = {
         "benchmark_sha256": digest,

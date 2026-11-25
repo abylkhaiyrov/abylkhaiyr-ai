@@ -24,6 +24,21 @@ DIMENSIONS = (
     "refusal",
     "history",
 )
+ERROR_CAUSES = (
+    "no_knowledge",
+    "wrong_fact",
+    "template_refusal",
+    "irrelevant_template",
+    "echo_or_repeat",
+    "copy_wrong_entity",
+    "context_ignored",
+    "language_mismatch",
+    "incoherent",
+    "format_violation",
+    "hallucinated_entity",
+    "incomplete",
+    "other",
+)
 INSUFFICIENT_MARKERS = {
     "ru": (
         "не указан",
@@ -139,7 +154,7 @@ def normalize(text: str) -> str:
 
 
 def for_language(value: Any, language: str) -> Any:
-    return value[language] if isinstance(value, dict) else value
+    return value.get(language) if isinstance(value, dict) else value
 
 
 def lexical_check(item: AcceptanceItem, answer: str) -> AutoResult:

@@ -508,8 +508,13 @@ def sentence_count(text: str) -> int:
     return len([part for part in SENTENCE_END.split(text.strip()) if part.strip()])
 
 
+def normalize_number(raw: str) -> str:
+    value = raw.replace(",", ".")
+    return value.rstrip("0").rstrip(".") if "." in value else value
+
+
 def numbers_in(text: str) -> set[str]:
-    return {item.replace(",", ".").rstrip("0").rstrip(".") for item in NUMBER.findall(text)}
+    return {normalize_number(item) for item in NUMBER.findall(text)}
 
 
 def evaluate_check(check: Check, response: str) -> bool:

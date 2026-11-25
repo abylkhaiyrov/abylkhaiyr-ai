@@ -220,7 +220,42 @@ def test_chat_stops_on_role_special_tokens_and_continuation_streams(engine, monk
 def test_prompt_usage_matches_chat_after_completion_budget_clamp(engine):
     messages = [Message("user", "Hello " * 100)]
     params = SamplingParams(max_new_tokens=2 * engine.max_positions)
-    fitted = engine.fit_messages(messages, engine._chat_params(params).max_new_tokens)[0]
+    reserve = engine.output_reserve(engine._chat_params(params).max_new_tokens)
+    fitted = engine.fit_messages(messages, reserve)[0]
     encoded = engine.tokenizer.encode_conversation(fitted, add_generation_prompt=True)
     assert len(encoded) > 4
     assert engine.chat_prompt_tokens(messages, params.max_new_tokens) == len(encoded)
+
+
+def test_history_is_not_dropped_to_reserve_a_full_completion_budget(engine):
+    messages = [
+        Message("user", "I am Tom."),
+        Message("assistant", "Hi Tom."),
+        Message("user", "Who am I?"),
+    ]
+    size = len(engine.tokenizer.encode_conversation(messages, add_generation_prompt=True))
+    params = SamplingParams(max_new_tokens=engine.max_positions - 8)
+    reserve = engine.output_reserve(params.max_new_tokens)
+    assert engine.max_positions - params.max_new_tokens < size <= engine.max_positions - reserve
+    assert engine.fit_messages(messages, params.max_new_tokens)[1] > 0
+    fitted, dropped = engine.fit_messages(messages, reserve)
+    assert dropped == 0 and len(fitted) == 3
+    ids = engine._chat_ids(messages, reserve)
+    limited = engine._fit_output(engine._chat_params(params), len(ids))
+    assert limited.max_new_tokens == engine.max_positions - len(ids)
+
+
+def test_prompt_survives_streaming_when_completion_budget_is_large(engine, monkeypatch):
+    seen = {}
+
+    def spy(prompt_ids, params, constraint=None):
+        seen["prompt"] = list(prompt_ids)
+        seen["max_new_tokens"] = params.max_new_tokens
+        return iter([])
+
+    messages = [Message("user", "I am Tom."), Message("assistant", "Hi."), Message("user", "Who?")]
+    monkeypatch.setattr(engine, "stream_ids", spy)
+    list(engine.stream_chat(messages, SamplingParams(max_new_tokens=engine.max_positions)))
+    full = engine.tokenizer.encode_conversation(messages, add_generation_prompt=True)
+    assert seen["prompt"] == full
+    assert seen["max_new_tokens"] <= engine.max_positions - len(full)

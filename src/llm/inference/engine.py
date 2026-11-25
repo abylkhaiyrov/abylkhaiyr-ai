@@ -111,6 +111,15 @@ class InferenceEngine:
             ),
         )
 
+    def output_reserve(self, max_new_tokens: int) -> int:
+        return min(max_new_tokens, self.max_positions // 4)
+
+    def _fit_output(self, params: SamplingParams, prompt_tokens: int) -> SamplingParams:
+        return replace(
+            params,
+            max_new_tokens=max(1, min(params.max_new_tokens, self.max_positions - prompt_tokens)),
+        )
+
     def _chat_context_floor(self) -> int:
         return min(max(8, self.max_positions // 4), 128, self.max_positions - 1)
 
@@ -253,7 +262,7 @@ class InferenceEngine:
 
     def chat_prompt_tokens(self, messages: list[Message], max_new_tokens: int) -> int:
         params = self._chat_params(SamplingParams(max_new_tokens=max_new_tokens))
-        return len(self._chat_ids(messages, params.max_new_tokens))
+        return len(self._chat_ids(messages, self.output_reserve(params.max_new_tokens)))
 
     def chat(
         self,
@@ -262,17 +271,22 @@ class InferenceEngine:
         constraint: TokenConstraint | None = None,
     ) -> Generation:
         params = self._chat_params(params)
-        ids = self._chat_ids(messages, params.max_new_tokens)
+        ids = self._chat_ids(messages, self.output_reserve(params.max_new_tokens))
         return self.generate_ids(
-            ids, params, stop_token_ids=self._chat_stop_tokens(), constraint=constraint
+            ids,
+            self._fit_output(params, len(ids)),
+            stop_token_ids=self._chat_stop_tokens(),
+            constraint=constraint,
         )
 
     def stream_chat(
         self, messages: list[Message], params: SamplingParams
     ) -> Generator[str, None, str]:
         params = self._chat_params(params)
-        ids = self._chat_ids(messages, params.max_new_tokens)
-        return self.stream_text(ids, params, stop_token_ids=self._chat_stop_tokens())
+        ids = self._chat_ids(messages, self.output_reserve(params.max_new_tokens))
+        return self.stream_text(
+            ids, self._fit_output(params, len(ids)), stop_token_ids=self._chat_stop_tokens()
+        )
 
     def stream_chat_continuation(
         self, messages: list[Message], prefix: str, params: SamplingParams
@@ -280,9 +294,11 @@ class InferenceEngine:
         params = self._chat_params(params)
         prefix_budget = self.max_positions - params.max_new_tokens - self._chat_context_floor()
         prefix_ids = self.tokenizer.encode(self._fit_content(prefix, prefix_budget))
-        ids = self._chat_ids(messages, params.max_new_tokens + len(prefix_ids))
+        ids = self._chat_ids(messages, self.output_reserve(params.max_new_tokens) + len(prefix_ids))
         ids.extend(prefix_ids)
-        return self.stream_text(ids, params, stop_token_ids=self._chat_stop_tokens())
+        return self.stream_text(
+            ids, self._fit_output(params, len(ids)), stop_token_ids=self._chat_stop_tokens()
+        )
 
     @torch.inference_mode()
     def generate_batch(self, prompts: list[str], params: SamplingParams) -> list[Generation]:

@@ -393,7 +393,7 @@ class GenerationScheduler:
                 len(engine.tokenizer.encode(continuation_prefix)) if continuation_prefix else 0
             )
             profile = PROFILES.get(str(params_dict.get("profile") or ""))
-            reserved_tokens = params.max_new_tokens + prefix_tokens
+            reserved_tokens = engine.output_reserve(params.max_new_tokens) + prefix_tokens
             if profile is not None:
                 reserved_tokens = max(
                     reserved_tokens, engine.max_positions - profile.context_budget
