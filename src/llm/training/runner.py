@@ -27,7 +27,7 @@ from llm.tokenizer.bpe import BPETokenizer
 from llm.training.checkpoint import CheckpointManager, load_model_weights
 from llm.training.engine import Trainer, apply_weight_decay, seed_everything
 from llm.training.monitor import TrainingMonitor
-from llm.training.objectives import DPOObjective, Objective
+from llm.training.objectives import ContrastiveObjective, DPOObjective, Objective
 
 MEMORY_BUDGET_FRACTION = 0.7
 
@@ -158,6 +158,11 @@ def _build_loaders(config: ExperimentConfig, tokenizer: BPETokenizer):
                 root / "tokens" / "validation.bin", dtype, length, batch, seed, False
             ),
         )
+    if train.stage == "sft" and train.contrastive is not None:
+        return (
+            PreferenceLoader(root, "train", tokenizer, length + 1, batch, seed),
+            PreferenceLoader(root, "validation", tokenizer, length + 1, batch, seed, False),
+        )
     if train.stage == "sft" and train.mixture:
         training = _conversation_mixture(
             root, "train", train.mixture, length, batch, tokenizer, seed, train
@@ -204,6 +209,8 @@ def build_trainer(config: ExperimentConfig, resume: bool) -> Trainer:
     if train.stage == "dpo":
         reference = copy.deepcopy(model).to(device)
         objective = DPOObjective(reference, train.dpo_beta, device, dtype)
+    elif train.stage == "sft" and train.contrastive is not None:
+        objective = ContrastiveObjective(device, dtype, train.contrastive)
     train_source, validation_source = _build_loaders(config, tokenizer)
     monitor = TrainingMonitor(train.output_dir, device, train.max_steps)
     trainer = Trainer(

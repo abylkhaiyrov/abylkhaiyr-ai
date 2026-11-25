@@ -5,10 +5,12 @@ from typing import Protocol
 import torch
 from torch import Tensor, nn
 
+from llm.core.config import ContrastiveConfig
 from llm.optimization.precision import autocast_context
 from llm.training.losses import (
     IGNORE_INDEX,
     causal_lm_loss_sum,
+    contrastive_pair_terms,
     dpo_loss,
     sequence_log_probs,
 )
@@ -87,3 +89,52 @@ class DPOObjective:
         self._correct += (margin > 0).sum()
         self._pairs += margin.numel()
         return mean_loss * chosen_in.shape[0]
+
+
+class ContrastiveObjective:
+    def __init__(self, device: torch.device, dtype: torch.dtype, config: ContrastiveConfig) -> None:
+        self.device = device
+        self.dtype = dtype
+        self.config = config
+        self._margin_sum = torch.zeros((), device=device)
+        self._correct = torch.zeros((), device=device)
+        self._pairs = torch.zeros((), device=device)
+
+    def weight(self, batch: Batch) -> int:
+        return int((batch[1] != IGNORE_INDEX).sum().item())
+
+    def drain_stats(self) -> dict[str, float]:
+        pairs = float(self._pairs.item())
+        if pairs == 0:
+            return {}
+        stats = {
+            "contrastive/margin": float(self._margin_sum.item()) / pairs,
+            "contrastive/accuracy": float(self._correct.item()) / pairs,
+        }
+        self._margin_sum.zero_()
+        self._correct.zero_()
+        self._pairs.zero_()
+        return stats
+
+    def loss_sum(self, model: nn.Module, batch: Batch) -> Tensor:
+        chosen_in, chosen_tg, rejected_in, rejected_tg = batch[:4]
+        with autocast_context(self.device, self.dtype):
+            chosen_logits = model(chosen_in)
+            rejected_logits = model(rejected_in) if self.config.weight > 0 else None
+        total = causal_lm_loss_sum(chosen_logits, chosen_tg)[0]
+        if rejected_logits is None:
+            return total
+        terms = contrastive_pair_terms(
+            chosen_logits,
+            chosen_tg,
+            rejected_logits,
+            rejected_tg,
+            self.config.beta,
+            self.config.margin,
+        )
+        valid = terms.valid
+        pair_mean = (terms.loss * valid).sum() / valid.sum().clamp(min=1)
+        self._margin_sum += (terms.delta * valid).sum().float()
+        self._correct += ((terms.delta > 0) & valid).sum()
+        self._pairs += valid.sum()
+        return total + self.config.weight * self.weight(batch) * pair_mean

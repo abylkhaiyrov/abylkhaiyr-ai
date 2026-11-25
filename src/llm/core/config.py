@@ -126,6 +126,12 @@ class SamplerConfig(StrictModel):
     refusal_share_cap: float | None = Field(default=None, gt=0, lt=1)
 
 
+class ContrastiveConfig(StrictModel):
+    weight: float = Field(default=0.5, ge=0)
+    beta: float = Field(default=1.0, gt=0)
+    margin: float = Field(default=0.0, ge=0)
+
+
 class TrainConfig(StrictModel):
     stage: Literal["pretrain", "sft", "dpo"] = "pretrain"
     data_dir: str = "data/processed"
@@ -164,6 +170,7 @@ class TrainConfig(StrictModel):
     max_ram_fraction: float = Field(default=0.85, gt=0, le=1)
     min_free_disk_gb: float = Field(default=2.0, ge=0)
     dpo_beta: float = Field(default=0.1, gt=0)
+    contrastive: ContrastiveConfig | None = None
     mixture: dict[str, float] = Field(default_factory=dict)
     dataset_version: str | None = None
     sft_replay_dir: str | None = None
