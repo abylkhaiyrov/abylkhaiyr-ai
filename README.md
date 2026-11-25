@@ -93,6 +93,20 @@ ADMIN видит весь Studio и раздел «Пользователи»; U
 сохранённый ответ доступен в истории чата. При несовпадении версии API запустите Studio из
 того же checkout, из которого собран интерфейс, и обновите страницу.
 
+## Реальная приёмка диалога
+
+Acceptance Benchmark v1 (`configs/acceptance/benchmark_v1.json`, 99 запросов на RU, EN, KK) проверяет не код, а ответы загруженной модели через настоящий путь пользователя: вход, REST, WebSocket, генерация. Критерии и ограничения: [docs/acceptance_benchmark.md](docs/acceptance_benchmark.md). Бенчмарк не входит в обучающие данные (проверка при сборке корпуса).
+
+```bash
+.venv/bin/llm studio --checkpoint <checkpoint> --port 8000
+.venv/bin/python scripts/run_acceptance.py --password <admin-password> --config greedy --output experiments/acceptance/<name>.json
+.venv/bin/python scripts/summarize_acceptance.py experiments/acceptance/<name>.json --grades <grades>.json
+```
+
+Прогонщик сохраняет запрос, историю, фактический prompt, checkpoint, профиль, ответ, причину завершения и автоматическую оценку (лексическая проверка и исполнение кода в песочнице). Смысловая оценка выполняется вручную по рубрике, лексическая проверка её не заменяет. Состояние модели, найденные причины и результаты экспериментов: [docs/real_model_audit.md](docs/real_model_audit.md), [docs/verified_sft_results.md](docs/verified_sft_results.md), [docs/contrastive_results.md](docs/contrastive_results.md), решение о масштабировании [docs/scaling_decision.md](docs/scaling_decision.md); контролируемое улучшение на обратной связи: [docs/continuous_improvement.md](docs/continuous_improvement.md).
+
+Проверяемый корпус SFT: `scripts/build_verified_corpus.py [--pairs]` (авторские знания в `configs/verified/`, проверки языка, противоречий и независимости от бенчмарка в `llm.data.verified_corpus`).
+
 ## Конфигурации
 
 ### Обучение на NVIDIA GPU в Windows

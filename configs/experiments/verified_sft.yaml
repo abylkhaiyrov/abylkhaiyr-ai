@@ -1,0 +1,75 @@
+name: verified_sft
+base_config: configs/tiny_v31_sft_stage11.yaml
+initial_checkpoint: checkpoints/tiny_v2/tiny_best
+job_template: '{arm}-{seed}'
+seeds:
+- 1
+token_budget: 1962240
+tokens_per_step: 16352
+output_root: experiments/verified_sft
+checkpoint_root: checkpoints/verified_sft
+state_file: campaign.json
+order:
+- A-1
+- B-1
+reuse:
+  A-1: checkpoints/tiny_v31_sft_stage11
+train:
+  restore_optimizer: false
+  checkpoint_alias: null
+  protected_steps:
+  - 120
+  keep_checkpoints: 2
+  eval_interval: 60
+  checkpoint_interval: 60
+arms:
+  A:
+    data_dir: data/v3_1
+    dataset_version: v3.1
+  B:
+    data_dir: data/verified_v1
+    dataset_version: verified-v1
+    mixture:
+      code: 0.101
+      context: 0.242
+      multi_turn: 0.102
+      facts: 0.102
+      explain: 0.046
+      math: 0.092
+      instruction: 0.104
+      translation: 0.109
+      social: 0.047
+      curated: 0.054
+frozen_inputs:
+  initial_weights: checkpoints/tiny_v2/tiny_best/model.safetensors
+  benchmark: configs/acceptance/benchmark_v1.json
+  rubric: docs/acceptance_benchmark.md
+  corpus_manifest: data/verified_v1/manifest.json
+  registration: docs/verified_sft_registration.md
+resources:
+  ram_margin_gib: 0.5
+  disk_reserve_gib: 20.0
+  disk_per_job_gib: 0.6
+  disk_slack_gib: 0.5
+limits:
+  active_seconds: 1800
+  absolute_seconds: 7200
+  max_resource_wait_seconds: 600
+  max_gap_seconds: 30
+evaluation:
+  baseline: checkpoints/tiny_v31_sft_stage11/step-00000120
+  device: mps
+  tokenizer: data/tokenizer
+  repetitions: 1000
+  suites:
+  - name: perplexity
+    options:
+      sets:
+        v2_validation:
+        - data/v2/tokens
+        - validation
+        - 200
+        v2_test:
+        - data/v2/tokens
+        - test
+        - 200
